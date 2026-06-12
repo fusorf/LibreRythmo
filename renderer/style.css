@@ -606,3 +606,5 @@ kbd {
   transition: opacity .3s;
 }
 #toast.hidden { opacity: 0; pointer-events: none; }
+#toast.clickable { cursor: pointer; border-color: var(--toggle-border); }
+#toast.clickable:hover { background: var(--hover); }

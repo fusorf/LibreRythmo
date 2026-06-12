@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('api', {
   statFile: (p) => ipcRenderer.invoke('file-stat', p),
   pathForFile: (f) => webUtils.getPathForFile(f),
   onMenu: (cb) => ipcRenderer.on('menu', (e, action, arg) => cb(action, arg)),
+  onUpdateAvailable: (cb) => ipcRenderer.on('update-available', (e, v) => cb(v)),
+  openReleases: () => ipcRenderer.invoke('open-releases'),
   setLang: (o) => ipcRenderer.invoke('set-lang', o),
   exportSaveDialog: (suggested) => ipcRenderer.invoke('export-save-dialog', suggested),
   exportStart: (opts) => ipcRenderer.invoke('export-start', opts),

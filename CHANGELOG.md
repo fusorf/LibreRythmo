@@ -3,6 +3,14 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.0.1] - 2026-06-12
+
+### Ajouté
+- Détection des nouvelles versions : vérification silencieuse des releases GitHub au
+  démarrage ; si une mise à jour existe, un toast discret cliquable ouvre la page de
+  téléchargement (aucun popup)
+- À propos : statut de mise à jour affiché et bouton GitHub vers le dépôt
+
 ## [1.0.0] - 2026-06-12
 
 Première version stable.

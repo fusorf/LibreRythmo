@@ -56,6 +56,25 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.add('hidden'), 2200)
 }
 
+// notification de mise à jour : toast discret cliquable (ouvre la page Releases),
+// disparaît seul après 10 s — aucune autre interruption
+window.api.onUpdateAvailable((v) => {
+  const el = $('toast')
+  el.textContent = t('updateAvailable', v)
+  el.classList.add('clickable')
+  el.classList.remove('hidden')
+  el.onclick = () => {
+    window.api.openReleases()
+    el.classList.add('hidden')
+  }
+  clearTimeout(toast._t)
+  toast._t = setTimeout(() => {
+    el.classList.add('hidden')
+    el.classList.remove('clickable')
+    el.onclick = null
+  }, 10000)
+})
+
 // overlay de chargement bloquant (affiché pendant le chargement d'une vidéo)
 function showLoading(on, text) {
   clearTimeout(showLoading._t)
