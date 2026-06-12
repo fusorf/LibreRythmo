@@ -1,0 +1,18 @@
+node_modules/
+dist/
+media/
+build-info.json
+*.log
+Thumbs.db
+.DS_Store
+
+# outils de dev / fichiers temporaires
+scripts/cdp-shot.png
+scripts/_tmp-*
+
+# assistants IA (configs et caches locaux)
+.claude/
+CLAUDE.md
+.claude.json
+.cursorrules
+.aider*

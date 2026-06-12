@@ -1,0 +1,21 @@
+{
+  "name": "librerythmo",
+  "productName": "LibreRythmo",
+  "version": "1.0.0",
+  "description": "LibreRythmo — bande rythmo libre pour le doublage",
+  "author": "fusorf",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package": "node scripts/make-buildinfo.js && electron-packager . LibreRythmo --platform=win32 --arch=x64 --out=dist --icon=assets/icon.ico --overwrite --no-asar --ignore=\"^/media($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/scripts($|/)\""
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.0.1",
+    "electron": "^36.0.0",
+    "ws": "^8.21.0"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0"
+  }
+}

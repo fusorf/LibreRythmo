@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; media-src 'self' file:; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
+  <title>LibreRythmo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="mainRow">
+    <aside id="linesPanel">
+      <h3 id="linesTitle">Répliques</h3>
+      <select id="lineFilter" title="Filtrer les répliques par piste"></select>
+      <div id="linesLog"></div>
+    </aside>
+    <main id="videoWrap">
+      <video id="video"></video>
+      <div id="dropHint">
+        <span id="dropHintMain">Glisse une vidéo ici</span>
+        <span id="dropHintSub">ou Fichier → Ouvrir une vidéo…</span>
+      </div>
+      <div id="videoInfo" class="hidden"></div>
+    </main>
+    <aside id="sidePanel">
+      <h3 id="panelTitle">Personnages</h3>
+      <div id="charList"></div>
+      <button id="btnAddChar">+ Nouveau personnage</button>
+    </aside>
+  </div>
+
+  <div id="transport">
+    <div class="btn-group">
+      <button id="tStart" title="Revenir au début">
+        <svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM13 2L6 8l7 6V2z"/></svg>
+      </button>
+      <button id="tFrameB" title="Image précédente (←)">
+        <svg viewBox="0 0 16 16"><path d="M11 3L5 8l6 5V3z"/></svg>
+      </button>
+      <button id="tPlay" title="Lecture / pause (Espace)">
+        <span class="ic-play"><svg viewBox="0 0 16 16"><path d="M4.5 2.5l8.5 5.5-8.5 5.5V2.5z"/></svg></span>
+        <span class="ic-pause"><svg viewBox="0 0 16 16"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z"/></svg></span>
+      </button>
+      <button id="tFrameF" title="Image suivante (→)">
+        <svg viewBox="0 0 16 16"><path d="M5 3l6 5-6 5V3z"/></svg>
+      </button>
+    </div>
+    <span id="timecode" title="Timecode courant">00:00:00:00</span>
+    <select id="speed" title="Vitesse de lecture">
+      <option value="0.5">×0.5</option>
+      <option value="0.75">×0.75</option>
+      <option value="1" selected>×1</option>
+      <option value="1.25">×1.25</option>
+      <option value="1.5">×1.5</option>
+    </select>
+    <div class="vol" title="Volume">
+      <svg viewBox="0 0 16 16"><path d="M2 6v4h3l4 3.5v-11L5 6H2zM11 5.2a3.4 3.4 0 010 5.6V5.2z"/></svg>
+      <input id="volume" type="range" min="0" max="1" step="0.01" value="1">
+    </div>
+    <div class="sep"></div>
+    <button id="btnAddLine" title="Nouvelle réplique au point de lecture (Entrée)"><span id="addLineLabel">+ Nouvelle réplique</span><span class="dot" id="addLineDot"></span></button>
+    <button id="btnOnoma" title="Insérer une réaction standard au point de lecture">Réactions</button>
+    <button id="btnMagnet" class="icon-btn" title="Mode aimant">
+      <svg viewBox="0 0 16 16"><path d="M3 1h4v7a1 1 0 002 0V1h4v7A5 5 0 013 8V1zm1.2 1.2v1.6h1.6V2.2H4.2zm6 0v1.6h1.6V2.2h-1.6z" fill-rule="evenodd"/></svg>
+    </button>
+    <div class="sep"></div>
+    <select id="trackCount" title="Nombre de pistes affichées"></select>
+    <div class="vol" id="zoomWrap" title="Zoom de la bande (Ctrl+molette)">
+      <svg viewBox="0 0 16 16"><path d="M6.5 1a5.5 5.5 0 014.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 116.5 1zm0 1.5a4 4 0 100 8 4 4 0 000-8zM5.75 5.75V4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
+      <input id="zoom" type="range" min="0" max="1" step="0.001" value="0.5">
+    </div>
+    <div class="spacer"></div>
+    <button id="btnToggleLines" class="active" title="Afficher / masquer le panneau Répliques">Répliques</button>
+    <button id="btnTogglePanel" class="active" title="Afficher / masquer le panneau Personnages">Personnages</button>
+  </div>
+
+  <canvas id="band"></canvas>
+
+  <div id="inspector" class="empty">
+    <span id="insEmpty">Aucune réplique sélectionnée · appuyez sur F1 pour l'aide</span>
+    <select id="insChar" title="Personnage de la réplique"></select>
+    <select id="insTrack" title="Piste d'affichage">
+      <option value="0">Piste 1</option>
+      <option value="1">Piste 2</option>
+      <option value="2">Piste 3</option>
+      <option value="3">Piste 4</option>
+    </select>
+    <select id="insEntry" title="Entrée : bouche du personnage en début de réplique"></select>
+    <select id="insExit" title="Sortie : bouche du personnage en fin de réplique"></select>
+    <input id="insText" type="text" placeholder="Texte de la réplique…" spellcheck="false">
+    <input id="insStart" type="text" class="tc" title="Timecode de début">
+    <span class="arrow">→</span>
+    <input id="insEnd" type="text" class="tc" title="Timecode de fin">
+    <button id="insDel" title="Supprimer la réplique (Suppr)">Supprimer</button>
+  </div>
+
+  <div id="exportModal" class="hidden">
+    <div class="modal-panel">
+      <h2 id="expTitle">Exporter la vidéo</h2>
+      <canvas id="exportPreview"></canvas>
+      <p class="modal-hint" id="expHint">Choisis la position de la bande, puis glisse la barre de séparation pour régler les tailles</p>
+      <div class="opt-groups">
+        <fieldset class="opt-group">
+          <legend id="grpOutput">Sortie</legend>
+          <label><span id="lblRes">Résolution</span>
+            <select id="expPreset">
+              <option value="1920x1080" selected>1920 × 1080</option>
+              <option value="1280x720">1280 × 720</option>
+              <option value="2560x1440">2560 × 1440</option>
+              <option value="3840x2160">3840 × 2160</option>
+              <option value="custom" id="optCustom">Personnalisée</option>
+            </select>
+          </label>
+          <input id="expW" type="number" min="320" max="7680" value="1920" disabled>
+          <span class="arrow">×</span>
+          <input id="expH" type="number" min="180" max="4320" value="1080" disabled>
+          <label><span id="lblFps">Images/s</span> <input id="expFps" type="number" min="10" max="120" value="25"></label>
+          <label><span id="lblEnc">Encodeur</span> <select id="expEnc"></select></label>
+        </fieldset>
+        <fieldset class="opt-group">
+          <legend id="grpBand">Bande</legend>
+          <label><span id="lblBandPos">Position</span>
+            <select id="expBandPos">
+              <option value="bottom" id="optBandBottom">En bas</option>
+              <option value="top" id="optBandTop">En haut</option>
+            </select>
+          </label>
+          <label><span id="lblTheme">Couleur</span>
+            <select id="expTheme">
+              <option value="dark" id="optThemeDark">Sombre</option>
+              <option value="light" id="optThemeLight">Clair</option>
+            </select>
+          </label>
+          <label id="lblSpeedWrap"><span id="lblSpeed">Zoom</span> <input id="expWin" type="range" min="0" max="1" step="0.001" value="0.58"> <span id="expWinVal" class="dim-val">5 s visibles</span></label>
+          <div class="spacer"></div>
+          <button id="expReset">Réinitialiser</button>
+        </fieldset>
+      </div>
+      <div class="export-row">
+        <label for="expPath" id="lblDest">Destination</label>
+        <input id="expPath" type="text" placeholder="Choisis un fichier de sortie…" spellcheck="false">
+        <button id="expBrowse">Parcourir…</button>
+      </div>
+      <hr class="modal-sep">
+      <div class="export-row">
+        <div id="expProgress"><div id="expBar"></div></div>
+        <span id="expStatus"></span>
+        <div class="spacer"></div>
+        <button id="expClose">Fermer</button>
+        <button id="expGo" class="primary">Exporter…</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="guideModal" class="hidden">
+    <div class="modal-panel guide-panel">
+      <h2 id="guideTitle">Guide</h2>
+      <div id="guideBody"></div>
+      <div class="export-row">
+        <div class="spacer"></div>
+        <button id="guideClose">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="onomaPop" class="hidden"></div>
+
+  <div id="loadingOverlay" class="hidden">
+    <div class="loader-box">
+      <div class="spinner"></div>
+      <span id="loadingText">Chargement…</span>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
