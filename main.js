@@ -1,5 +1,5 @@
 'use strict'
-const { app, BrowserWindow, Menu, ipcMain, dialog, nativeTheme } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, dialog, nativeTheme, shell } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const fs = require('fs')
@@ -18,6 +18,39 @@ try {
 const versionLine = () => `Version ${app.getVersion()}${buildInfo?.builtAt ? ` — build ${buildInfo.builtAt}` : ' (dev)'}`
 
 let win = null
+
+// ---------- détection de mise à jour (GitHub releases, silencieuse) ----------
+const REPO_URL = 'https://github.com/fusorf/LibreRythmo'
+let latestVersion = null // ex. '1.1.0' si plus récente que l'app, sinon null
+
+function cmpVer(a, b) {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if (d) return d
+  }
+  return 0
+}
+
+// check au démarrage : pas de popup, pas d'erreur visible si hors-ligne ;
+// si une version plus récente existe, le renderer affiche un toast cliquable
+async function checkForUpdate() {
+  try {
+    const res = await fetch('https://api.github.com/repos/fusorf/LibreRythmo/releases/latest', {
+      headers: { 'User-Agent': 'LibreRythmo' },
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) return
+    const tag = String((await res.json()).tag_name || '').replace(/^v/, '')
+    if (/^\d+\.\d+\.\d+$/.test(tag) && cmpVer(tag, app.getVersion()) > 0) {
+      latestVersion = tag
+      if (win && !win.isDestroyed()) win.webContents.send('update-available', tag)
+    }
+  } catch {} // hors-ligne / API limitée : silencieux
+}
+
+ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/latest`))
 
 // ---------- réglages persistants — settings.ini dans le dossier userData ----------
 const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, encoder: 'gpu' }
@@ -104,6 +137,7 @@ function createWindow() {
   })
   buildMenu()
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  setTimeout(checkForUpdate, 3000) // après le démarrage, sans le ralentir
 
   // confirmation si le projet a des modifications non enregistrées
   win.on('close', (e) => {
@@ -184,6 +218,8 @@ const MENU_STR = {
     confirmNewDetail: 'Enregistrer les modifications avant de continuer ?',
     btnSave: 'Enregistrer',
     btnDontSave: 'Ne pas enregistrer',
+    btnClose: 'Fermer',
+    updateAvail: 'Nouvelle version disponible : v{v}',
     dlgSrtSave: 'Exporter les sous-titres',
     dlgVideo: 'Ouvrir une vidéo',
     dlgVideoFilter: 'Vidéo',
@@ -241,6 +277,8 @@ const MENU_STR = {
     confirmNewDetail: 'Save changes before continuing?',
     btnSave: 'Save',
     btnDontSave: "Don't save",
+    btnClose: 'Close',
+    updateAvail: 'New version available: v{v}',
     dlgSrtSave: 'Export subtitles',
     dlgVideo: 'Open a video',
     dlgVideoFilter: 'Video',
@@ -349,12 +387,21 @@ function buildMenu() {
         { type: 'separator' },
         {
           label: s.about,
-          click: () => dialog.showMessageBox(win, {
-            type: 'none',
-            title: 'LibreRythmo',
-            message: 'LibreRythmo — by fusorf',
-            detail: S().aboutDetail.replace('{version}', versionLine()),
-          }),
+          click: async () => {
+            const st = S()
+            const ver = versionLine() + (latestVersion ? `\n${st.updateAvail.replace('{v}', latestVersion)}` : '')
+            const r = await dialog.showMessageBox(win, {
+              type: 'none',
+              title: 'LibreRythmo',
+              message: 'LibreRythmo — by fusorf',
+              detail: st.aboutDetail.replace('{version}', ver),
+              buttons: [st.btnClose, 'GitHub'],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true,
+            })
+            if (r.response === 1) shell.openExternal(REPO_URL)
+          },
         },
       ],
     },
