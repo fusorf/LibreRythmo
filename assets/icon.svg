@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- LibreRythmo — by fusorf -->
+  <rect width="512" height="512" rx="100" fill="#15161a"/>
+
+  <!-- pistes : mots étirés de la bande rythmo -->
+  <rect x="62" y="150" width="232" height="58" rx="16" fill="#ffd23f"/>
+  <rect x="318" y="150" width="132" height="58" rx="16" fill="#ffd23f" opacity="0.4"/>
+
+  <rect x="96" y="230" width="316" height="58" rx="16" fill="#4ecdc4"/>
+
+  <rect x="62" y="310" width="98" height="58" rx="16" fill="#ff8fab"/>
+  <rect x="184" y="310" width="196" height="58" rx="16" fill="#ff8fab" opacity="0.4"/>
+
+  <!-- point de lecture -->
+  <rect x="198" y="106" width="16" height="312" rx="8" fill="#e8443a"/>
+  <path d="M166 78h80l-40 44z" fill="#e8443a"/>
+</svg>
