@@ -3,6 +3,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, nativeTheme, shell } = requir
 const { spawn } = require('child_process')
 const path = require('path')
 const fs = require('fs')
+const net = require('net')
 const crypto = require('crypto')
 const { pathToFileURL } = require('url')
 
@@ -54,7 +55,7 @@ async function checkForUpdate() {
 ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/latest`))
 
 // ---------- réglages persistants — settings.ini dans le dossier userData ----------
-const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, encoder: 'gpu' }
+const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, encoder: 'gpu', discord: false }
 let settings = { ...DEFAULTS, recent: [] }
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.ini')
@@ -78,6 +79,7 @@ function loadSettings() {
         else if (k === 'autosave') settings.autosave = v === '1'
         else if (k === 'wave') settings.wave = v === '1'
         else if (k === 'info') settings.info = v === '1'
+        else if (k === 'discord') settings.discord = v === '1'
       } else if (sec === 'export') {
         if (k === 'encoder' && ['gpu', 'cpu'].includes(v)) settings.encoder = v
       } else if (sec === 'recent') {
@@ -98,6 +100,7 @@ function saveSettings() {
     `autosave=${b(settings.autosave)}`,
     `wave=${b(settings.wave)}`,
     `info=${b(settings.info)}`,
+    `discord=${b(settings.discord)}`,
     '',
     '[export]',
     `encoder=${settings.encoder}`,
@@ -116,6 +119,73 @@ function addRecent(p) {
 }
 
 ipcMain.handle('get-settings', () => settings)
+
+// ---------- Discord Rich Presence (IPC local, sans dépendance) ----------
+// Pour afficher la présence, créer une application sur https://discord.com/developers
+// et coller son « Application ID » ci-dessous (sinon la connexion est refusée en silence).
+const DISCORD_CLIENT_ID = '0000000000000000000' // ← Application ID Discord (à renseigner)
+const discordStart = Date.now()
+let discordSock = null
+let discordReady = false
+let discordActivity = null // { details, state } poussé par le renderer
+
+function discordPipe(i) {
+  if (process.platform === 'win32') return `\\\\?\\pipe\\discord-ipc-${i}`
+  const base = process.env.XDG_RUNTIME_DIR || process.env.TMPDIR || process.env.TMP || process.env.TEMP || '/tmp'
+  return path.join(base, `discord-ipc-${i}`)
+}
+function discordFrame(op, data) {
+  const json = Buffer.from(JSON.stringify(data))
+  const buf = Buffer.alloc(8 + json.length)
+  buf.writeInt32LE(op, 0)
+  buf.writeInt32LE(json.length, 4)
+  json.copy(buf, 8)
+  return buf
+}
+function discordConnect(i = 0) {
+  // pas d'Application ID valide renseigné → on ne tente rien (présence inactive)
+  if (discordSock || i > 9 || !/^[1-9]\d{16,19}$/.test(DISCORD_CLIENT_ID)) return
+  const sock = net.createConnection(discordPipe(i))
+  sock.on('connect', () => {
+    discordSock = sock
+    sock.write(discordFrame(0, { v: 1, client_id: DISCORD_CLIENT_ID })) // handshake
+  })
+  sock.on('data', (buf) => {
+    try {
+      const len = buf.readInt32LE(4)
+      const msg = JSON.parse(buf.slice(8, 8 + len).toString())
+      if (msg.evt === 'READY') { discordReady = true; discordPush() }
+    } catch {}
+  })
+  sock.on('error', () => { sock.destroy(); if (!discordSock) discordConnect(i + 1) })
+  sock.on('close', () => { if (sock === discordSock) { discordSock = null; discordReady = false } })
+}
+function discordDisconnect() {
+  discordReady = false
+  if (discordSock) {
+    try { discordSock.write(discordFrame(1, { cmd: 'SET_ACTIVITY', args: { pid: process.pid, activity: null }, nonce: String(discordStart) })) } catch {}
+    try { discordSock.destroy() } catch {}
+    discordSock = null
+  }
+}
+function discordPush() {
+  if (!discordSock || !discordReady) return
+  const a = discordActivity || {}
+  const activity = {
+    details: a.details || 'Bande rythmo',
+    state: a.state || undefined,
+    timestamps: { start: discordStart },
+    assets: { large_image: 'logo', large_text: 'LibreRythmo' },
+  }
+  try {
+    discordSock.write(discordFrame(1, { cmd: 'SET_ACTIVITY', args: { pid: process.pid, activity }, nonce: `${discordStart}-${Math.random()}` }))
+  } catch {}
+}
+function discordSet(enabled) {
+  if (enabled) discordConnect()
+  else discordDisconnect()
+}
+ipcMain.handle('discord-activity', (e, a) => { discordActivity = a || null; discordPush() })
 
 // la barre de menus native + les menus déroulants suivent le thème de l'app
 function applyNativeTheme() {
@@ -206,6 +276,7 @@ const MENU_STR = {
     wave: "Forme d'onde audio",
     videoInfo: 'Infos vidéo',
     lightMode: 'Mode clair',
+    discord: 'Discord Rich Presence',
     language: 'Langue',
     fullscreen: 'Plein écran',
     help: 'Aide',
@@ -268,6 +339,7 @@ const MENU_STR = {
     wave: 'Audio waveform',
     videoInfo: 'Video info',
     lightMode: 'Light mode',
+    discord: 'Discord Rich Presence',
     language: 'Language',
     fullscreen: 'Full screen',
     help: 'Help',
@@ -376,6 +448,7 @@ function buildMenu() {
         { label: s.wave, type: 'checkbox', checked: settings.wave, click: (item) => send('toggle-wave', item.checked) },
         { label: s.videoInfo, type: 'checkbox', checked: settings.info, click: (item) => send('toggle-video-info', item.checked) },
         { label: s.lightMode, type: 'checkbox', checked: settings.theme === 'light', click: (item) => send('toggle-theme', item.checked) },
+        { label: s.discord, type: 'checkbox', checked: settings.discord, click: (item) => send('toggle-discord', item.checked) },
         { type: 'separator' },
         {
           label: s.language,
@@ -425,6 +498,10 @@ ipcMain.handle('set-lang', (e, o) => {
   settings.info = !!o.info
   settings.autosave = !!o.autosave
   if (['gpu', 'cpu'].includes(o.encoder)) settings.encoder = o.encoder
+  if (o.discord !== undefined && !!o.discord !== settings.discord) {
+    settings.discord = !!o.discord
+    discordSet(settings.discord)
+  }
   saveSettings()
   applyNativeTheme()
   buildMenu()
@@ -436,6 +513,7 @@ app.whenReady().then(() => {
   settings.lang = app.getLocale().toLowerCase().startsWith('fr') ? 'fr' : 'en'
   loadSettings()
   createWindow()
+  if (settings.discord) discordConnect()
 })
 app.on('window-all-closed', () => app.quit())
 

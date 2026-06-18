@@ -164,10 +164,18 @@ function setTheme(th) {
 }
 
 let exportEncoder = 'gpu' // préférence persistée ([export] encoder dans settings.ini)
+let discordOn = false // Discord Rich Presence (Affichage → Discord Rich Presence)
 
 // pousse tous les réglages au process principal : persistance settings.ini + menu
 function pushSettings() {
-  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, autosave: autosaveOn, encoder: exportEncoder })
+  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, autosave: autosaveOn, encoder: exportEncoder, discord: discordOn })
+}
+
+// présence Discord : titre du projet + nombre de répliques (poussé sur les évènements clés)
+function updateDiscordActivity() {
+  if (!discordOn) return
+  const name = projectPath ? projectPath.replace(/^.*[\\/]/, '').replace(/\.(rythmo|json)$/i, '') : t('untitled')
+  window.api.discordActivity({ details: name, state: t('discordLines', project.lines.length) })
 }
 
 function markDirty() {
@@ -2485,6 +2493,7 @@ async function newProjectAction() {
   renderLoopsPanel()
   if (activeTab === 'tracks') renderTracks()
   setClean()
+  updateDiscordActivity()
 }
 
 async function setVideo(path, url) {
@@ -2496,6 +2505,7 @@ async function setVideo(path, url) {
   $('dropHint').style.display = 'none'
   markDirty()
   buildWaveform()
+  updateDiscordActivity()
 }
 
 async function openVideoDialog() {
@@ -2509,6 +2519,7 @@ async function saveProject() {
   if (p) {
     projectPath = p
     setClean()
+    updateDiscordActivity()
     toast(t('saved'))
   }
 }
@@ -2517,6 +2528,7 @@ async function saveProjectAs() {
   if (p) {
     projectPath = p
     setClean()
+    updateDiscordActivity()
     toast(t('saved'))
   }
 }
@@ -2558,6 +2570,7 @@ async function loadProjectData(data, path) {
   renderLinesLog()
   renderLoopsPanel()
   setClean()
+  updateDiscordActivity()
   if (project.videoPath) {
     const url = await window.api.fileUrl(project.videoPath)
     if (url) {
@@ -2925,6 +2938,11 @@ window.api.onMenu((action, arg) => {
     showVideoInfo = !!arg
     updateVideoInfoPanel()
     pushSettings()
+  }
+  else if (action === 'toggle-discord') {
+    discordOn = !!arg
+    pushSettings()
+    updateDiscordActivity()
   }
 })
 
@@ -3664,6 +3682,7 @@ function loop() {
   showWave = st.wave !== false
   showVideoInfo = !!st.info
   exportEncoder = st.encoder === 'cpu' ? 'cpu' : 'gpu'
+  discordOn = !!st.discord
   setTheme(st.theme)
   addCharacter()
   undoStack = []
@@ -3672,5 +3691,6 @@ function loop() {
   setClean()
   applyLang()
   applyBandHeight() // hauteur de bande = nb de pistes × hauteur de piste fixe
+  updateDiscordActivity()
   requestAnimationFrame(loop)
 })()

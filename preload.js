@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateAvailable: (cb) => ipcRenderer.on('update-available', (e, v) => cb(v)),
   openReleases: () => ipcRenderer.invoke('open-releases'),
   setLang: (o) => ipcRenderer.invoke('set-lang', o),
+  discordActivity: (a) => ipcRenderer.invoke('discord-activity', a),
   exportSaveDialog: (suggested) => ipcRenderer.invoke('export-save-dialog', suggested),
   exportStart: (opts) => ipcRenderer.invoke('export-start', opts),
   exportFrame: (buf) => ipcRenderer.invoke('export-frame', buf),

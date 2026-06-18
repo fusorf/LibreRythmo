@@ -3,6 +3,14 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.13] - 2026-06-18
+
+### Ajouté
+- **Discord Rich Presence** (activable depuis **Affichage → Discord Rich Presence**) : affiche le
+  projet en cours et le nombre de répliques dans Discord. Implémenté via l'IPC Discord local (sans
+  dépendance). Nécessite de renseigner l'**Application ID** Discord (`DISCORD_CLIENT_ID` dans
+  `main.js`) ; sans ID valide, la fonction reste inactive sans erreur.
+
 ## [1.4.12] - 2026-06-18
 
 ### Modifié
