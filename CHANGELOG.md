@@ -3,6 +3,13 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.10] - 2026-06-18
+
+### Corrigé
+- **Mode lecture plein écran** : la bande n'apparaissait pas et la vidéo n'était pas centrée
+  (le canvas restait à la taille d'avant le passage en plein écran OS). Le canvas se cale
+  désormais sur sa taille affichée réelle à chaque frame.
+
 ## [1.4.9] - 2026-06-18
 
 ### Ajouté

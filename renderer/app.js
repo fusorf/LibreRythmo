@@ -3495,17 +3495,23 @@ let playerTracks = new Set()
 const pcanvas = $('playerCanvas')
 const pctx = pcanvas.getContext('2d')
 
+// synchronise la résolution interne du canvas sur sa taille AFFICHÉE (clientWidth/Height) :
+// indispensable car le plein écran OS redimensionne la fenêtre après l'ouverture du mode.
 function resizePlayerCanvas() {
   const dpr = window.devicePixelRatio || 1
-  const w = window.innerWidth, h = window.innerHeight
-  pcanvas.style.width = w + 'px'; pcanvas.style.height = h + 'px'
-  pcanvas.width = Math.round(w * dpr); pcanvas.height = Math.round(h * dpr)
-  pctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  const w = pcanvas.clientWidth, h = pcanvas.clientHeight
+  if (!w || !h) return
+  if (pcanvas.width !== Math.round(w * dpr) || pcanvas.height !== Math.round(h * dpr)) {
+    pcanvas.width = Math.round(w * dpr); pcanvas.height = Math.round(h * dpr)
+    pctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
 }
+window.addEventListener('resize', () => { if (player.open) resizePlayerCanvas() })
 
-// disposition vidéo (letterbox) + bande, à la manière de l'export
+// disposition vidéo (letterbox) + bande, à la manière de l'export — basée sur la taille
+// réelle affichée du canvas
 function playerLayout() {
-  const W = window.innerWidth, H = window.innerHeight
+  const W = pcanvas.clientWidth, H = pcanvas.clientHeight
   const bandH = clamp(Math.round(H * player.bandFrac), 48, Math.round(H * 0.4))
   const regionH = H - bandH
   const ar = (video.videoWidth || 16) / (video.videoHeight || 9)
@@ -3517,7 +3523,8 @@ function playerLayout() {
 }
 
 function drawPlayer() {
-  const W = window.innerWidth, H = window.innerHeight
+  resizePlayerCanvas() // garde le canvas calé sur la taille affichée (entrée/sortie plein écran)
+  const W = pcanvas.clientWidth, H = pcanvas.clientHeight
   pctx.fillStyle = '#000'; pctx.fillRect(0, 0, W, H)
   const L = playerLayout()
   if (video.videoWidth) pctx.drawImage(video, L.video.x, L.video.y, L.video.w, L.video.h)
