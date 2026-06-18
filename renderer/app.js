@@ -94,7 +94,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 1, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [] }
+  return { version: 1, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], audioTracks: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
@@ -209,7 +209,7 @@ let undoStack = []
 let redoStack = []
 let undoCoalesce = false // les pushUndo d'une même opération (même tick) ne comptent qu'une fois
 
-const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops })
+const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, audioTracks: project.audioTracks })
 
 function pushUndo() {
   if (undoCoalesce) return
@@ -237,6 +237,7 @@ function restoreState(snap) {
   project.characters = d.characters
   project.lines = d.lines
   project.loops = d.loops || []
+  if (d.audioTracks) project.audioTracks = d.audioTracks
   if (!getChar(selectedCharId)) selectedCharId = project.characters[0]?.id || null
   selectedIds = new Set([...selectedIds].filter((id) => getLine(id)))
   renderChars()
@@ -246,6 +247,7 @@ function restoreState(snap) {
   refreshInspector()
   refreshTrackCountUI()
   renderLoopsPanel()
+  if (activeTab === 'tracks') renderTracks()
   markDirty()
 }
 
@@ -297,6 +299,14 @@ function applyLang() {
   $('btnLoopNext').title = t('loopNextTitle')
   $('loopsEmpty').textContent = t('loopsEmpty')
   renderLoopsPanel()
+  // onglets + vue Pistes
+  $('tabRythmo').textContent = t('tabRythmo')
+  $('tabTracks').textContent = t('tabTracks')
+  $('btnImportAudio').textContent = t('importAudio')
+  $('shiftLabel').textContent = t('shiftLabel')
+  $('shiftUnit').textContent = t('shiftUnit')
+  $('btnShiftApply').textContent = t('shiftApply')
+  if (activeTab === 'tracks') renderTracks()
   $('zoomWrap').title = t('zoomTitle')
   $('trackCount').title = t('trackCountTitle')
   refreshTrackCountUI()
@@ -1036,6 +1046,251 @@ function drawLoops() {
   ctx.restore()
 }
 
+// ============================================================ onglets + pistes audio/vidéo
+// Onglet « Rythmo » = éditeur de bande (inchangé). Onglet « Pistes » = vue en lanes
+// de la piste vidéo (référence) + des pistes audio (embarquées du conteneur, énumérées
+// via ffmpeg, et fichiers audio importés). Chaque piste audio se glisse horizontalement
+// pour fixer son offset (appliqué à l'export ; aperçu audio à venir avec la lecture
+// découplée). Modèle : project.audioTracks = [{id, type:'embedded'|'file', index?, path?,
+// offset, exported, isDefault, label, lang, codec, channels}].
+let activeTab = 'rythmo'
+const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
+const fmtOffset = (s) => `${s >= 0 ? '+' : '−'}${Math.abs(s).toFixed(2)} s`
+
+function setTab(name) {
+  activeTab = name === 'tracks' ? 'tracks' : 'rythmo'
+  const onTracks = activeTab === 'tracks'
+  $('tabRythmo').classList.toggle('active', !onTracks)
+  $('tabTracks').classList.toggle('active', onTracks)
+  $('band').classList.toggle('hidden', onTracks)
+  $('inspector').classList.toggle('hidden', onTracks)
+  $('tracksView').classList.toggle('hidden', !onTracks)
+  if (onTracks) renderTracks()
+}
+$('tabRythmo').addEventListener('click', () => setTab('rythmo'))
+$('tabTracks').addEventListener('click', () => setTab('tracks'))
+
+function embeddedTrackLabel(p) {
+  return t('trackAudioName', p.index + 1) + (p.lang ? ` (${p.lang})` : '')
+}
+
+// (re)synchronise les pistes audio embarquées avec le sondage ffmpeg, en conservant
+// les réglages (offset, export, défaut) déjà présents pour le même index, et les
+// pistes externes importées. Appelée au chargement d'une vidéo.
+async function probeAndSyncAudio() {
+  if (!project.videoPath) return
+  const probed = (await window.api.probeAudioTracks(project.videoPath)) || []
+  const externals = project.audioTracks.filter((tr) => tr.type === 'file')
+  const prev = new Map(project.audioTracks.filter((tr) => tr.type === 'embedded').map((tr) => [tr.index, tr]))
+  const embedded = probed.map((p) => {
+    const old = prev.get(p.index)
+    return {
+      id: old?.id || uid(),
+      type: 'embedded',
+      index: p.index,
+      lang: p.lang, codec: p.codec, channels: p.channels,
+      label: old?.label || embeddedTrackLabel(p),
+      offset: old?.offset || 0,
+      exported: old ? old.exported !== false : true,
+      isDefault: old?.isDefault || false,
+    }
+  })
+  project.audioTracks = [...embedded, ...externals]
+  if (embedded.length && !project.audioTracks.some((tr) => tr.isDefault)) {
+    embedded[0].isDefault = true
+    embedded[0].exported = true
+  }
+  if (activeTab === 'tracks') renderTracks()
+}
+
+// échelle d'une lane : toute la largeur représente 0..durée de la vidéo
+const laneDur = () => (isFinite(video.duration) && video.duration > 0 ? video.duration : 0)
+
+function renderTracks() {
+  const wrap = $('tracksLanes')
+  wrap.innerHTML = ''
+  $('tracksHint').textContent = project.videoPath
+    ? (laneDur() ? '' : t('tracksLoading'))
+    : t('tracksNoVideo')
+  if (!project.videoPath) return
+
+  // ligne vidéo (référence, non déplaçable)
+  wrap.appendChild(trackRow({ id: '__video__', kind: 'video', label: t('trackVideoName'), offset: 0 }))
+  if (!project.audioTracks.length) {
+    const e = document.createElement('div')
+    e.className = 'trk-empty'
+    e.textContent = t('tracksNoAudio')
+    wrap.appendChild(e)
+  }
+  for (const tr of project.audioTracks) wrap.appendChild(trackRow(tr))
+  layoutClips()
+}
+
+function trackRow(tr) {
+  const row = document.createElement('div')
+  row.className = 'trk-row' + (tr.kind === 'video' ? ' video' : '')
+  row.dataset.id = tr.id
+
+  const ctl = document.createElement('div')
+  ctl.className = 'trk-ctl'
+  const label = document.createElement('span')
+  label.className = 'trk-label'
+  const meta = tr.type === 'embedded' ? `${tr.codec || ''}${tr.channels ? ` · ${tr.channels === 1 ? 'mono' : tr.channels === 2 ? 'stéréo' : tr.channels + 'ch'}` : ''}` : tr.type === 'file' ? t('trackExternal') : ''
+  label.textContent = tr.label || baseName(tr.path) || ''
+  label.title = meta ? `${label.textContent} — ${meta}` : label.textContent
+  ctl.appendChild(label)
+
+  if (tr.kind !== 'video') {
+    // export (case) + défaut (radio) + offset + suppression (externe)
+    const exp = document.createElement('label')
+    const expCb = document.createElement('input')
+    expCb.type = 'checkbox'; expCb.checked = tr.exported !== false
+    expCb.addEventListener('change', () => { pushUndoTracks(); tr.exported = expCb.checked; markDirty() })
+    exp.append(expCb, document.createTextNode(t('trackExport')))
+    exp.title = t('trackExportTitle')
+
+    const def = document.createElement('label')
+    const defRb = document.createElement('input')
+    defRb.type = 'radio'; defRb.name = 'trk-default'; defRb.checked = !!tr.isDefault
+    defRb.addEventListener('change', () => {
+      pushUndoTracks()
+      for (const o of project.audioTracks) o.isDefault = false
+      tr.isDefault = true
+      if (tr.exported === false) { tr.exported = true; renderTracks() }
+      markDirty()
+    })
+    def.append(defRb, document.createTextNode(t('trackDefault')))
+    def.title = t('trackDefaultTitle')
+
+    const off = document.createElement('span')
+    off.className = 'trk-off'
+    off.textContent = fmtOffset(tr.offset || 0)
+
+    ctl.append(exp, def, off)
+    if (tr.type === 'file') {
+      const del = document.createElement('button')
+      del.className = 'trk-del'; del.textContent = '✕'; del.title = t('trackDelete')
+      del.addEventListener('click', () => {
+        pushUndoTracks()
+        project.audioTracks = project.audioTracks.filter((k) => k.id !== tr.id)
+        renderTracks(); markDirty()
+      })
+      ctl.appendChild(del)
+    }
+  }
+
+  const lane = document.createElement('div')
+  lane.className = 'trk-lane'
+  lane.dataset.id = tr.id
+  const clip = document.createElement('div')
+  clip.className = 'trk-clip'
+  const clabel = document.createElement('span')
+  clabel.className = 'trk-clip-label'
+  clabel.textContent = tr.kind === 'video' ? '🎞' : '🔊'
+  clip.appendChild(clabel)
+  lane.appendChild(clip)
+  const ph = document.createElement('div')
+  ph.className = 'trk-ph'
+  lane.appendChild(ph)
+  if (tr.kind !== 'video') attachClipDrag(clip, lane, tr)
+  row.append(ctl, lane)
+  return row
+}
+
+// place chaque clip selon l'offset de sa piste et la largeur courante de sa lane
+function layoutClips() {
+  const dur = laneDur()
+  for (const lane of $('tracksLanes').querySelectorAll('.trk-lane')) {
+    const w = lane.clientWidth
+    const clip = lane.querySelector('.trk-clip')
+    const id = lane.dataset.id
+    const tr = id === '__video__' ? { offset: 0 } : project.audioTracks.find((k) => k.id === id)
+    const off = tr ? (tr.offset || 0) : 0
+    const pps = dur > 0 ? w / dur : 0
+    clip.style.width = `${w}px`
+    clip.style.left = `${off * pps}px`
+  }
+}
+
+// glisser un clip = régler l'offset de la piste (aimanté à 0 près de l'origine)
+function attachClipDrag(clip, lane, tr) {
+  clip.addEventListener('pointerdown', (e) => {
+    const dur = laneDur()
+    if (dur <= 0) return
+    const pps = lane.clientWidth / dur
+    const startX = e.clientX
+    const startOff = tr.offset || 0
+    clip.setPointerCapture(e.pointerId)
+    let pushed = false
+    const move = (ev) => {
+      if (!pushed) { pushUndoTracks(); pushed = true }
+      let off = startOff + (ev.clientX - startX) / pps
+      if (Math.abs(off) < 6 / pps) off = 0 // aimant sur l'origine
+      off = clamp(off, -dur, dur)
+      tr.offset = off
+      clip.style.left = `${off * pps}px`
+      const offEl = lane.parentElement.querySelector('.trk-off')
+      if (offEl) offEl.textContent = fmtOffset(off)
+      markDirty()
+    }
+    const up = () => {
+      clip.removeEventListener('pointermove', move)
+      clip.removeEventListener('pointerup', up)
+    }
+    clip.addEventListener('pointermove', move)
+    clip.addEventListener('pointerup', up)
+  })
+}
+
+// l'offset/export/défaut des pistes entre dans l'annuler/rétablir (instantané dédié)
+function pushUndoTracks() { pushUndo() }
+
+function updateTracksPlayhead() {
+  if (activeTab !== 'tracks') return
+  const dur = laneDur()
+  const now = effectiveTime()
+  for (const lane of $('tracksLanes').querySelectorAll('.trk-lane')) {
+    const ph = lane.querySelector('.trk-ph')
+    const pps = dur > 0 ? lane.clientWidth / dur : 0
+    ph.style.left = `${now * pps}px`
+  }
+}
+
+// ---------- import d'un fichier audio externe ----------
+function addExternalAudio(p) {
+  if (!project.videoPath) { toast(t('loadVideoFirst')); return }
+  if (!p) return
+  pushUndoTracks()
+  project.audioTracks.push({ id: uid(), type: 'file', path: p, label: baseName(p), offset: 0, exported: true, isDefault: false, channels: 2 })
+  if (activeTab !== 'tracks') setTab('tracks')
+  else renderTracks()
+  markDirty()
+  toast(t('audioImported', baseName(p)))
+}
+$('btnImportAudio').addEventListener('click', async () => {
+  const p = await window.api.openAudio()
+  if (p) addExternalAudio(p)
+})
+
+// ---------- décalage global de la bande (toutes les répliques) ----------
+$('btnShiftApply').addEventListener('click', () => {
+  const frames = Number($('shiftAmount').value) || 0
+  if (!frames || !project.lines.length) return
+  let dt = frames / project.fps
+  const minStart = Math.min(...project.lines.map(lineStart))
+  if (minStart + dt < 0) dt = -minStart // ne pas passer sous 0
+  if (!dt) return
+  pushUndo()
+  for (const l of project.lines) for (const w of l.words) { w.start += dt; w.end += dt }
+  $('shiftAmount').value = '0'
+  renderLinesLog()
+  refreshInspector()
+  markDirty()
+  toast(t('shiftDone', frames))
+})
+
+new ResizeObserver(() => { if (activeTab === 'tracks') layoutClips() }).observe($('tracksLanes'))
+
 // ============================================================ video info + fps auto-detect
 let videoInfo = null
 let showVideoInfo = false
@@ -1104,7 +1359,9 @@ video.addEventListener('loadedmetadata', () => {
     }
   })
   detectFps()
+  probeAndSyncAudio()
   updateVideoInfoPanel()
+  if (activeTab === 'tracks') renderTracks() // durée connue → échelle des lanes
 })
 
 // la vidéo est prête à s'afficher (ou en échec) → on lève l'overlay de chargement
@@ -2116,11 +2373,13 @@ async function newProjectAction() {
   refreshInspector()
   renderLinesLog()
   renderLoopsPanel()
+  if (activeTab === 'tracks') renderTracks()
   setClean()
 }
 
 async function setVideo(path, url) {
   project.videoPath = path
+  project.audioTracks = [] // nouveau conteneur → pistes re-sondées (probeAndSyncAudio)
   videoInfo = null
   showLoading(true, t('loadingVideo'))
   video.src = url
@@ -2168,6 +2427,8 @@ async function loadProjectData(data, path) {
   project.characters ||= []
   project.lines ||= []
   project.loops ||= []
+  // rétrocompat : modèle v2 « sources.audioTracks » accepté, sinon liste vide
+  project.audioTracks ||= (data.sources && data.sources.audioTracks) || []
   // nombre de pistes : valeur enregistrée si présente, sinon déduite des données
   // (les anciens projets sans champ `tracks` ne doivent jamais masquer une piste)
   const maxUsed = project.lines.reduce((m, l) => Math.max(m, l.track || 0), -1)
@@ -2642,6 +2903,8 @@ window.addEventListener('drop', async (e) => {
     const p = window.api.pathForFile(file)
     const url = await window.api.fileUrl(p)
     if (url) setVideo(p, url)
+  } else if (/\.(wav|mp3|m4a|aac|flac|ogg|opus)$/.test(name)) {
+    addExternalAudio(window.api.pathForFile(file))
   } else {
     toast(t('unknownFormat'))
   }
@@ -2936,9 +3199,17 @@ async function runExport(outPathOverride) {
 
   const bw = Math.max(2, Math.round(L.band.w / 2) * 2)
   const bh = Math.max(2, Math.round(L.band.h / 2) * 2)
+  // pistes audio à inclure (avec offset gravé) ; vide → repli sur la 1re piste du conteneur
+  const audio = (project.audioTracks || []).filter((tr) => tr.exported !== false && (tr.type !== 'file' || tr.path)).map((tr) => ({
+    path: tr.type === 'file' ? tr.path : project.videoPath,
+    aIndex: tr.type === 'file' ? 0 : tr.index,
+    offset: tr.offset || 0,
+    exported: true,
+    isDefault: !!tr.isDefault,
+  }))
   const r = await window.api.exportStart({
     fps, W, H, duration: dur, layout: L, bandW: bw, bandH: bh,
-    videoPath: project.videoPath, outPath,
+    videoPath: project.videoPath, outPath, audio,
     encoder: $('expEnc').value === 'cpu' ? 'cpu' : 'gpu',
   })
   if (r.error) {
@@ -3013,7 +3284,8 @@ $('expGo').addEventListener('click', runExport)
 function loop() {
   $('timecode').textContent = formatTc(effectiveTime(), project.fps)
   btnPlay.classList.toggle('playing', !video.paused)
-  draw()
+  if (activeTab === 'tracks') updateTracksPlayhead()
+  else draw()
   requestAnimationFrame(loop)
 }
 

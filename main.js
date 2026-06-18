@@ -224,6 +224,8 @@ const MENU_STR = {
     dlgSrtSave: 'Exporter les sous-titres',
     dlgVideo: 'Ouvrir une vidéo',
     dlgVideoFilter: 'Vidéo',
+    dlgAudio: 'Importer un fichier audio',
+    dlgAudioFilter: 'Audio',
     dlgProject: 'Ouvrir un projet',
     dlgProjectFilter: 'Projet rythmo',
     dlgSave: 'Enregistrer le projet',
@@ -284,6 +286,8 @@ const MENU_STR = {
     dlgSrtSave: 'Export subtitles',
     dlgVideo: 'Open a video',
     dlgVideoFilter: 'Video',
+    dlgAudio: 'Import an audio file',
+    dlgAudioFilter: 'Audio',
     dlgProject: 'Open a project',
     dlgProjectFilter: 'Rythmo project',
     dlgSave: 'Save project',
@@ -443,6 +447,15 @@ ipcMain.handle('open-video', async () => {
   if (r.canceled || !r.filePaths.length) return null
   const p = r.filePaths[0]
   return { path: p, url: pathToFileURL(p).href }
+})
+
+ipcMain.handle('open-audio', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: S().dlgAudio,
+    filters: [{ name: S().dlgAudioFilter, extensions: ['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus'] }],
+    properties: ['openFile'],
+  })
+  return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
 })
 
 ipcMain.handle('file-url', (e, p) => {
@@ -644,6 +657,40 @@ ipcMain.handle('probe-fps', (e, p) => {
   })
 })
 
+// énumération des pistes audio du conteneur via ffmpeg -i (ffprobe n'est pas fourni
+// par ffmpeg-static). On parse les lignes « Stream #x:y(lang): Audio: codec, … » et
+// on numérote les pistes audio dans l'ordre (index relatif a:0, a:1, …) pour le mapping.
+const CHANNELS = { mono: 1, stereo: 2, '2.1': 3, quad: 4, '3.0': 3, '4.0': 4, '5.0': 5, '5.1': 6, '6.1': 7, '7.1': 8, downmix: 2 }
+ipcMain.handle('probe-audio-tracks', (e, p) => {
+  if (!ffmpegPath || !p) return []
+  return new Promise((resolve) => {
+    let err = ''
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      const tracks = []
+      let ord = 0
+      for (const line of err.split(/\r?\n/)) {
+        const sm = line.match(/Stream #\d+:(\d+)(?:\[[^\]]*\])?(?:\(([^)]+)\))?: Audio:\s*([^\s,]+)/)
+        if (!sm) continue
+        const lang = sm[2] && sm[2] !== 'und' ? sm[2] : null
+        const codec = sm[3]
+        let channels = 2
+        const cm = line.match(/,\s*(mono|stereo|2\.1|quad|3\.0|4\.0|5\.0|5\.1(?:\(side\))?|6\.1|7\.1|downmix|(\d+) channels)/)
+        if (cm) channels = CHANNELS[cm[1].replace('(side)', '')] || (cm[2] ? Number(cm[2]) : 2)
+        tracks.push({ index: ord++, lang, codec, channels })
+      }
+      resolve(tracks)
+    }
+    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', p], { stdio: ['ignore', 'ignore', 'pipe'] })
+    proc.stderr.on('data', (d) => { err += d })
+    proc.on('close', finish)
+    proc.on('error', () => resolve([]))
+    setTimeout(() => { try { proc.kill() } catch {} finish() }, 5000)
+  })
+})
+
 function encoderArgs(enc, W, H, fps) {
   switch (enc) {
     case 'h264_nvenc':
@@ -683,13 +730,32 @@ ipcMain.handle('export-start', async (e, opts) => {
     `[base][0:v]overlay=${Math.round(band.x)}:${Math.round(band.y)}[outv]`,
     `[outv]fps=${fps}[out]`, // verrouille la cadence de sortie
   ].join(';')
-  const args = [
-    '-y',
+  // entrées : 0 = bande (RGBA brut via pipe), 1 = vidéo. Les pistes audio
+  // sélectionnées sont ajoutées comme entrées supplémentaires (2, 3, …) chacune avec
+  // son -itsoffset (décalage gravé), puis mappées comme autant de pistes de sortie.
+  const inputs = [
     '-f', 'rawvideo', '-pixel_format', 'rgba',
     '-video_size', `${opts.bandW}x${opts.bandH}`, '-framerate', String(fps), '-i', 'pipe:0',
     '-hwaccel', 'auto', '-i', opts.videoPath,
+  ]
+  const maps = ['-map', '[out]']
+  const sel = (opts.audio || []).filter((a) => a.exported && a.path)
+  if (sel.length) {
+    sel.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)) // piste par défaut en premier
+    let idx = 2
+    for (const a of sel) {
+      inputs.push('-itsoffset', (Number(a.offset) || 0).toFixed(3), '-i', a.path)
+      maps.push('-map', `${idx}:a:${a.aIndex || 0}`)
+      idx++
+    }
+  } else {
+    maps.push('-map', '1:a?') // repli : comportement historique (première piste audio)
+  }
+  const args = [
+    '-y',
+    ...inputs,
     '-filter_complex', filter,
-    '-map', '[out]', '-map', '1:a?',
+    ...maps,
     ...encoderArgs(enc, W, H, fps),
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k',

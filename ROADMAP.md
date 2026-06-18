@@ -130,16 +130,18 @@ L'éditeur actuel, inchangé.
 
 ### 1.4.2 Onglet 2 — Pistes vidéo & audio · XL
 Vue en lanes façon NLE :
-- Affiche la piste vidéo + **toutes les pistes audio** du conteneur.
-- **Offset réglable par piste** (remplace avantageusement le hack « gauche=VO / droite=VI » de Cappella).
-- **Switch de la piste audio active à la lecture** (couvre le besoin VO/VI ; raccourci type `F2`).
-- **Import d'un fichier audio externe** (VF témoin, musique, voix enregistrée à part) déposé puis **glissé sur la timeline pour le caler**.
-- **Choix des pistes à l'export** depuis cette vue (case par piste + piste par défaut).
+- ✅ Affiche la piste vidéo + **toutes les pistes audio** du conteneur (énumérées via ffmpeg).
+- ✅ **Offset réglable par piste** par glisser horizontal (remplace le hack « gauche=VO / droite=VI »).
+- ⏭ **Switch de la piste audio active à la lecture** — **Phase 2** (nécessite la lecture découplée).
+- ✅ **Import d'un fichier audio externe** (bouton + glisser-déposer), aligné par offset.
+- ✅ **Choix des pistes à l'export** (case par piste + piste par défaut).
 
 ### 1.4.3 Refonte technique `main.js` · L
-- IPC `probe-audio-tracks` (via ffprobe/ffmpeg) : index, langue, titre, nb de canaux.
-- **Lecture audio découplée** : Chromium ne bascule pas fiablement la piste d'un fichier multiplexé. Extraire chaque piste vers des fichiers temp (`-map 0:a:N`) et jouer via un `<audio>` synchronisé sur `video.currentTime` (vidéo `muted`).
-- Export : remplacer `-map '1:a?'` par un mapping dynamique (`-map 1:a:0 -map 1:a:1 …`), `-c:a copy` si compatible MP4 sinon repli AAC, conservation langue/disposition par piste, application des offsets.
+- ✅ IPC `probe-audio-tracks` (parse `ffmpeg -i`, ffprobe non fourni par ffmpeg-static) : index, langue, codec, nb de canaux.
+- ⏭ **Lecture audio découplée** — **Phase 2** : extraire chaque piste vers des fichiers temp (`-map 0:a:N`) et jouer via un `<audio>` synchronisé sur `video.currentTime` (vidéo `muted`). Débloque aussi l'aperçu audible des offsets et le switch VO/VI.
+- ✅ Export : mapping dynamique des pistes choisies avec **offsets gravés** (`-itsoffset`), repli AAC ; repli sur `-map 1:a?` si aucune piste configurée. (`-c:a copy` conditionnel : à affiner en Phase 2.)
+
+> **Phase 1 livrée** (v1.4.0) : onglets, énumération, offsets par glisser + export, import audio externe, décalage global. **Phase 2** (à venir) : lecture audio découplée → aperçu audible des offsets + bascule de piste à la lecture.
 
 ---
 

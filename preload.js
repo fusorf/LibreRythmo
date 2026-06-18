@@ -3,12 +3,14 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
   openVideo: () => ipcRenderer.invoke('open-video'),
+  openAudio: () => ipcRenderer.invoke('open-audio'),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
   openProject: () => ipcRenderer.invoke('open-project'),
   openProjectPath: (p) => ipcRenderer.invoke('open-project-path', p),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   probeEncoder: () => ipcRenderer.invoke('probe-encoder'),
   probeFps: (p) => ipcRenderer.invoke('probe-fps', p),
+  probeAudioTracks: (p) => ipcRenderer.invoke('probe-audio-tracks', p),
   saveProject: (json, p) => ipcRenderer.invoke('save-project', json, p),
   saveProjectAs: (json, p) => ipcRenderer.invoke('save-project-as', json, p),
   importSrt: () => ipcRenderer.invoke('import-srt'),

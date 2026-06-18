@@ -3,6 +3,30 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.0] - 2026-06-18
+
+Bandeau en onglets + pistes audio multiples (Phase 1).
+
+### Ajouté
+- **Onglets du bandeau du bas** : « Rythmo » (l'éditeur de bande, inchangé) et « Pistes »
+  (nouvelle vue audio/vidéo).
+- **Vue Pistes** : la piste vidéo de référence + **toutes les pistes audio du conteneur**,
+  énumérées via ffmpeg (codec, langue, nombre de canaux). Chaque piste audio se **glisse
+  horizontalement** pour fixer son **offset** d'alignement (aimanté à l'origine).
+- **Choix des pistes à l'export** : case « export » par piste + piste « défaut ». L'export MP4
+  mappe dynamiquement les pistes choisies, **offsets gravés** (`-itsoffset`), une piste de
+  sortie par piste cochée (repli sur le comportement historique si rien n'est configuré).
+- **Import d'un fichier audio externe** (VF témoin, musique, voix séparée) : bouton
+  « + Importer un audio… » ou glisser-déposer ; ajouté comme piste alignable.
+- **Décalage global de la bande** (ex-1.3.3) : décale toutes les répliques de ±N images, annulable.
+- IPC `probe-audio-tracks` (énumération via ffmpeg) ; modèle de projet étendu (`audioTracks`),
+  rétrocompatible (anciens projets inchangés).
+
+### À venir (Phase 2)
+- Aperçu **audible** des offsets et **bascule de piste audio à la lecture** (lecture audio
+  découplée : extraction des pistes vers des fichiers temp + `<audio>` synchronisé). L'offset
+  est pour l'instant stocké et appliqué à l'export, pas encore restitué en lecture temps réel.
+
 ## [1.3.0] - 2026-06-18
 
 Édition avancée (rattrapage Cappella).
