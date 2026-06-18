@@ -303,9 +303,6 @@ function applyLang() {
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
   $('btnImportAudio').textContent = t('importAudio')
-  $('shiftLabel').textContent = t('shiftLabel')
-  $('shiftUnit').textContent = t('shiftUnit')
-  $('btnShiftApply').textContent = t('shiftApply')
   if (activeTab === 'tracks') renderTracks()
   $('zoomWrap').title = t('zoomTitle')
   $('trackCount').title = t('trackCountTitle')
@@ -1050,15 +1047,21 @@ function drawLoops() {
 }
 
 // ============================================================ onglets + pistes audio/vidéo
-// Onglet « Rythmo » = éditeur de bande (inchangé). Onglet « Pistes » = vue en lanes
-// de la piste vidéo (référence) + des pistes audio (embarquées du conteneur, énumérées
-// via ffmpeg, et fichiers audio importés). Chaque piste audio se glisse horizontalement
-// pour fixer son offset (appliqué à l'export ; aperçu audio à venir avec la lecture
-// découplée). Modèle : project.audioTracks = [{id, type:'embedded'|'file', index?, path?,
-// offset, exported, isDefault, label, lang, codec, channels}].
+// Onglet « Rythmo » = éditeur de bande. Onglet « Pistes » = timeline façon montage :
+// piste vidéo de référence + pistes audio (embarquées + fichiers importés), avec le MÊME
+// zoom / défilement / curseur que la bande rythmo. Glisser une piste audio fixe son offset.
+// La piste « active » (haut-parleur) fournit la forme d'onde affichée sur la bande.
+// Modèle : project.audioTracks = [{id, type:'embedded'|'file', index?, path?, offset, label,
+// lang, codec, channels}] ; project.activeAudioId = piste active.
 let activeTab = 'rythmo'
+let selectedTrackId = null
+const TRK_LANE_H = 56
 const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
-const fmtOffset = (s) => `${s >= 0 ? '+' : '−'}${Math.abs(s).toFixed(2)} s`
+const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + ' ch' : '')
+
+const tcanvas = $('tracksCanvas')
+const tctx = tcanvas.getContext('2d')
+let tcw = 0, tch = 0
 
 function setTab(name) {
   activeTab = name === 'tracks' ? 'tracks' : 'rythmo'
@@ -1073,198 +1076,254 @@ function setTab(name) {
 $('tabRythmo').addEventListener('click', () => setTab('rythmo'))
 $('tabTracks').addEventListener('click', () => setTab('tracks'))
 
+// lanes affichées : vidéo (référence) puis pistes audio
+const trackLanes = () => [{ id: '__video__', kind: 'video' }, ...(project.audioTracks || [])]
+const audioById = (id) => (project.audioTracks || []).find((a) => a.id === id) || null
+function activeAudioTrack() {
+  const list = project.audioTracks || []
+  return audioById(project.activeAudioId) || list.find((a) => a.type === 'embedded') || list[0] || null
+}
+function activeAudioPath() {
+  const a = activeAudioTrack()
+  return a && a.type === 'file' ? a.path : project.videoPath
+}
+function setActiveAudio(id) {
+  if (project.activeAudioId === id) return
+  project.activeAudioId = id
+  renderTrackHeads()
+  markDirty()
+  buildWaveform() // la bande rythmo affiche la forme d'onde de la piste active
+}
+
 function embeddedTrackLabel(p) {
   return t('trackAudioName', p.index + 1) + (p.lang ? ` (${p.lang})` : '')
 }
 
-// (re)synchronise les pistes audio embarquées avec le sondage ffmpeg, en conservant
-// les réglages (offset, export, défaut) déjà présents pour le même index, et les
-// pistes externes importées. Appelée au chargement d'une vidéo.
+// (re)synchronise les pistes embarquées avec le sondage ffmpeg (offset conservé par
+// index), garde les pistes importées, choisit une piste active par défaut.
 async function probeAndSyncAudio() {
   if (!project.videoPath) return
   const probed = (await window.api.probeAudioTracks(project.videoPath)) || []
-  const externals = project.audioTracks.filter((tr) => tr.type === 'file')
-  const prev = new Map(project.audioTracks.filter((tr) => tr.type === 'embedded').map((tr) => [tr.index, tr]))
+  const externals = (project.audioTracks || []).filter((tr) => tr.type === 'file')
+  const prev = new Map((project.audioTracks || []).filter((tr) => tr.type === 'embedded').map((tr) => [tr.index, tr]))
   const embedded = probed.map((p) => {
     const old = prev.get(p.index)
     return {
-      id: old?.id || uid(),
-      type: 'embedded',
-      index: p.index,
+      id: old?.id || uid(), type: 'embedded', index: p.index,
       lang: p.lang, codec: p.codec, channels: p.channels,
-      label: old?.label || embeddedTrackLabel(p),
-      offset: old?.offset || 0,
-      exported: old ? old.exported !== false : true,
-      isDefault: old?.isDefault || false,
+      label: old?.label || embeddedTrackLabel(p), offset: old?.offset || 0,
     }
   })
   project.audioTracks = [...embedded, ...externals]
-  if (embedded.length && !project.audioTracks.some((tr) => tr.isDefault)) {
-    embedded[0].isDefault = true
-    embedded[0].exported = true
-  }
+  if (!audioById(project.activeAudioId)) project.activeAudioId = (embedded[0] || externals[0] || {}).id || null
   if (activeTab === 'tracks') renderTracks()
 }
 
-// échelle d'une lane : toute la largeur représente 0..durée de la vidéo
-const laneDur = () => (isFinite(video.duration) && video.duration > 0 ? video.duration : 0)
+// renderTracks = en-têtes (gauche) + (re)dimensionnement du canvas timeline
+function renderTracks() { renderTrackHeads(); resizeTracksCanvas() }
 
-function renderTracks() {
-  const wrap = $('tracksLanes')
+// ---------- en-têtes de pistes (colonne de gauche, façon NLE) ----------
+function renderTrackHeads() {
+  const wrap = $('trackHeads')
   wrap.innerHTML = ''
-  $('tracksHint').textContent = project.videoPath
-    ? (laneDur() ? '' : t('tracksLoading'))
-    : t('tracksNoVideo')
-  if (!project.videoPath) return
-
-  // ligne vidéo (référence, non déplaçable)
-  wrap.appendChild(trackRow({ id: '__video__', kind: 'video', label: t('trackVideoName'), offset: 0 }))
-  if (!project.audioTracks.length) {
-    const e = document.createElement('div')
-    e.className = 'trk-empty'
-    e.textContent = t('tracksNoAudio')
-    wrap.appendChild(e)
+  const spacer = document.createElement('div')
+  spacer.className = 'trk-head-spacer'
+  wrap.appendChild(spacer)
+  if (!project.videoPath) {
+    const e = document.createElement('div'); e.className = 'trk-empty'; e.textContent = t('tracksNoVideo')
+    wrap.appendChild(e); return
   }
-  for (const tr of project.audioTracks) wrap.appendChild(trackRow(tr))
-  layoutClips()
-}
-
-function trackRow(tr) {
-  const row = document.createElement('div')
-  row.className = 'trk-row' + (tr.kind === 'video' ? ' video' : '')
-  row.dataset.id = tr.id
-
-  const ctl = document.createElement('div')
-  ctl.className = 'trk-ctl'
-  const label = document.createElement('span')
-  label.className = 'trk-label'
-  const meta = tr.type === 'embedded' ? `${tr.codec || ''}${tr.channels ? ` · ${tr.channels === 1 ? 'mono' : tr.channels === 2 ? 'stéréo' : tr.channels + 'ch'}` : ''}` : tr.type === 'file' ? t('trackExternal') : ''
-  label.textContent = tr.label || baseName(tr.path) || ''
-  label.title = meta ? `${label.textContent} — ${meta}` : label.textContent
-  ctl.appendChild(label)
-
-  if (tr.kind !== 'video') {
-    // export (case) + défaut (radio) + offset + suppression (externe)
-    const exp = document.createElement('label')
-    const expCb = document.createElement('input')
-    expCb.type = 'checkbox'; expCb.checked = tr.exported !== false
-    expCb.addEventListener('change', () => { pushUndoTracks(); tr.exported = expCb.checked; markDirty() })
-    exp.append(expCb, document.createTextNode(t('trackExport')))
-    exp.title = t('trackExportTitle')
-
-    const def = document.createElement('label')
-    const defRb = document.createElement('input')
-    defRb.type = 'radio'; defRb.name = 'trk-default'; defRb.checked = !!tr.isDefault
-    defRb.addEventListener('change', () => {
-      pushUndoTracks()
-      for (const o of project.audioTracks) o.isDefault = false
-      tr.isDefault = true
-      if (tr.exported === false) { tr.exported = true; renderTracks() }
-      markDirty()
-    })
-    def.append(defRb, document.createTextNode(t('trackDefault')))
-    def.title = t('trackDefaultTitle')
-
-    const off = document.createElement('span')
-    off.className = 'trk-off'
-    off.textContent = fmtOffset(tr.offset || 0)
-
-    ctl.append(exp, def, off)
-    if (tr.type === 'file') {
-      const del = document.createElement('button')
-      del.className = 'trk-del'; del.textContent = '✕'; del.title = t('trackDelete')
-      del.addEventListener('click', () => {
-        pushUndoTracks()
-        project.audioTracks = project.audioTracks.filter((k) => k.id !== tr.id)
-        renderTracks(); markDirty()
-      })
-      ctl.appendChild(del)
+  for (const tr of trackLanes()) {
+    const row = document.createElement('div')
+    row.className = 'trk-head' + (tr.kind === 'video' ? ' video' : '') + (tr.id === selectedTrackId ? ' selected' : '')
+    row.style.height = TRK_LANE_H + 'px'
+    row.dataset.id = tr.id
+    if (tr.kind === 'video') {
+      const ic = document.createElement('span'); ic.className = 'trk-ic'; ic.textContent = '🎞'
+      const nm = document.createElement('span'); nm.className = 'trk-hname'; nm.textContent = t('trackVideoName')
+      row.append(ic, nm)
+    } else {
+      const on = tr.id === project.activeAudioId
+      const spk = document.createElement('button')
+      spk.className = 'trk-spk' + (on ? ' on' : '')
+      spk.textContent = on ? '🔊' : '🔈'
+      spk.title = t('trackActiveTitle')
+      spk.addEventListener('click', (e) => { e.stopPropagation(); setActiveAudio(tr.id) })
+      const nm = document.createElement('span'); nm.className = 'trk-hname'; nm.textContent = tr.label || baseName(tr.path)
+      const meta = document.createElement('span'); meta.className = 'trk-hmeta'
+      meta.textContent = tr.type === 'file' ? t('trackExternal') : `${tr.codec || ''} ${trackChannels(tr.channels)}`.trim()
+      const txt = document.createElement('span'); txt.className = 'trk-htxt'; txt.append(nm, meta)
+      row.append(spk, txt)
+      if (tr.type === 'file') {
+        const del = document.createElement('button')
+        del.className = 'trk-del'; del.textContent = '🗑'; del.title = t('trackDelete')
+        del.addEventListener('click', (e) => { e.stopPropagation(); deleteTrack(tr.id) })
+        row.appendChild(del)
+      }
     }
-  }
-
-  const lane = document.createElement('div')
-  lane.className = 'trk-lane'
-  lane.dataset.id = tr.id
-  const clip = document.createElement('div')
-  clip.className = 'trk-clip'
-  const clabel = document.createElement('span')
-  clabel.className = 'trk-clip-label'
-  clabel.textContent = tr.kind === 'video' ? '🎞' : '🔊'
-  clip.appendChild(clabel)
-  lane.appendChild(clip)
-  const ph = document.createElement('div')
-  ph.className = 'trk-ph'
-  lane.appendChild(ph)
-  if (tr.kind !== 'video') attachClipDrag(clip, lane, tr)
-  row.append(ctl, lane)
-  return row
-}
-
-// place chaque clip selon l'offset de sa piste et la largeur courante de sa lane
-function layoutClips() {
-  const dur = laneDur()
-  for (const lane of $('tracksLanes').querySelectorAll('.trk-lane')) {
-    const w = lane.clientWidth
-    const clip = lane.querySelector('.trk-clip')
-    const id = lane.dataset.id
-    const tr = id === '__video__' ? { offset: 0 } : project.audioTracks.find((k) => k.id === id)
-    const off = tr ? (tr.offset || 0) : 0
-    const pps = dur > 0 ? w / dur : 0
-    clip.style.width = `${w}px`
-    clip.style.left = `${off * pps}px`
+    row.addEventListener('click', () => { selectedTrackId = tr.id; renderTrackHeads() })
+    wrap.appendChild(row)
   }
 }
 
-// glisser un clip = régler l'offset de la piste (aimanté à 0 près de l'origine)
-function attachClipDrag(clip, lane, tr) {
-  clip.addEventListener('pointerdown', (e) => {
-    const dur = laneDur()
-    if (dur <= 0) return
-    const pps = lane.clientWidth / dur
-    const startX = e.clientX
-    const startOff = tr.offset || 0
-    clip.setPointerCapture(e.pointerId)
-    let pushed = false
-    const move = (ev) => {
-      if (!pushed) { pushUndoTracks(); pushed = true }
-      let off = startOff + (ev.clientX - startX) / pps
-      if (Math.abs(off) < 6 / pps) off = 0 // aimant sur l'origine
-      off = clamp(off, -dur, dur)
-      tr.offset = off
-      clip.style.left = `${off * pps}px`
-      const offEl = lane.parentElement.querySelector('.trk-off')
-      if (offEl) offEl.textContent = fmtOffset(off)
-      markDirty()
-    }
-    const up = () => {
-      clip.removeEventListener('pointermove', move)
-      clip.removeEventListener('pointerup', up)
-    }
-    clip.addEventListener('pointermove', move)
-    clip.addEventListener('pointerup', up)
-  })
+function deleteTrack(id) {
+  const tr = audioById(id)
+  if (!tr || tr.type !== 'file') return // seules les pistes importées se suppriment
+  pushUndo()
+  const wasActive = project.activeAudioId === id
+  project.audioTracks = project.audioTracks.filter((k) => k.id !== id)
+  if (selectedTrackId === id) selectedTrackId = null
+  if (wasActive) { project.activeAudioId = (activeAudioTrack() || {}).id || null; buildWaveform() }
+  renderTracks(); markDirty()
 }
 
-// l'offset/export/défaut des pistes entre dans l'annuler/rétablir (instantané dédié)
-function pushUndoTracks() { pushUndo() }
+// ---------- canvas timeline (même zoom/défilement/curseur que la bande) ----------
+function resizeTracksCanvas() {
+  const h = RULER_H + trackLanes().length * TRK_LANE_H
+  tcanvas.style.height = h + 'px'
+  const r = tcanvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  tcw = r.width; tch = h
+  tcanvas.width = Math.round(tcw * dpr)
+  tcanvas.height = Math.round(h * dpr)
+  tctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+new ResizeObserver(() => { if (activeTab === 'tracks') resizeTracksCanvas() }).observe($('tracksCanvasWrap'))
 
-function updateTracksPlayhead() {
-  if (activeTab !== 'tracks') return
-  const dur = laneDur()
+const tPps = () => (tcw > 0 ? tcw / clamp(secondsVisible, SEC_MIN, SEC_MAX) : pxPerSec)
+const tReadX = () => tcw * READ_RATIO
+const tTAt = (x, now) => now + (x - tReadX()) / tPps()
+
+function drawTracks() {
+  if (!tcw) { resizeTracksCanvas(); if (!tcw) return }
+  const pal = bandPal()
+  if (!project.videoPath) { tctx.fillStyle = pal.bg; tctx.fillRect(0, 0, tcw, tch); return }
   const now = effectiveTime()
-  for (const lane of $('tracksLanes').querySelectorAll('.trk-lane')) {
-    const ph = lane.querySelector('.trk-ph')
-    const pps = dur > 0 ? lane.clientWidth / dur : 0
-    ph.style.left = `${now * pps}px`
+  const pps = tPps()
+  const dur = isFinite(video.duration) ? video.duration : 0
+  const xAt = (tt) => tReadX() + (tt - now) * pps
+  const lanes = trackLanes()
+
+  tctx.fillStyle = pal.bg; tctx.fillRect(0, 0, tcw, tch)
+
+  // règle (mm:ss)
+  tctx.fillStyle = pal.rulerBg; tctx.fillRect(0, 0, tcw, RULER_H)
+  const step = pps < 70 ? 2 : 1
+  const t0 = Math.max(0, Math.floor(tTAt(0, now)))
+  const t1 = Math.ceil(tTAt(tcw, now))
+  tctx.font = '12px Consolas, monospace'; tctx.textAlign = 'left'; tctx.textBaseline = 'middle'
+  for (let s = t0 - (t0 % step); s <= t1; s += step) {
+    if (s < 0) continue
+    const x = xAt(s)
+    tctx.strokeStyle = pal.tick; tctx.beginPath(); tctx.moveTo(x + 0.5, RULER_H - 8); tctx.lineTo(x + 0.5, RULER_H); tctx.stroke()
+    tctx.fillStyle = pal.tickText
+    tctx.fillText(`${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`, x + 3, RULER_H / 2)
   }
+
+  lanes.forEach((tr, i) => {
+    const y = RULER_H + i * TRK_LANE_H
+    if (i % 2 === 1) { tctx.fillStyle = pal.lane; tctx.fillRect(0, y, tcw, TRK_LANE_H) }
+    if (tr.id === selectedTrackId) { tctx.fillStyle = pal.handleAccent + '22'; tctx.fillRect(0, y, tcw, TRK_LANE_H) }
+    tctx.strokeStyle = pal.grid; tctx.beginPath(); tctx.moveTo(0, y + 0.5); tctx.lineTo(tcw, y + 0.5); tctx.stroke()
+
+    const isVideo = tr.kind === 'video'
+    const isActive = tr.id === project.activeAudioId
+    const off = isVideo ? 0 : (tr.offset || 0)
+    const cx0 = xAt(off)
+    const cx1 = xAt(off + (dur || 0))
+    const cy = y + 5, chh = TRK_LANE_H - 10
+    const col = isVideo ? '#6cbf6a' : isActive ? pal.handleAccent : pal.tickText
+    tctx.fillStyle = col + '2e'
+    tctx.strokeStyle = col + (isActive || isVideo ? 'cc' : '66')
+    tctx.lineWidth = isActive ? 1.8 : 1
+    tctx.beginPath(); tctx.roundRect(Math.max(-2, cx0), cy, Math.max(6, cx1 - cx0), chh, 5)
+    tctx.fill(); tctx.stroke(); tctx.lineWidth = 1
+
+    // forme d'onde de la piste active (identique à celle de la bande)
+    if (isActive && wave) {
+      const midY = cy + chh / 2, amp = chh / 2 - 4
+      const x0 = Math.max(0, cx0), x1 = Math.min(tcw, cx1)
+      tctx.fillStyle = col + '66'; tctx.beginPath(); tctx.moveTo(x0, midY)
+      for (let x = x0; x <= x1; x++) {
+        const tt = tTAt(x, now) - off
+        let v = 0
+        if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] }
+        tctx.lineTo(x, midY - v * amp)
+      }
+      for (let x = x1; x >= x0; x--) {
+        const tt = tTAt(x, now) - off
+        let v = 0
+        if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] }
+        tctx.lineTo(x, midY + v * amp)
+      }
+      tctx.closePath(); tctx.fill()
+    }
+
+    tctx.fillStyle = pal.tickText; tctx.font = '11px "Segoe UI", sans-serif'; tctx.textBaseline = 'middle'
+    tctx.fillText(isVideo ? t('trackVideoName') : (tr.label || baseName(tr.path)), Math.max(4, cx0 + 7), cy + 9)
+  })
+
+  const rx = tReadX()
+  tctx.strokeStyle = pal.playhead; tctx.lineWidth = 2
+  tctx.beginPath(); tctx.moveTo(rx, 0); tctx.lineTo(rx, tch); tctx.stroke(); tctx.lineWidth = 1
 }
+
+// ---------- interactions souris (scrub/zoom comme la bande, + glisser offset) ----------
+let tdrag = null
+const tLaneAt = (y) => (y < RULER_H ? -1 : Math.floor((y - RULER_H) / TRK_LANE_H))
+
+tcanvas.addEventListener('pointerdown', (e) => {
+  const r = tcanvas.getBoundingClientRect()
+  const x = e.clientX - r.left, y = e.clientY - r.top
+  tcanvas.setPointerCapture(e.pointerId)
+  const li = tLaneAt(y)
+  const tr = li >= 0 ? trackLanes()[li] : null
+  if (tr) { selectedTrackId = tr.id; renderTrackHeads() }
+  if (li >= 0 && tr && tr.kind !== 'video') {
+    tdrag = { kind: 'offset', tr, x0: x, startOff: tr.offset || 0, pushed: false }
+  } else {
+    video.pause(); scrub.active = true
+    tdrag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: tTAt(x, effectiveTime()), fromRuler: li < 0, moved: false }
+  }
+})
+tcanvas.addEventListener('pointermove', (e) => {
+  const r = tcanvas.getBoundingClientRect()
+  const x = e.clientX - r.left
+  if (!tdrag) { tcanvas.style.cursor = tLaneAt(e.clientY - r.top) >= 1 ? 'ew-resize' : 'default'; return }
+  const dx = x - tdrag.x0
+  if (tdrag.kind === 'scrub') {
+    if (Math.abs(dx) > 3) tdrag.moved = true
+    if (tdrag.moved) { scrubTo(tdrag.t0 - dx / tPps()); playScrubGrain(scrub.time) }
+  } else if (tdrag.kind === 'offset') {
+    if (!tdrag.pushed) { pushUndo(); tdrag.pushed = true }
+    let off = tdrag.startOff + dx / tPps()
+    if (Math.abs(off) < 6 / tPps()) off = 0 // aimant sur l'origine
+    tdrag.tr.offset = off
+    if (tdrag.tr.id === project.activeAudioId) waveOffset = off
+    markDirty()
+  }
+})
+function tEndDrag() {
+  if (tdrag && tdrag.kind === 'scrub' && tdrag.fromRuler && !tdrag.moved && video.src) scrubTo(tdrag.tClick)
+  tdrag = null; scrub.active = false
+  if (!scrub.busy && scrub.pending == null) scrub.time = null
+}
+tcanvas.addEventListener('pointerup', tEndDrag)
+tcanvas.addEventListener('pointercancel', tEndDrag)
+tcanvas.addEventListener('wheel', (e) => {
+  e.preventDefault()
+  if (e.ctrlKey) { secondsVisible = clamp(secondsVisible * (e.deltaY < 0 ? 1 / 1.12 : 1.12), SEC_MIN, SEC_MAX); recomputePps(); syncZoomSlider(); return }
+  video.pause()
+  scrubTo(effectiveTime() + (e.deltaY || e.deltaX) / tPps() * 0.8)
+  playScrubGrain(scrub.time)
+}, { passive: false })
 
 // ---------- import d'un fichier audio externe ----------
 function addExternalAudio(p) {
   if (!project.videoPath) { toast(t('loadVideoFirst')); return }
   if (!p) return
-  pushUndoTracks()
-  project.audioTracks.push({ id: uid(), type: 'file', path: p, label: baseName(p), offset: 0, exported: true, isDefault: false, channels: 2 })
+  pushUndo()
+  project.audioTracks.push({ id: uid(), type: 'file', path: p, label: baseName(p), offset: 0, channels: 2 })
   if (activeTab !== 'tracks') setTab('tracks')
   else renderTracks()
   markDirty()
@@ -1274,25 +1333,6 @@ $('btnImportAudio').addEventListener('click', async () => {
   const p = await window.api.openAudio()
   if (p) addExternalAudio(p)
 })
-
-// ---------- décalage global de la bande (toutes les répliques) ----------
-$('btnShiftApply').addEventListener('click', () => {
-  const frames = Number($('shiftAmount').value) || 0
-  if (!frames || !project.lines.length) return
-  let dt = frames / project.fps
-  const minStart = Math.min(...project.lines.map(lineStart))
-  if (minStart + dt < 0) dt = -minStart // ne pas passer sous 0
-  if (!dt) return
-  pushUndo()
-  for (const l of project.lines) for (const w of l.words) { w.start += dt; w.end += dt }
-  $('shiftAmount').value = '0'
-  renderLinesLog()
-  refreshInspector()
-  markDirty()
-  toast(t('shiftDone', frames))
-})
-
-new ResizeObserver(() => { if (activeTab === 'tracks') layoutClips() }).observe($('tracksLanes'))
 
 // ============================================================ video info + fps auto-detect
 let videoInfo = null
@@ -1372,7 +1412,8 @@ video.addEventListener('loadeddata', () => showLoading(false))
 video.addEventListener('error', () => showLoading(false))
 
 // ============================================================ waveform
-let wave = null // { peaks: Float32Array, perSec, duration }
+let wave = null // { peaks: Float32Array, perSec, duration } — forme d'onde de la piste active
+let waveOffset = 0 // décalage (s) de la piste active, appliqué à l'affichage de la forme d'onde
 let showWave = true
 let waveToken = 0
 let scrubCtx = null
@@ -1382,9 +1423,12 @@ async function buildWaveform() {
   wave = null
   scrubBuf = null
   const token = ++waveToken
-  if (!project.videoPath) return
+  // forme d'onde de la piste audio active (fichier externe, sinon la vidéo)
+  const src = (typeof activeAudioPath === 'function' && activeAudioPath()) || project.videoPath
+  waveOffset = (typeof activeAudioTrack === 'function' && activeAudioTrack()?.offset) || 0
+  if (!src) return
   try {
-    const buf = await window.api.readFile(project.videoPath)
+    const buf = await window.api.readFile(src)
     if (!buf || token !== waveToken) return
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
     const ac = new AudioContext({ sampleRate: 16000 })
@@ -1516,7 +1560,7 @@ function renderBand(c, now, W, H, pps, opts) {
     c.moveTo(0, midY)
     const tops = new Float32Array(w)
     for (let x = 0; x < w; x++) {
-      const t = tAt(x)
+      const t = tAt(x) - waveOffset // décalage de la piste active
       let v = 0
       if (t >= 0 && t < wave.duration) {
         const b0 = (t * wave.perSec) | 0
@@ -2263,8 +2307,13 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
 
-  // touche du lexique = insertion directe d'une réac au point de lecture
-  if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+  // onglet Pistes : Suppr retire la piste importée sélectionnée
+  if (activeTab === 'tracks') {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTrackId) { e.preventDefault(); deleteTrack(selectedTrackId); return }
+  }
+
+  // touche du lexique = insertion directe d'une réac au point de lecture (onglet Rythmo)
+  if (activeTab === 'rythmo' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
     const reac = REAC_BY_KEY.get(e.key)
     if (reac) {
       e.preventDefault()
@@ -3099,7 +3148,7 @@ function buildExportContent() {
     o.textContent = (a.label || baseName(a.path)) + (a.type === 'file' ? ` (${t('trackExternal')})` : '')
     sel.appendChild(o)
   }
-  const def = tracks.find((a) => a.isDefault) || tracks.find((a) => a.type === 'embedded') || tracks[0]
+  const def = audioById(project.activeAudioId) || tracks.find((a) => a.type === 'embedded') || tracks[0]
   exp.audioId = def ? def.id : ''
   sel.value = exp.audioId
   sel.disabled = !tracks.length
@@ -3390,7 +3439,7 @@ $('expGo').addEventListener('click', runExport)
 function loop() {
   $('timecode').textContent = formatTc(effectiveTime(), project.fps)
   btnPlay.classList.toggle('playing', !video.paused)
-  if (activeTab === 'tracks') updateTracksPlayhead()
+  if (activeTab === 'tracks') drawTracks()
   else draw()
   requestAnimationFrame(loop)
 }

@@ -95,15 +95,13 @@
   <div id="tracksView" class="hidden">
     <div id="tracksToolbar">
       <button id="btnImportAudio">+ Importer un audio…</button>
-      <div class="sep"></div>
-      <span id="shiftLabel">Décalage global</span>
-      <input id="shiftAmount" type="number" value="0" step="1">
-      <span id="shiftUnit">images</span>
-      <button id="btnShiftApply">Appliquer</button>
       <div class="spacer"></div>
       <span id="tracksHint"></span>
     </div>
-    <div id="tracksLanes"></div>
+    <div id="tracksWrap">
+      <div id="trackHeads"></div>
+      <div id="tracksCanvasWrap"><canvas id="tracksCanvas"></canvas></div>
+    </div>
   </div>
 
   <div id="inspector" class="empty">

@@ -62,6 +62,7 @@ const I18N = {
     trackExportTitle: 'Inclure cette piste dans l\'export MP4',
     trackDefault: 'défaut',
     trackDefaultTitle: 'Piste audio par défaut (première à la lecture du fichier exporté)',
+    trackActiveTitle: 'Piste active : sa forme d\'onde s\'affiche sur la bande, son entendu au scrub',
     trackDelete: 'Retirer cette piste importée',
     tracksNoVideo: 'Charge une vidéo pour voir ses pistes audio et vidéo.',
     tracksNoAudio: 'Aucune piste audio embarquée — glisse un fichier audio ici ou « + Importer un audio… ».',
@@ -226,11 +227,11 @@ const I18N = {
       {
         icon: '🎚️', title: 'Pistes audio / vidéo',
         items: [
-          ['Onglet Pistes', 'Bascule la vue du bas entre Rythmo (éditeur de bande) et Pistes (vidéo de référence + pistes audio du conteneur)'],
-          ['glisser une piste audio', 'Régler son offset (alignement) — appliqué à l\'export et stocké dans le projet ; l\'aperçu audible du décalage viendra avec la lecture audio découplée'],
-          ['export / défaut', 'Cocher les pistes à inclure dans le MP4 exporté ; « défaut » = piste audio principale du fichier'],
-          ['+ Importer un audio…', 'Ajouter un fichier audio externe (VF témoin, musique, voix enregistrée à part) — ou le glisser sur la fenêtre'],
-          ['Décalage global', 'Décaler toutes les répliques de ±N images d\'un coup (annulable)'],
+          ['Onglet Pistes', 'Vue façon montage : vidéo de référence + pistes audio, avec le même zoom / défilement / curseur que la bande rythmo'],
+          ['glisser une piste audio', 'Régler son offset d\'alignement (aimanté à l\'origine) — molette = défiler, Ctrl+molette = zoomer, glisser la règle = se déplacer'],
+          ['🔊 haut-parleur', 'Choisit la piste audio active : sa forme d\'onde s\'affiche sur la bande et son est entendu au scrub'],
+          ['+ Importer un audio…', 'Ajouter un fichier audio externe (VF témoin, musique, voix à part) — ou le glisser sur la fenêtre'],
+          ['🗑 / Suppr', 'Supprimer une piste importée (sélectionner la piste puis Suppr, ou le bouton corbeille)'],
         ],
       },
       {
@@ -305,6 +306,7 @@ const I18N = {
     trackExportTitle: 'Include this track in the MP4 export',
     trackDefault: 'default',
     trackDefaultTitle: 'Default audio track (first one when playing the exported file)',
+    trackActiveTitle: 'Active track: its waveform shows on the band, audio heard while scrubbing',
     trackDelete: 'Remove this imported track',
     tracksNoVideo: 'Load a video to see its audio and video tracks.',
     tracksNoAudio: 'No embedded audio track — drop an audio file here or “+ Import audio…”.',
@@ -469,11 +471,11 @@ const I18N = {
       {
         icon: '🎚️', title: 'Audio / video tracks',
         items: [
-          ['Tracks tab', 'Switches the bottom view between Rythmo (band editor) and Tracks (reference video + the container\'s audio tracks)'],
-          ['drag an audio track', 'Set its offset (alignment) — applied to export and stored in the project; audible preview of the shift comes with decoupled audio playback'],
-          ['export / default', 'Tick which tracks go into the exported MP4; “default” = the file\'s main audio track'],
-          ['+ Import audio…', 'Add an external audio file (reference dub, music, separately recorded voice) — or drop it on the window'],
-          ['Global shift', 'Shift all lines by ±N frames at once (undoable)'],
+          ['Tracks tab', 'Editing-software view: reference video + audio tracks, with the same zoom / scroll / cursor as the rythmo band'],
+          ['drag an audio track', 'Set its alignment offset (snaps to origin) — wheel = scroll, Ctrl+wheel = zoom, drag the ruler = move'],
+          ['🔊 speaker', 'Picks the active audio track: its waveform shows on the band and its audio is heard while scrubbing'],
+          ['+ Import audio…', 'Add an external audio file (reference dub, music, separate voice) — or drop it on the window'],
+          ['🗑 / Del', 'Delete an imported track (select it then Del, or the trash button)'],
         ],
       },
       {

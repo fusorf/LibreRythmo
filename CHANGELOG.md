@@ -3,6 +3,27 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.3] - 2026-06-18
+
+Refonte graphique de l'onglet Pistes.
+
+### Modifié
+- **Onglet Pistes en vraie timeline de montage** : la vue reprend le **même zoom, défilement
+  et curseur** que la bande rythmo (molette = défiler, Ctrl+molette = zoomer, glisser la règle
+  = se déplacer). Colonne d'en-têtes de pistes à gauche façon NLE.
+- **Glisser une piste audio sur la timeline** pour régler son offset (aimanté à l'origine).
+- **Piste active via bouton haut-parleur** (remplace « défaut ») : la piste active fournit la
+  **forme d'onde affichée sur la bande rythmo** (et le son entendu au scrub) ; sa forme d'onde
+  apparaît aussi dans sa lane.
+- **Onglets** redessinés (plus nets, soulignés).
+
+### Retiré
+- Cases « export » par piste (le choix se fait désormais à l'export) et **décalage global**
+  (déplacé hors de cet onglet).
+
+### Suppression de piste
+- Piste importée : la sélectionner puis **Suppr**, ou le bouton **corbeille** de son en-tête.
+
 ## [1.4.2] - 2026-06-18
 
 ### Modifié
