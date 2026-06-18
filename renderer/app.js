@@ -359,6 +359,10 @@ function applyLang() {
   $('optThemeLight').textContent = t('optThemeLight')
   $('grpOutput').textContent = t('grpOutput')
   $('grpBand').textContent = t('grpBand')
+  $('grpContent').textContent = t('grpContent')
+  $('lblExpTracks').textContent = t('lblExpTracks')
+  $('lblExpLoops').textContent = t('lblExpLoops')
+  $('lblExpAudio').textContent = t('lblExpAudio')
   $('lblBandPos').textContent = t('lblBandPos')
   $('optBandBottom').textContent = t('optBandBottom')
   $('optBandTop').textContent = t('optBandTop')
@@ -1554,6 +1558,7 @@ function renderBand(c, now, W, H, pps, opts) {
 
   // répliques
   for (const line of project.lines) {
+    if (opts.tracks && !opts.tracks.has(line.track)) continue // export d'une sélection de pistes
     const s = lineStart(line)
     const e = lineEnd(line)
     const x0 = xAt(s)
@@ -3027,11 +3032,75 @@ $('expEnc').addEventListener('change', () => {
   pushSettings()
 })
 
+// groupe « Contenu » de l'export : plage temporelle selon les boucles cochées
+// (sinon toute la vidéo), pistes rythmo cochées, et piste audio choisie.
+function exportRange() {
+  const dur = isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+  const loops = project.loops || []
+  if (!loops.length || !exp.loopSel || exp.loopSel.size === 0 || exp.loopSel.size === loops.length) {
+    return { start: 0, end: dur }
+  }
+  const sel = loops.filter((l) => exp.loopSel.has(l.id))
+  if (!sel.length) return { start: 0, end: dur }
+  const start = Math.max(0, Math.min(...sel.map((l) => l.start)))
+  const end = Math.min(dur || 1e9, Math.max(...sel.map((l) => l.end)))
+  return end > start ? { start, end } : { start: 0, end: dur }
+}
+
+// construit les contrôles du groupe « Contenu » à l'ouverture de l'export
+function buildExportContent() {
+  // pistes rythmo (cases) — toutes cochées par défaut
+  exp.tracks = new Set(Array.from({ length: laneCount() }, (_, i) => i))
+  const tw = $('expTracks')
+  tw.innerHTML = ''
+  for (let i = 0; i < laneCount(); i++) {
+    const lab = document.createElement('label')
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'; cb.checked = true
+    cb.addEventListener('change', () => { cb.checked ? exp.tracks.add(i) : exp.tracks.delete(i) })
+    lab.append(cb, document.createTextNode(t('track', i + 1)))
+    tw.appendChild(lab)
+  }
+  // boucles (cases) — toutes cochées = toute la vidéo
+  exp.loopSel = new Set((project.loops || []).map((l) => l.id))
+  const lw = $('expLoops')
+  lw.innerHTML = ''
+  if (!project.loops || !project.loops.length) {
+    const s = document.createElement('span')
+    s.className = 'exp-none'; s.textContent = t('expWholeVideo')
+    lw.appendChild(s)
+  } else {
+    for (const lp of sortedLoops()) {
+      const lab = document.createElement('label')
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'; cb.checked = true
+      cb.addEventListener('change', () => { cb.checked ? exp.loopSel.add(lp.id) : exp.loopSel.delete(lp.id) })
+      lab.append(cb, document.createTextNode(lp.name + (lp.type === 'out' ? ' (OUT)' : '')))
+      lw.appendChild(lab)
+    }
+  }
+  // piste audio (liste déroulante) — défaut = piste de la vidéo (embarquée par défaut)
+  const sel = $('expAudio')
+  sel.innerHTML = ''
+  const tracks = project.audioTracks || []
+  for (const a of tracks) {
+    const o = document.createElement('option')
+    o.value = a.id
+    o.textContent = (a.label || baseName(a.path)) + (a.type === 'file' ? ` (${t('trackExternal')})` : '')
+    sel.appendChild(o)
+  }
+  const def = tracks.find((a) => a.isDefault) || tracks.find((a) => a.type === 'embedded') || tracks[0]
+  exp.audioId = def ? def.id : ''
+  sel.value = exp.audioId
+  sel.disabled = !tracks.length
+}
+
 function openExportModal() {
   if (!project.videoPath || !video.videoWidth) {
     toast(t('loadVideoFirst'))
     return
   }
+  buildExportContent()
   exp.open = true
   $('expBandPos').value = exp.bandPos
   exp.theme = theme // thème de la bande exportée : celui de l'UI par défaut
@@ -3056,6 +3125,7 @@ $('expWin').addEventListener('input', () => {
   updateWinReadout()
 })
 $('expTheme').addEventListener('change', () => { exp.theme = $('expTheme').value === 'light' ? 'light' : 'dark' })
+$('expAudio').addEventListener('change', () => { exp.audioId = $('expAudio').value })
 
 $('expBrowse').addEventListener('click', async () => {
   const p = await window.api.exportSaveDialog($('expPath').value || undefined)
@@ -3103,7 +3173,7 @@ function exportPreviewLoop() {
   expCtx.beginPath()
   expCtx.rect(0, 0, L.band.w * s, L.band.h * s)
   expCtx.clip()
-  renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'] })
+  renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], tracks: exp.tracks })
   expCtx.restore()
 
   // barre de séparation glissable entre la vidéo et la bande (masquée pendant l'export)
@@ -3194,21 +3264,27 @@ async function runExport(outPathOverride) {
   const fps = clamp(Number($('expFps').value) || project.fps, 10, 120)
   const winSec = Math.max(1, exp.winSec)
   const L = JSON.parse(JSON.stringify(exp.layout))
-  const dur = exp.maxSeconds > 0 ? Math.min(exp.maxSeconds, video.duration) : video.duration
+  // groupe « Contenu » : plage temporelle (boucles), pistes rythmo et piste audio
+  const range = exportRange()
+  let startT = range.start
+  let dur = range.end - range.start
+  if (exp.maxSeconds > 0) dur = Math.min(exp.maxSeconds, dur)
   const total = Math.ceil(dur * fps)
+  const trackSet = exp.tracks // pistes rythmo incluses
 
   const bw = Math.max(2, Math.round(L.band.w / 2) * 2)
   const bh = Math.max(2, Math.round(L.band.h / 2) * 2)
-  // pistes audio à inclure (avec offset gravé) ; vide → repli sur la 1re piste du conteneur
-  const audio = (project.audioTracks || []).filter((tr) => tr.exported !== false && (tr.type !== 'file' || tr.path)).map((tr) => ({
-    path: tr.type === 'file' ? tr.path : project.videoPath,
-    aIndex: tr.type === 'file' ? 0 : tr.index,
-    offset: tr.offset || 0,
+  // piste audio choisie (avec son offset gravé) ; aucune → repli sur la 1re piste du conteneur
+  const at = (project.audioTracks || []).find((a) => a.id === exp.audioId)
+  const audio = at && (at.type !== 'file' || at.path) ? [{
+    path: at.type === 'file' ? at.path : project.videoPath,
+    aIndex: at.type === 'file' ? 0 : at.index,
+    offset: at.offset || 0,
     exported: true,
-    isDefault: !!tr.isDefault,
-  }))
+    isDefault: true,
+  }] : []
   const r = await window.api.exportStart({
-    fps, W, H, duration: dur, layout: L, bandW: bw, bandH: bh,
+    fps, W, H, duration: dur, startTime: startT, layout: L, bandW: bw, bandH: bh,
     videoPath: project.videoPath, outPath, audio,
     encoder: $('expEnc').value === 'cpu' ? 'cpu' : 'gpu',
   })
@@ -3239,8 +3315,9 @@ async function runExport(outPathOverride) {
   let ok = true
   for (let i = 0; i < total; i++) {
     if (exp.cancelled) { ok = false; break }
-    renderBand(octx, i / fps, bw, bh, bw / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'] })
-    exp.previewTime = i / fps
+    const tt = startT + i / fps
+    renderBand(octx, tt, bw, bh, bw / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], tracks: trackSet })
+    exp.previewTime = tt
     const sent = await window.api.exportFrame(octx.getImageData(0, 0, bw, bh).data.buffer)
     if (!sent) { ok = false; break }
 

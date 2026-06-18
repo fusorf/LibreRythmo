@@ -3,6 +3,15 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.1] - 2026-06-18
+
+### Ajouté
+- **Groupe « Contenu » dans l'export vidéo** :
+  - **Pistes** : exporter toutes les pistes rythmo ou une sélection (cases par piste).
+  - **Boucles** : exporter toute la vidéo ou une sélection de boucles (l'export couvre alors la
+    plage des boucles cochées ; la vidéo et l'audio sont coupés à `startTime` via `-ss`).
+  - **Audio** : choisir la piste audio à muxer dans le MP4 (par défaut celle de la vidéo).
+
 ## [1.4.0] - 2026-06-18
 
 Bandeau en onglets + pistes audio multiples (Phase 1).

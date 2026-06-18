@@ -733,10 +733,14 @@ ipcMain.handle('export-start', async (e, opts) => {
   // entrées : 0 = bande (RGBA brut via pipe), 1 = vidéo. Les pistes audio
   // sélectionnées sont ajoutées comme entrées supplémentaires (2, 3, …) chacune avec
   // son -itsoffset (décalage gravé), puis mappées comme autant de pistes de sortie.
+  // plage temporelle : on coupe la vidéo et les pistes audio à startTime (les frames
+  // de bande, en entrée 0, sont déjà rendues à partir de startTime côté renderer)
+  const ss = Math.max(0, Number(opts.startTime) || 0)
+  const seek = ss > 0 ? ['-ss', ss.toFixed(3)] : []
   const inputs = [
     '-f', 'rawvideo', '-pixel_format', 'rgba',
     '-video_size', `${opts.bandW}x${opts.bandH}`, '-framerate', String(fps), '-i', 'pipe:0',
-    '-hwaccel', 'auto', '-i', opts.videoPath,
+    ...seek, '-hwaccel', 'auto', '-i', opts.videoPath,
   ]
   const maps = ['-map', '[out]']
   const sel = (opts.audio || []).filter((a) => a.exported && a.path)
@@ -744,7 +748,7 @@ ipcMain.handle('export-start', async (e, opts) => {
     sel.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)) // piste par défaut en premier
     let idx = 2
     for (const a of sel) {
-      inputs.push('-itsoffset', (Number(a.offset) || 0).toFixed(3), '-i', a.path)
+      inputs.push(...seek, '-itsoffset', (Number(a.offset) || 0).toFixed(3), '-i', a.path)
       maps.push('-map', `${idx}:a:${a.aIndex || 0}`)
       idx++
     }

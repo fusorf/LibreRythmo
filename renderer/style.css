@@ -615,6 +615,13 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 .opt-group label { display: flex; align-items: center; gap: 6px; color: var(--dim); white-space: nowrap; }
 #expW, #expH { width: 5em; }
 #expFps { width: 4em; }
+/* groupe Contenu : sélection des pistes, boucles, piste audio */
+.content-row { display: flex; align-items: center; gap: 8px; }
+.content-row > span:first-child { color: var(--dim); white-space: nowrap; }
+.exp-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; max-height: 96px; overflow-y: auto; }
+.exp-checks label { color: var(--text); font-size: 12px; gap: 4px; }
+.exp-none { color: var(--dim); font-size: 12px; }
+#expAudio { max-width: 260px; }
 #expWin { width: 130px; }
 .dim-val { font-size: 11px; color: var(--dim); min-width: 86px; }
 #expPath { flex: 1; font-size: 12px; }
