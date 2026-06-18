@@ -162,8 +162,8 @@ button.active {
 #videoInfo div { display: flex; justify-content: space-between; gap: 18px; }
 #videoInfo span { color: var(--dim); }
 
-/* ---------- side panels: characters (right) + lines log (left) ---------- */
-#sidePanel, #linesPanel {
+/* ---------- side panels: characters (right) + lines / loops (left) ---------- */
+#sidePanel, #linesPanel, #loopsPanel {
   flex: 0 0 280px;
   width: 280px;
   background: var(--panel);
@@ -173,9 +173,9 @@ button.active {
   padding: 12px 10px;
 }
 #sidePanel { border-left: 1px solid var(--border); }
-#linesPanel { border-right: 1px solid var(--border); }
-#sidePanel.hidden, #linesPanel.hidden { display: none; }
-#sidePanel h3, #linesPanel h3 {
+#linesPanel, #loopsPanel { border-right: 1px solid var(--border); }
+#sidePanel.hidden, #linesPanel.hidden, #loopsPanel.hidden { display: none; }
+#sidePanel h3, #linesPanel h3, #loopsPanel h3 {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -256,6 +256,59 @@ button.active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- loops panel ---------- */
+.loops-head { display: flex; gap: 6px; align-items: center; }
+.loops-head #btnAddLoop { flex: 1 1 auto; }
+.loops-head .icon-btn { flex: 0 0 auto; width: 30px; font-size: 13px; }
+.panel-empty { color: var(--dim); font-size: 12px; padding: 4px 7px; }
+.panel-empty.hidden { display: none; }
+#loopsList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.loop-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.loop-row:hover { background: var(--row-hover); }
+.loop-row .lp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loop-row .lp-dur {
+  flex: 0 0 auto;
+  font-family: 'Consolas', monospace;
+  font-size: 10.5px;
+  color: var(--dim);
+}
+.loop-row .lp-dur.warn { color: var(--bad, #e8584a); font-weight: 600; }
+.loop-row .lp-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+.loop-row .lp-out { width: auto; padding: 0 5px; font-size: 9.5px; font-weight: 600; }
+.loop-row .lp-out.active {
+  border-color: var(--toggle-border);
+  color: var(--toggle-text);
+  background: color-mix(in srgb, var(--toggle-text) 14%, transparent);
 }
 .char-row {
   display: flex;

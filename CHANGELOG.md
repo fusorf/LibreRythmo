@@ -3,6 +3,24 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.2.0] - 2026-06-18
+
+Boucles & structure de scène.
+
+### Ajouté
+- **Boucles (scènes)** : nouveau panneau « Boucles » (barre de transport) pour créer une boucle
+  au point de lecture, la renommer, régler son début (⇤) / fin (⇥) sur le point de lecture, et
+  sauter à son début d'un clic. Les bornes et le nom sont affichés sur la bande (liseré + onglet).
+- **Navigation entre boucles** : boutons ◁ / ▷ du panneau et raccourcis **Page ↑ / Page ↓**
+  (équivalent F11/F12 de Cappella).
+- **Avertissement de durée** : la durée d'une boucle passe en rouge au-delà de ~50 s (boucle
+  normale) ou en deçà de 30 s (segment OUT).
+- **Segments OUT** : une boucle peut être marquée OUT (passage sans rien à doubler) ; rendu
+  distinct sur la bande.
+- Persistance des boucles dans le projet `.rythmo` (rétrocompatible : anciens projets sans
+  boucles inchangés) ; intégrées à l'annuler/rétablir. Les boucles restent internes au `.rythmo`
+  (non sérialisées en DETX pour l'instant).
+
 ## [1.1.0] - 2026-06-18
 
 Conformité au standard du doublage FR (socle métier).

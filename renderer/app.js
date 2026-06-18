@@ -94,8 +94,15 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 1, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [] }
+  return { version: 1, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [] }
 }
+
+// Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
+// doublage FR : on alerte au-delà de ~50 s pour une boucle normale, et en deçà de
+// 30 s pour un segment OUT (qui doit rester long et d'un seul tenant).
+const LOOP_WARN_SEC = 50
+const LOOP_OUT_MIN_SEC = 30
+const LOOP_DEFAULT_SEC = 40 // longueur par défaut d'une nouvelle boucle
 
 let project = newProject()
 let projectPath = null
@@ -202,7 +209,7 @@ let undoStack = []
 let redoStack = []
 let undoCoalesce = false // les pushUndo d'une même opération (même tick) ne comptent qu'une fois
 
-const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines })
+const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops })
 
 function pushUndo() {
   if (undoCoalesce) return
@@ -229,6 +236,7 @@ function restoreState(snap) {
   if (d.tracks) project.tracks = d.tracks
   project.characters = d.characters
   project.lines = d.lines
+  project.loops = d.loops || []
   if (!getChar(selectedCharId)) selectedCharId = project.characters[0]?.id || null
   selectedIds = new Set([...selectedIds].filter((id) => getLine(id)))
   renderChars()
@@ -237,6 +245,7 @@ function restoreState(snap) {
   buildLineFilterOptions()
   refreshInspector()
   refreshTrackCountUI()
+  renderLoopsPanel()
   markDirty()
 }
 
@@ -279,6 +288,15 @@ function applyLang() {
   $('btnTogglePanel').title = t('panelToggleTitle')
   $('btnToggleLines').textContent = t('linesTitle')
   $('btnToggleLines').title = t('linesToggleTitle')
+  $('btnToggleLoops').textContent = t('loopsTitle')
+  $('btnToggleLoops').title = t('loopsToggleTitle')
+  $('loopsTitle').textContent = t('loopsTitle')
+  $('btnAddLoop').textContent = t('addLoop')
+  $('btnAddLoop').title = t('addLoopTitle')
+  $('btnLoopPrev').title = t('loopPrevTitle')
+  $('btnLoopNext').title = t('loopNextTitle')
+  $('loopsEmpty').textContent = t('loopsEmpty')
+  renderLoopsPanel()
   $('zoomWrap').title = t('zoomTitle')
   $('trackCount').title = t('trackCountTitle')
   refreshTrackCountUI()
@@ -477,6 +495,16 @@ $('btnToggleLines').addEventListener('click', () => {
   panel.classList.toggle('hidden')
   $('btnToggleLines').classList.toggle('active', !panel.classList.contains('hidden'))
 })
+
+$('btnToggleLoops').addEventListener('click', () => {
+  const panel = $('loopsPanel')
+  panel.classList.toggle('hidden')
+  $('btnToggleLoops').classList.toggle('active', !panel.classList.contains('hidden'))
+})
+
+$('btnAddLoop').addEventListener('click', addLoopAtPlayhead)
+$('btnLoopPrev').addEventListener('click', () => gotoLoop(-1))
+$('btnLoopNext').addEventListener('click', () => gotoLoop(1))
 
 $('btnAddChar').addEventListener('click', () => {
   addCharacter()
@@ -776,6 +804,157 @@ function renderLinesLog() {
   const selKey = [...selectedIds].sort().join(',')
   if (selKey && selKey !== lastLogSel && selRow) selRow.scrollIntoView({ block: 'nearest' })
   lastLogSel = selKey
+}
+
+// ============================================================ boucles (scènes)
+// Une boucle = une scène : bornes ouverture/fermeture sur la timeline, gérées dans
+// le panneau « Boucles » (création/bornage au point de lecture, navigation, type
+// OUT). Persistées dans le projet (project.loops). Restent internes au .rythmo —
+// non sérialisées en DETX (interopérabilité Cappella/Joker à trancher, cf. ROADMAP).
+const loopDur = (lp) => Math.max(0, lp.end - lp.start)
+const sortedLoops = () => [...project.loops].sort((a, b) => a.start - b.start)
+
+// une boucle est « hors normes » : normale trop longue, ou OUT trop courte
+function loopWarn(lp) {
+  if (lp.type === 'out') return loopDur(lp) < LOOP_OUT_MIN_SEC
+  return loopDur(lp) > LOOP_WARN_SEC
+}
+
+function addLoopAtPlayhead() {
+  pushUndo()
+  const start = Math.max(0, effectiveTime())
+  const end = Math.min(start + LOOP_DEFAULT_SEC, videoDur())
+  const lp = { id: uid(), start, end: end > start ? end : start + LOOP_DEFAULT_SEC, name: t('loopName', project.loops.length + 1), type: 'normal' }
+  project.loops.push(lp)
+  renderLoopsPanel()
+  markDirty()
+  return lp
+}
+
+// navigation : saute au début de la boucle précédente / suivante (dir -1 / +1)
+function gotoLoop(dir) {
+  const loops = sortedLoops()
+  if (!loops.length) return
+  const now = effectiveTime()
+  let target = null
+  if (dir > 0) target = loops.find((lp) => lp.start > now + 0.05)
+  else target = [...loops].reverse().find((lp) => lp.start < now - 0.05)
+  if (!target) target = dir > 0 ? loops[loops.length - 1] : loops[0]
+  video.pause()
+  scrubTo(target.start)
+}
+
+// panneau « Boucles » : liste chronologique, édition au point de lecture
+function renderLoopsPanel() {
+  const list = $('loopsList')
+  if (!list) return
+  list.innerHTML = ''
+  const loops = sortedLoops()
+  $('loopsEmpty').classList.toggle('hidden', loops.length > 0)
+  for (const lp of loops) {
+    const row = document.createElement('div')
+    row.className = 'loop-row' + (lp.type === 'out' ? ' out' : '')
+
+    const tc = document.createElement('span')
+    tc.className = 'ltc'
+    tc.textContent = formatTcShort(lp.start)
+
+    const nm = document.createElement('span')
+    nm.className = 'lp-name'
+    nm.textContent = lp.name
+
+    const dur = document.createElement('span')
+    dur.className = 'lp-dur' + (loopWarn(lp) ? ' warn' : '')
+    dur.textContent = formatTcShort(loopDur(lp))
+    dur.title = loopWarn(lp) ? (lp.type === 'out' ? t('loopOutTooShort', LOOP_OUT_MIN_SEC) : t('loopTooLong', LOOP_WARN_SEC)) : ''
+
+    // boutons : début/fin au point de lecture · type OUT · renommer · supprimer
+    const mkBtn = (txt, title, fn, cls) => {
+      const b = document.createElement('button')
+      b.className = 'lp-btn' + (cls ? ' ' + cls : '')
+      b.textContent = txt
+      b.title = title
+      b.addEventListener('click', (e) => { e.stopPropagation(); fn() })
+      return b
+    }
+    const setStart = mkBtn('⇤', t('loopSetStart'), () => {
+      pushUndo(); lp.start = Math.min(Math.max(0, effectiveTime()), lp.end - 0.1); renderLoopsPanel(); markDirty()
+    })
+    const setEnd = mkBtn('⇥', t('loopSetEnd'), () => {
+      pushUndo(); lp.end = Math.max(effectiveTime(), lp.start + 0.1); renderLoopsPanel(); markDirty()
+    })
+    const out = mkBtn('OUT', t('loopOutTitle'), () => {
+      pushUndo(); lp.type = lp.type === 'out' ? 'normal' : 'out'; renderLoopsPanel(); markDirty()
+    }, 'lp-out' + (lp.type === 'out' ? ' active' : ''))
+    const del = mkBtn('✕', t('loopDelete'), () => {
+      pushUndo(); project.loops = project.loops.filter((k) => k.id !== lp.id); renderLoopsPanel(); markDirty()
+    }, 'lp-x')
+
+    // renommage en place (double-clic sur le nom)
+    nm.addEventListener('dblclick', (e) => {
+      e.stopPropagation()
+      const inp = document.createElement('input')
+      inp.type = 'text'; inp.className = 'nm-input'; inp.value = lp.name; inp.spellcheck = false
+      nm.replaceWith(inp); inp.focus(); inp.select()
+      let cancelled = false
+      const done = () => {
+        const nv = inp.value.trim()
+        if (!cancelled && nv && nv !== lp.name) { pushUndo(); lp.name = nv; markDirty() }
+        renderLoopsPanel()
+      }
+      inp.addEventListener('blur', done)
+      inp.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') inp.blur()
+        if (ev.key === 'Escape') { cancelled = true; inp.blur() }
+        ev.stopPropagation()
+      })
+    })
+
+    row.append(tc, nm, dur, setStart, setEnd, out, del)
+    row.addEventListener('click', () => { video.pause(); scrubTo(lp.start) })
+    list.appendChild(row)
+  }
+}
+
+// dessin des boucles sur la bande (overlay éditeur) : bornes verticales + onglet
+// nom sous la règle + liseré le long du haut des pistes. Visualisation seule.
+function drawLoops() {
+  if (!project.loops.length) return
+  const now = effectiveTime()
+  const pal = bandPal()
+  ctx.save()
+  ctx.font = '11px "Segoe UI", sans-serif'
+  ctx.textBaseline = 'middle'
+  for (const lp of sortedLoops()) {
+    const x0 = xAtTime(lp.start, now)
+    const x1 = xAtTime(lp.end, now)
+    if (x1 < -40 || x0 > cw + 40) continue
+    const warn = loopWarn(lp)
+    const col = warn ? pal.markOut : lp.type === 'out' ? pal.tickText : pal.handleAccent
+
+    // liseré le long du haut des pistes + bornes verticales pleine hauteur
+    ctx.strokeStyle = col
+    ctx.globalAlpha = 0.9
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.moveTo(Math.max(0, x0), RULER_H + 1); ctx.lineTo(Math.min(cw, x1), RULER_H + 1); ctx.stroke()
+    ctx.lineWidth = 1
+    ctx.globalAlpha = 0.35
+    for (const bx of [x0, x1]) {
+      ctx.beginPath(); ctx.moveTo(bx + 0.5, RULER_H); ctx.lineTo(bx + 0.5, ch); ctx.stroke()
+    }
+
+    // onglet du nom, juste sous la règle au début de la boucle
+    ctx.globalAlpha = 1
+    const label = (lp.type === 'out' ? 'OUT · ' : '') + lp.name
+    const tw = ctx.measureText(label).width
+    const tabX = clamp(x0 + 2, 0, Math.max(0, cw - tw - 12))
+    const tabW = Math.min(tw + 10, cw)
+    ctx.fillStyle = col
+    ctx.beginPath(); ctx.roundRect(tabX, RULER_H + 2, tabW, 15, 3); ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(label, tabX + 5, RULER_H + 10)
+  }
+  ctx.restore()
 }
 
 // ============================================================ video info + fps auto-detect
@@ -1209,6 +1388,7 @@ function renderBand(c, now, W, H, pps, opts) {
 
 function draw() {
   renderBand(ctx, effectiveTime(), cw, ch, pxPerSec, { ruler: true, wave: showWave, handles: true, theme: bandPal() })
+  drawLoops()
   drawHoverCursor()
   drawDragGuide()
 }
@@ -1776,6 +1956,14 @@ document.addEventListener('keydown', (e) => {
       ins.text.focus()
       ins.text.select()
       break
+    case 'PageUp':
+      e.preventDefault()
+      gotoLoop(-1)
+      break
+    case 'PageDown':
+      e.preventDefault()
+      gotoLoop(1)
+      break
     case 'Delete':
     case 'Backspace':
       deleteSelected()
@@ -1836,6 +2024,7 @@ async function newProjectAction() {
   buildLineFilterOptions()
   refreshInspector()
   renderLinesLog()
+  renderLoopsPanel()
   setClean()
 }
 
@@ -1887,6 +2076,7 @@ async function loadProjectData(data, path) {
   project = Object.assign(newProject(), data)
   project.characters ||= []
   project.lines ||= []
+  project.loops ||= []
   // nombre de pistes : valeur enregistrée si présente, sinon déduite des données
   // (les anciens projets sans champ `tracks` ne doivent jamais masquer une piste)
   const maxUsed = project.lines.reduce((m, l) => Math.max(m, l.track || 0), -1)
@@ -1903,6 +2093,7 @@ async function loadProjectData(data, path) {
   buildLineFilterOptions()
   refreshInspector()
   renderLinesLog()
+  renderLoopsPanel()
   setClean()
   if (project.videoPath) {
     const url = await window.api.fileUrl(project.videoPath)
