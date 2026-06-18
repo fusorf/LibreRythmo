@@ -1127,10 +1127,7 @@ function renderTrackHeads() {
   const spacer = document.createElement('div')
   spacer.className = 'trk-head-spacer'
   wrap.appendChild(spacer)
-  if (!project.videoPath) {
-    const e = document.createElement('div'); e.className = 'trk-empty'; e.textContent = t('tracksNoVideo')
-    wrap.appendChild(e); return
-  }
+  if (!project.videoPath) return
   for (const tr of trackLanes()) {
     const row = document.createElement('div')
     row.className = 'trk-head' + (tr.kind === 'video' ? ' video' : '') + (tr.id === selectedTrackId ? ' selected' : '')

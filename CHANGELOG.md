@@ -3,6 +3,12 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.8] - 2026-06-18
+
+### Modifié
+- Onglet Pistes : retrait de l'encart « Charge une vidéo pour voir ses pistes » (vue épurée).
+- Texte du bouton « + Importer un audio… » recentré.
+
 ## [1.4.7] - 2026-06-18
 
 ### Modifié

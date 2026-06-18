@@ -519,7 +519,7 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 .tracks-ctl { display: none; }
 body.on-tracks .rythmo-ctl,
 body.on-tracks #btnAddLine { display: none; } /* #btnAddLine a une règle display dédiée → surcharge nécessaire */
-body.on-tracks .tracks-ctl { display: inline-flex; }
+body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
 
 /* ---------- vue Pistes (timeline façon montage) ---------- */
 #tracksView { flex: 0 0 auto; display: flex; flex-direction: column; background: var(--panel2); border-top: 1px solid var(--border); }
@@ -527,7 +527,6 @@ body.on-tracks .tracks-ctl { display: inline-flex; }
 #tracksWrap { display: flex; max-height: 246px; overflow-y: auto; }
 #trackHeads { flex: 0 0 218px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--border); }
 .trk-head-spacer { height: 30px; flex: 0 0 auto; border-bottom: 1px solid var(--border); background: var(--panel); }
-.trk-empty { color: var(--dim); font-size: 12px; padding: 14px 12px; }
 .trk-head {
   display: flex; align-items: center; gap: 8px;
   padding: 0 10px;
