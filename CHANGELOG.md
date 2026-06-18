@@ -3,6 +3,24 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.3.0] - 2026-06-18
+
+Édition avancée (rattrapage Cappella).
+
+### Ajouté
+- **Recherche dans les répliques** : champ de recherche dans le panneau Répliques (filtre par
+  texte ou personnage). **Ctrl+F** ouvre le panneau s'il est fermé, place le focus sur la
+  recherche et remet le filtre sur « Toutes les pistes ».
+- **Copier / couper / coller de répliques** (**Ctrl+C / Ctrl+X / Ctrl+V**) : calage par mot et
+  bornes d'entrée/sortie conservés ; les répliques sont collées au point de lecture (écarts
+  relatifs préservés pour une sélection multiple).
+- **Import des personnages d'un DETX** (`Fichier → DETX → Importer les personnages…`) : ajoute
+  les rôles d'un DETX au projet courant sans toucher aux répliques (doublons par nom ignorés) —
+  utile comme gabarit de série.
+
+### Reporté
+- Décalage global de la bande : repoussé à v1.4 (avec le multipistes et les offsets par piste).
+
 ## [1.2.0] - 2026-06-18
 
 Boucles & structure de scène.

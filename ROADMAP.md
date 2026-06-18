@@ -112,12 +112,12 @@ Ces conventions sont surtout des **modèles d'insertion** + des **types de perso
 
 Fonctions de confort présentes dans Cappella et absentes aujourd'hui (absence confirmée par le menu de `main.js`).
 
-- **1.3.1 Recherche de texte** (`Ctrl+F`, navigation occurrences `F3`) · P1 · M
-- **1.3.2 Copier/coller de réplique(s)** entières avec leur calage (mots + timecodes + bornes) · P1 · M
-- **1.3.3 Décalage global de la bande** : offset de toutes les répliques de ±N images/ms, avec annulation · P1 · S
-- **1.3.4 Photo par personnage** : champ image (chemin ou embarqué) en plus de nom+couleur ; utile au croisillé · P2 · M
-- **1.3.5 Import d'une liste de rôles** : créer un projet vierge depuis les personnages d'un DETX existant (gabarit de série) · P2 · S
-- **1.3.6 Lecture en vitesse lente** (25 % / 75 % avant-arrière) avec son, et **mode Shuttle** (vitesse proportionnelle à la distance du curseur). Le jog molette existe déjà via le scrub · P2 · M
+- **1.3.1 Recherche de texte** ✅ — champ de recherche dans le panneau Répliques ; `Ctrl+F` ouvre le panneau, place le focus sur la recherche et remet le filtre sur toutes les pistes. (Filtre par texte/personnage ; navigation `F3` non retenue.)
+- **1.3.2 Copier/coller de réplique(s)** ✅ — `Ctrl+C` / `Ctrl+X` / `Ctrl+V`, calage par mot et bornes conservés, collage au point de lecture.
+- **1.3.3 Décalage global de la bande** — ⏭ **reporté à v1.4** (à livrer avec le multipistes / les offsets par piste).
+- **1.3.4 Photo par personnage** — ❌ abandonné (non retenu).
+- **1.3.5 Import d'une liste de rôles** ✅ — option `Fichier → DETX → Importer les personnages…` : ajoute les personnages d'un DETX au projet courant (doublons par nom ignorés).
+- **1.3.6 Lecture en vitesse lente / Shuttle** — ❌ abandonné (non retenu).
 
 ---
 

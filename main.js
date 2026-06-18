@@ -187,6 +187,7 @@ const MENU_STR = {
     updateSrt: 'Mettre à jour depuis un SRT corrigé…',
     detx: 'DETX',
     importDetx: 'Importer…',
+    importDetxRoles: 'Importer les personnages…',
     exportDetx: 'Exporter…',
     openProject: 'Ouvrir un projet…',
     recentProjects: 'Projets récents',
@@ -246,6 +247,7 @@ const MENU_STR = {
     updateSrt: 'Update from corrected SRT…',
     detx: 'DETX',
     importDetx: 'Import…',
+    importDetxRoles: 'Import characters…',
     exportDetx: 'Export…',
     openProject: 'Open a project…',
     recentProjects: 'Recent projects',
@@ -337,6 +339,7 @@ function buildMenu() {
           label: s.detx,
           submenu: [
             { label: s.importDetx, click: () => send('import-detx') },
+            { label: s.importDetxRoles, click: () => send('import-detx-roles') },
             { label: s.exportDetx, click: () => send('export-detx') },
           ],
         },

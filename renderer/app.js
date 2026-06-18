@@ -301,6 +301,7 @@ function applyLang() {
   $('trackCount').title = t('trackCountTitle')
   refreshTrackCountUI()
   $('lineFilter').title = t('filterTitle')
+  $('lineSearch').placeholder = t('lineSearchPh')
   buildLineFilterOptions()
 
   // panneau personnages + log des répliques
@@ -565,6 +566,58 @@ function deleteSelected() {
   markDirty()
 }
 
+// ---------- copier / coller de répliques (calage par mot + bornes conservés) ----------
+// Le presse-papier garde des copies profondes, ramenées à t=0 (la plus précoce des
+// répliques copiées) ; le collage replace ce groupe au point de lecture en
+// préservant les écarts relatifs entre répliques et l'élongation interne.
+let lineClipboard = null // { base: number, lines: [{characterId, track, entry, exit, voiceOff, kind, words}] }
+
+function copyLines() {
+  const sel = project.lines.filter((l) => selectedIds.has(l.id) && l.words.length)
+  if (!sel.length) return
+  const base = Math.min(...sel.map(lineStart))
+  lineClipboard = {
+    base,
+    lines: sel.map((l) => ({
+      characterId: l.characterId,
+      track: l.track,
+      entry: l.entry,
+      exit: l.exit,
+      voiceOff: l.voiceOff,
+      kind: l.kind,
+      words: l.words.map((w) => ({ text: w.text, start: w.start, end: w.end })),
+    })),
+  }
+  toast(t('linesCopied', sel.length))
+}
+
+function pasteLines() {
+  if (!lineClipboard || !lineClipboard.lines.length) return
+  pushUndo()
+  if (!project.characters.length) addCharacter()
+  const offset = Math.max(0, effectiveTime()) - lineClipboard.base
+  const fallbackChar = selectedCharId || project.characters[0].id
+  const pasted = []
+  for (const src of lineClipboard.lines) {
+    const line = {
+      id: uid(),
+      characterId: getChar(src.characterId) ? src.characterId : fallbackChar,
+      track: clamp(src.track || 0, 0, laneCount() - 1),
+      words: src.words.map((w) => ({ text: w.text, start: Math.max(0, w.start + offset), end: Math.max(0, w.end + offset) })),
+    }
+    if (src.entry) line.entry = src.entry
+    if (src.exit) line.exit = src.exit
+    if (src.voiceOff) line.voiceOff = true
+    if (src.kind) line.kind = src.kind
+    project.lines.push(line)
+    pasted.push(line.id)
+  }
+  selectedIds = new Set(pasted)
+  refreshInspector()
+  markDirty()
+  toast(t('linesPasted', pasted.length))
+}
+
 function shiftLine(line, dt) {
   const s = lineStart(line)
   if (s + dt < 0) dt = -s
@@ -738,6 +791,7 @@ $('trackCount').addEventListener('change', (e) => setTrackCount(Number(e.target.
 // Liste chronologique de toutes les répliques ; clic = sauter au début de la réplique.
 let lastLogSel = ''
 let lineFilterTrack = null // null = toutes les pistes ; sinon index de piste filtré
+let lineSearchQuery = '' // recherche texte dans la liste des répliques (Ctrl+F)
 
 // options du filtre par piste : « Toutes » + une entrée par lane affichée
 function buildLineFilterOptions() {
@@ -763,6 +817,29 @@ $('lineFilter').addEventListener('change', (e) => {
   renderLinesLog()
 })
 
+$('lineSearch').addEventListener('input', (e) => {
+  lineSearchQuery = e.target.value.trim().toLowerCase()
+  renderLinesLog()
+})
+
+// Ctrl+F : ouvre le panneau Répliques s'il est fermé, remet le filtre sur toutes
+// les pistes, et place le focus dans le champ de recherche
+function openLineSearch() {
+  const panel = $('linesPanel')
+  if (panel.classList.contains('hidden')) {
+    panel.classList.remove('hidden')
+    $('btnToggleLines').classList.add('active')
+  }
+  if (lineFilterTrack != null) {
+    lineFilterTrack = null
+    $('lineFilter').value = 'all'
+    renderLinesLog()
+  }
+  const inp = $('lineSearch')
+  inp.focus()
+  inp.select()
+}
+
 function scheduleLinesLog() {
   if (scheduleLinesLog._t) return
   scheduleLinesLog._t = setTimeout(() => {
@@ -775,8 +852,10 @@ function renderLinesLog() {
   refreshTrackCountUI() // le minimum sélectionnable suit le nombre de pistes peuplées
   const log = $('linesLog')
   log.innerHTML = ''
+  const q = lineSearchQuery
   const sorted = [...project.lines]
     .filter((l) => lineFilterTrack == null || l.track === lineFilterTrack)
+    .filter((l) => !q || l.words.map((w) => w.text).join(' ').toLowerCase().includes(q) || (getChar(l.characterId)?.name || '').toLowerCase().includes(q))
     .sort((a, b) => lineStart(a) - lineStart(b))
   let selRow = null
   for (const l of sorted) {
@@ -1901,10 +1980,22 @@ document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase()
   const typing = tag === 'input' || tag === 'select' || tag === 'textarea'
 
+  // Ctrl+F : recherche dans les répliques — fonctionne même depuis un champ de saisie
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    openLineSearch()
+    return
+  }
+
   if (typing) {
     if (e.key === 'Escape') e.target.blur()
     return
   }
+
+  // copier / couper / coller des répliques sélectionnées (calage + bornes conservés)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyLines(); return }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
 
   // touche du lexique = insertion directe d'une réac au point de lecture
   if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
@@ -2332,6 +2423,38 @@ async function importDetxDialog() {
   }
 }
 
+// importe seulement les personnages d'un DETX dans le projet courant (gabarit de
+// série) — n'écrase ni les répliques ni la vidéo. Doublons (même nom) ignorés.
+async function importDetxRolesDialog() {
+  const r = await window.api.importDetx()
+  if (!r) return
+  let chars
+  try {
+    chars = parseDetx(r.data, project.fps).characters
+  } catch {
+    toast(t('detxInvalid'))
+    return
+  }
+  const existing = new Set(project.characters.map((c) => c.name.toLowerCase()))
+  const usedIds = new Set(project.characters.map((c) => c.id))
+  const toAdd = []
+  for (const c of chars) {
+    if (existing.has(c.name.toLowerCase())) continue
+    existing.add(c.name.toLowerCase())
+    const id = usedIds.has(c.id) ? uid() : c.id
+    usedIds.add(id)
+    toAdd.push({ id, name: c.name, color: c.color || PALETTE[(project.characters.length + toAdd.length) % PALETTE.length] })
+  }
+  if (!toAdd.length) { toast(t('rolesNone')); return }
+  pushUndo()
+  project.characters.push(...toAdd)
+  if (!getChar(selectedCharId)) selectedCharId = project.characters[0].id
+  renderChars()
+  refreshInspector()
+  markDirty()
+  toast(t('rolesImported', toAdd.length))
+}
+
 async function exportDetxDialog() {
   if (!project.lines.length) {
     toast(t('noLinesToExport'))
@@ -2406,6 +2529,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'export-srt') exportSrtDialog()
   else if (action === 'update-srt') updateSrtDialog()
   else if (action === 'import-detx') importDetxDialog()
+  else if (action === 'import-detx-roles') importDetxRolesDialog()
   else if (action === 'export-detx') exportDetxDialog()
   else if (action === 'export-pdf') exportPdfDialog()
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }

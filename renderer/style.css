@@ -191,6 +191,7 @@ button.active {
   gap: 3px;
 }
 #lineFilter { width: 100%; flex: 0 0 auto; }
+#lineSearch { width: 100%; flex: 0 0 auto; font-size: 12px; }
 #linesLog {
   flex: 1 1 auto;
   min-height: 0;
