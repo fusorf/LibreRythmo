@@ -9,13 +9,13 @@
 <body>
   <div id="mainRow">
     <aside id="loopsPanel" class="hidden">
-      <h3 id="loopsTitle">Boucles</h3>
+      <h3 id="loopsTitle">Scènes</h3>
       <div class="loops-head">
-        <button id="btnAddLoop" title="Créer une boucle au point de lecture">+ Nouvelle boucle</button>
-        <button id="btnLoopPrev" class="icon-btn" title="Boucle précédente (Page ↑)">◁</button>
-        <button id="btnLoopNext" class="icon-btn" title="Boucle suivante (Page ↓)">▷</button>
+        <button id="btnAddLoop" title="Créer une scène au point de lecture">+ Nouvelle scène</button>
+        <button id="btnLoopPrev" class="icon-btn" title="Scène précédente (Page ↑)">◁</button>
+        <button id="btnLoopNext" class="icon-btn" title="Scène suivante (Page ↓)">▷</button>
       </div>
-      <div id="loopsEmpty" class="panel-empty">Aucune boucle</div>
+      <div id="loopsEmpty" class="panel-empty">Aucune scène</div>
       <div id="loopsList"></div>
     </aside>
     <aside id="linesPanel">
@@ -80,7 +80,7 @@
       <input id="zoom" type="range" min="0" max="1" step="0.001" value="0.5">
     </div>
     <div class="spacer"></div>
-    <button id="btnToggleLoops" title="Afficher / masquer le panneau Boucles">Boucles</button>
+    <button id="btnToggleLoops" title="Afficher / masquer le panneau Scènes">Scènes</button>
     <button id="btnToggleLines" class="active" title="Afficher / masquer le panneau Répliques">Répliques</button>
     <button id="btnTogglePanel" class="active" title="Afficher / masquer le panneau Personnages">Personnages</button>
   </div>
@@ -168,7 +168,7 @@
           <div class="content-row"><span id="lblExpTracks">Pistes</span>
             <span class="dropdown"><button id="ddTracksBtn" class="dropbtn" type="button"></button><div id="ddTracksMenu" class="dropmenu hidden"></div></span>
           </div>
-          <div class="content-row"><span id="lblExpLoops">Boucles</span>
+          <div class="content-row"><span id="lblExpLoops">Scènes</span>
             <span class="dropdown"><button id="ddLoopsBtn" class="dropbtn" type="button"></button><div id="ddLoopsMenu" class="dropmenu hidden"></div></span>
           </div>
           <label><span id="lblExpAudio">Audio</span> <select id="expAudio"></select></label>

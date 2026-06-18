@@ -1284,12 +1284,13 @@ tcanvas.addEventListener('pointerdown', (e) => {
   } else {
     video.pause(); scrub.active = true
     tdrag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: tTAt(x, effectiveTime()), fromRuler: li < 0, moved: false }
+    tcanvas.style.cursor = 'grabbing'
   }
 })
 tcanvas.addEventListener('pointermove', (e) => {
   const r = tcanvas.getBoundingClientRect()
   const x = e.clientX - r.left
-  if (!tdrag) { tcanvas.style.cursor = tLaneAt(e.clientY - r.top) >= 1 ? 'ew-resize' : 'default'; return }
+  if (!tdrag) { tcanvas.style.cursor = tLaneAt(e.clientY - r.top) >= 1 ? 'ew-resize' : 'grab'; return }
   const dx = x - tdrag.x0
   if (tdrag.kind === 'scrub') {
     if (Math.abs(dx) > 3) tdrag.moved = true
@@ -1307,6 +1308,7 @@ function tEndDrag() {
   if (tdrag && tdrag.kind === 'scrub' && tdrag.fromRuler && !tdrag.moved && video.src) scrubTo(tdrag.tClick)
   tdrag = null; scrub.active = false
   if (!scrub.busy && scrub.pending == null) scrub.time = null
+  tcanvas.style.cursor = 'grab'
 }
 tcanvas.addEventListener('pointerup', tEndDrag)
 tcanvas.addEventListener('pointercancel', tEndDrag)
