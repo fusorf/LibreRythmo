@@ -79,7 +79,7 @@ body {
   flex-direction: column;
 }
 
-button, select, input[type="text"], input[type="number"] {
+button, select, input[type="text"], input[type="number"], input[type="search"] {
   height: var(--ctl-h);
   background: var(--panel2);
   color: var(--text);
@@ -94,15 +94,19 @@ button:hover, select:hover { background: var(--hover); }
 button:active { background: var(--active); }
 /* champs de saisie : fond inset + texte vif (même traitement que le compteur de temps),
    pour distinguer ce qui s'édite (puits) de ce qui se clique (boutons/selects en relief) */
-input[type="text"], input[type="number"] {
+input[type="text"], input[type="number"], input[type="search"] {
   cursor: text;
   background: var(--inset);
   color: var(--sel-text);
 }
 input[type="number"] { width: 4.6em; }
+/* champ de recherche : neutralise l'apparence native (loupe/coin arrondi WebKit) */
+input[type="search"] { -webkit-appearance: none; appearance: none; }
+input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+input[type="search"]::placeholder { color: var(--dim); }
 /* focus clavier discret et cohérent (remplace l'outline navigateur) */
 button:focus-visible, select:focus-visible,
-input[type="text"]:focus-visible, input[type="number"]:focus-visible {
+input[type="text"]:focus-visible, input[type="number"]:focus-visible, input[type="search"]:focus-visible {
   outline: 1px solid var(--toggle-border);
   outline-offset: 1px;
 }
