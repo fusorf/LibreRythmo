@@ -123,7 +123,7 @@ ipcMain.handle('get-settings', () => settings)
 // ---------- Discord Rich Presence (IPC local, sans dépendance) ----------
 // Pour afficher la présence, créer une application sur https://discord.com/developers
 // et coller son « Application ID » ci-dessous (sinon la connexion est refusée en silence).
-const DISCORD_CLIENT_ID = '0000000000000000000' // ← Application ID Discord (à renseigner)
+const DISCORD_CLIENT_ID = '1517161433857527899' // Application ID Discord (LibreRythmo)
 const discordStart = Date.now()
 let discordSock = null
 let discordReady = false
