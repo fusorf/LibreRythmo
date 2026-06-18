@@ -1477,7 +1477,11 @@ function drawMouthMark(c, x, y, th, state, side, pal) {
 function renderBand(c, now, W, H, pps, opts) {
   const pal = opts.theme || BAND_THEMES.dark
   const rh = opts.ruler ? RULER_H : 0
-  const N = laneCount()
+  // opts.trackList : sous-ensemble de pistes à montrer, compacté en lanes contiguës
+  // (export d'une sélection de pistes) ; sinon toutes les pistes affichées.
+  const list = opts.trackList && opts.trackList.length ? opts.trackList : null
+  const N = list ? list.length : laneCount()
+  const rowOf = (tr) => (list ? list.indexOf(tr) : tr)
   const th = (H - rh) / N
   const rx = W * READ_RATIO
   const xAt = (tt) => rx + (tt - now) * pps
@@ -1557,7 +1561,8 @@ function renderBand(c, now, W, H, pps, opts) {
 
   // répliques
   for (const line of project.lines) {
-    if (opts.tracks && !opts.tracks.has(line.track)) continue // export d'une sélection de pistes
+    const row = rowOf(line.track)
+    if (row < 0) continue // piste exclue de la sélection d'export
     const s = lineStart(line)
     const e = lineEnd(line)
     const x0 = xAt(s)
@@ -1566,7 +1571,7 @@ function renderBand(c, now, W, H, pps, opts) {
 
     const char = getChar(line.characterId)
     const color = char ? char.color : '#888888'
-    const y = rh + line.track * th
+    const y = rh + row * th
     const selected = opts.handles && selectedIds.has(line.id)
 
     c.fillStyle = color + '22'
@@ -3046,38 +3051,44 @@ function exportRange() {
   return end > start ? { start, end } : { start: 0, end: dur }
 }
 
-// construit les contrôles du groupe « Contenu » à l'ouverture de l'export
-function buildExportContent() {
-  // pistes rythmo (cases) — toutes cochées par défaut
-  exp.tracks = new Set(Array.from({ length: laneCount() }, (_, i) => i))
-  const tw = $('expTracks')
-  tw.innerHTML = ''
-  for (let i = 0; i < laneCount(); i++) {
+// résumé affiché sur le bouton d'un menu à cases
+function summarizeChecks(state, items, allLabel, someLabel) {
+  if (!items.length) return allLabel
+  if (state.size >= items.length) return allLabel
+  if (state.size === 1) { const it = items.find((i) => state.has(i.value)); return it ? it.label : someLabel(1) }
+  return someLabel(state.size)
+}
+
+// remplit un menu déroulant de cases liées à un Set d'état
+function fillChecklist(menu, items, state, onChange) {
+  menu.innerHTML = ''
+  for (const it of items) {
     const lab = document.createElement('label')
     const cb = document.createElement('input')
-    cb.type = 'checkbox'; cb.checked = true
-    cb.addEventListener('change', () => { cb.checked ? exp.tracks.add(i) : exp.tracks.delete(i) })
-    lab.append(cb, document.createTextNode(t('track', i + 1)))
-    tw.appendChild(lab)
+    cb.type = 'checkbox'; cb.checked = state.has(it.value)
+    cb.addEventListener('change', () => { cb.checked ? state.add(it.value) : state.delete(it.value); onChange() })
+    lab.append(cb, document.createTextNode(it.label))
+    menu.appendChild(lab)
   }
-  // boucles (cases) — toutes cochées = toute la vidéo
-  exp.loopSel = new Set((project.loops || []).map((l) => l.id))
-  const lw = $('expLoops')
-  lw.innerHTML = ''
-  if (!project.loops || !project.loops.length) {
-    const s = document.createElement('span')
-    s.className = 'exp-none'; s.textContent = t('expWholeVideo')
-    lw.appendChild(s)
-  } else {
-    for (const lp of sortedLoops()) {
-      const lab = document.createElement('label')
-      const cb = document.createElement('input')
-      cb.type = 'checkbox'; cb.checked = true
-      cb.addEventListener('change', () => { cb.checked ? exp.loopSel.add(lp.id) : exp.loopSel.delete(lp.id) })
-      lab.append(cb, document.createTextNode(lp.name + (lp.type === 'out' ? ' (OUT)' : '')))
-      lw.appendChild(lab)
-    }
-  }
+}
+
+// construit les contrôles du groupe « Contenu » à l'ouverture de l'export
+function buildExportContent() {
+  // pistes rythmo — toutes cochées par défaut
+  const trackItems = Array.from({ length: laneCount() }, (_, i) => ({ value: i, label: t('track', i + 1) }))
+  exp.tracks = new Set(trackItems.map((it) => it.value))
+  const updTracks = () => { $('ddTracksBtn').textContent = summarizeChecks(exp.tracks, trackItems, t('expAllTracks'), t('expSomeTracks')) }
+  fillChecklist($('ddTracksMenu'), trackItems, exp.tracks, updTracks)
+  updTracks()
+
+  // boucles — toutes cochées = toute la vidéo
+  const loopItems = sortedLoops().map((lp) => ({ value: lp.id, label: lp.name + (lp.type === 'out' ? ' (OUT)' : '') }))
+  exp.loopSel = new Set(loopItems.map((it) => it.value))
+  const updLoops = () => { $('ddLoopsBtn').textContent = loopItems.length ? summarizeChecks(exp.loopSel, loopItems, t('expAllLoops'), t('expSomeLoops')) : t('expWholeVideo') }
+  fillChecklist($('ddLoopsMenu'), loopItems, exp.loopSel, updLoops)
+  $('ddLoopsBtn').disabled = !loopItems.length
+  updLoops()
+
   // piste audio (liste déroulante) — défaut = piste de la vidéo (embarquée par défaut)
   const sel = $('expAudio')
   sel.innerHTML = ''
@@ -3126,6 +3137,24 @@ $('expWin').addEventListener('input', () => {
 $('expTheme').addEventListener('change', () => { exp.theme = $('expTheme').value === 'light' ? 'light' : 'dark' })
 $('expAudio').addEventListener('change', () => { exp.audioId = $('expAudio').value })
 
+// menus déroulants à cases (pistes / boucles) : ouverture exclusive + fermeture au clic dehors
+function closeDropdowns(except) {
+  for (const m of [$('ddTracksMenu'), $('ddLoopsMenu')]) if (m !== except) m.classList.add('hidden')
+}
+function wireDropdown(btnId, menuId) {
+  $(btnId).addEventListener('click', (e) => {
+    e.stopPropagation()
+    const menu = $(menuId)
+    const willOpen = menu.classList.contains('hidden')
+    closeDropdowns(willOpen ? menu : null)
+    menu.classList.toggle('hidden', !willOpen)
+  })
+  $(menuId).addEventListener('click', (e) => e.stopPropagation())
+}
+wireDropdown('ddTracksBtn', 'ddTracksMenu')
+wireDropdown('ddLoopsBtn', 'ddLoopsMenu')
+document.addEventListener('click', () => closeDropdowns(null))
+
 $('expBrowse').addEventListener('click', async () => {
   const p = await window.api.exportSaveDialog($('expPath').value || undefined)
   if (p) $('expPath').value = p
@@ -3172,7 +3201,8 @@ function exportPreviewLoop() {
   expCtx.beginPath()
   expCtx.rect(0, 0, L.band.w * s, L.band.h * s)
   expCtx.clip()
-  renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], tracks: exp.tracks })
+  const previewTrackList = exp.tracks ? [...exp.tracks].sort((a, b) => a - b) : null
+  renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList: previewTrackList })
   expCtx.restore()
 
   // barre de séparation glissable entre la vidéo et la bande (masquée pendant l'export)
@@ -3269,7 +3299,7 @@ async function runExport(outPathOverride) {
   let dur = range.end - range.start
   if (exp.maxSeconds > 0) dur = Math.min(exp.maxSeconds, dur)
   const total = Math.ceil(dur * fps)
-  const trackSet = exp.tracks // pistes rythmo incluses
+  const trackList = [...(exp.tracks || [])].sort((a, b) => a - b) // pistes rythmo incluses (compactées)
 
   const bw = Math.max(2, Math.round(L.band.w / 2) * 2)
   const bh = Math.max(2, Math.round(L.band.h / 2) * 2)
@@ -3315,7 +3345,7 @@ async function runExport(outPathOverride) {
   for (let i = 0; i < total; i++) {
     if (exp.cancelled) { ok = false; break }
     const tt = startT + i / fps
-    renderBand(octx, tt, bw, bh, bw / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], tracks: trackSet })
+    renderBand(octx, tt, bw, bh, bw / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList })
     exp.previewTime = tt
     const sent = await window.api.exportFrame(octx.getImageData(0, 0, bw, bh).data.buffer)
     if (!sent) { ok = false; break }

@@ -3,6 +3,14 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.2] - 2026-06-18
+
+### Modifié
+- **Sélection Pistes / Boucles à l'export en menus déroulants à cases** (au lieu des cases en
+  ligne), avec résumé sur le bouton (« Toutes les pistes », « 2 boucles »…).
+- **L'aperçu d'export reflète les pistes décochées** : la bande est **compactée** (lanes
+  contiguës, sans trou) dans l'aperçu *et* dans le MP4 — décocher une piste retire bien sa lane.
+
 ## [1.4.1] - 2026-06-18
 
 ### Ajouté

@@ -167,8 +167,12 @@
         </fieldset>
         <fieldset class="opt-group">
           <legend id="grpContent">Contenu</legend>
-          <div class="content-row"><span id="lblExpTracks">Pistes</span><div id="expTracks" class="exp-checks"></div></div>
-          <div class="content-row"><span id="lblExpLoops">Boucles</span><div id="expLoops" class="exp-checks"></div></div>
+          <div class="content-row"><span id="lblExpTracks">Pistes</span>
+            <span class="dropdown"><button id="ddTracksBtn" class="dropbtn" type="button"></button><div id="ddTracksMenu" class="dropmenu hidden"></div></span>
+          </div>
+          <div class="content-row"><span id="lblExpLoops">Boucles</span>
+            <span class="dropdown"><button id="ddLoopsBtn" class="dropbtn" type="button"></button><div id="ddLoopsMenu" class="dropmenu hidden"></div></span>
+          </div>
           <label><span id="lblExpAudio">Audio</span> <select id="expAudio"></select></label>
         </fieldset>
       </div>
