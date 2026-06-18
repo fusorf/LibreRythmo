@@ -68,13 +68,14 @@
       <input id="volume" type="range" min="0" max="1" step="0.01" value="1">
     </div>
     <div class="sep"></div>
-    <button id="btnAddLine" title="Nouvelle réplique au point de lecture (Entrée)"><span id="addLineLabel">+ Nouvelle réplique</span><span class="dot" id="addLineDot"></span></button>
-    <button id="btnOnoma" title="Insérer une réaction standard au point de lecture">Réactions</button>
-    <button id="btnMagnet" class="icon-btn" title="Mode aimant">
+    <button id="btnAddLine" class="rythmo-ctl" title="Nouvelle réplique au point de lecture (Entrée)"><span id="addLineLabel">+ Nouvelle réplique</span><span class="dot" id="addLineDot"></span></button>
+    <button id="btnOnoma" class="rythmo-ctl" title="Insérer une réaction standard au point de lecture">Réactions</button>
+    <button id="btnMagnet" class="icon-btn rythmo-ctl" title="Mode aimant">
       <svg viewBox="0 0 16 16"><path d="M3 1h4v7a1 1 0 002 0V1h4v7A5 5 0 013 8V1zm1.2 1.2v1.6h1.6V2.2H4.2zm6 0v1.6h1.6V2.2h-1.6z" fill-rule="evenodd"/></svg>
     </button>
+    <button id="btnImportAudio" class="tracks-ctl">+ Importer un audio…</button>
     <div class="sep"></div>
-    <select id="trackCount" title="Nombre de pistes affichées"></select>
+    <select id="trackCount" class="rythmo-ctl" title="Nombre de pistes affichées"></select>
     <div class="vol" id="zoomWrap" title="Zoom de la bande (Ctrl+molette)">
       <svg viewBox="0 0 16 16"><path d="M6.5 1a5.5 5.5 0 014.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 116.5 1zm0 1.5a4 4 0 100 8 4 4 0 000-8zM5.75 5.75V4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
       <input id="zoom" type="range" min="0" max="1" step="0.001" value="0.5">
@@ -93,11 +94,6 @@
   <canvas id="band"></canvas>
 
   <div id="tracksView" class="hidden">
-    <div id="tracksToolbar">
-      <button id="btnImportAudio">+ Importer un audio…</button>
-      <div class="spacer"></div>
-      <span id="tracksHint"></span>
-    </div>
     <div id="tracksWrap">
       <div id="trackHeads"></div>
       <div id="tracksCanvasWrap"><canvas id="tracksCanvas"></canvas></div>

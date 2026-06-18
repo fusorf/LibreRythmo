@@ -514,11 +514,16 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 }
 .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--toggle-text); border-radius: 2px; }
 
+/* contrôles contextuels de la barre d'action : rythmo masqués sur l'onglet Pistes, et
+   inversement le bouton « Importer un audio » n'apparaît que sur l'onglet Pistes */
+.tracks-ctl { display: none; }
+body.on-tracks .rythmo-ctl,
+body.on-tracks #btnAddLine { display: none; } /* #btnAddLine a une règle display dédiée → surcharge nécessaire */
+body.on-tracks .tracks-ctl { display: inline-flex; }
+
 /* ---------- vue Pistes (timeline façon montage) ---------- */
 #tracksView { flex: 0 0 auto; display: flex; flex-direction: column; background: var(--panel2); border-top: 1px solid var(--border); }
 #tracksView.hidden { display: none; }
-#tracksToolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-#tracksHint { color: var(--dim); font-size: 11.5px; }
 #tracksWrap { display: flex; max-height: 246px; overflow-y: auto; }
 #trackHeads { flex: 0 0 218px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--border); }
 .trk-head-spacer { height: 30px; flex: 0 0 auto; border-bottom: 1px solid var(--border); background: var(--panel); }

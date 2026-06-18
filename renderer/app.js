@@ -1067,6 +1067,7 @@ let tcw = 0, tch = 0
 function setTab(name) {
   activeTab = name === 'tracks' ? 'tracks' : 'rythmo'
   const onTracks = activeTab === 'tracks'
+  document.body.classList.toggle('on-tracks', onTracks) // cache les contrôles rythmo, montre l'import audio
   $('tabRythmo').classList.toggle('active', !onTracks)
   $('tabTracks').classList.toggle('active', onTracks)
   $('band').classList.toggle('hidden', onTracks)

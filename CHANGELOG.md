@@ -3,6 +3,13 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.7] - 2026-06-18
+
+### Modifié
+- **Barre d'action contextuelle** : « + Importer un audio… » est désormais dans la barre du bas
+  (à la place de « + Nouvelle réplique »), et **les contrôles propres au rythmo** (nouvelle
+  réplique, réactions, aimant, nombre de pistes) sont **masqués sur l'onglet Pistes**.
+
 ## [1.4.6] - 2026-06-18
 
 Revue de code : corrections et nettoyage.
