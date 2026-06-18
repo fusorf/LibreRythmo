@@ -3,6 +3,15 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.9] - 2026-06-18
+
+### Ajouté
+- **Mode lecture plein écran** (bouton à droite des contrôles de lecture, ou **F5**) : aperçu
+  immersif vidéo + bande incrustée « comme à l'export » (sans forme d'onde). Les contrôles
+  apparaissent au mouvement de la souris et se masquent à la lecture : lecture/pause, scène
+  précédente/suivante, **boucle de scène**, barre de progression, affichage des pistes rythmo,
+  son. **Échap** pour quitter.
+
 ## [1.4.8] - 2026-06-18
 
 ### Modifié

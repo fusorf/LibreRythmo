@@ -305,6 +305,14 @@ function applyLang() {
   $('tabTracks').textContent = t('tabTracks')
   $('btnImportAudio').textContent = t('importAudio')
   if (activeTab === 'tracks') renderTracks()
+  // mode lecture plein écran
+  $('btnPlayer').title = t('playerBtn')
+  $('pcExit').title = t('pcExitTitle')
+  $('pcPlay').title = t('pcPlayTitle')
+  $('pcPrev').title = t('pcPrevTitle')
+  $('pcNext').title = t('pcNextTitle')
+  $('pcLoop').title = t('pcLoopTitle')
+  $('pcMute').title = t('pcMuteTitle')
   $('zoomWrap').title = t('zoomTitle')
   $('trackCount').title = t('trackCountTitle')
   refreshTrackCountUI()
@@ -2313,6 +2321,20 @@ document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase()
   const typing = tag === 'input' || tag === 'select' || tag === 'textarea'
 
+  // mode lecture plein écran : F5 entre/sort, Échap sort ; sinon lecture/navigation seulement
+  if (e.key === 'F5') { e.preventDefault(); player.open ? closePlayer() : openPlayer(); return }
+  if (player.open) {
+    if (e.key === 'Escape') { e.preventDefault(); closePlayer(); return }
+    switch (e.key) {
+      case ' ': e.preventDefault(); togglePlay(); showPlayerControls(); break
+      case 'ArrowLeft': e.preventDefault(); video.pause(); video.currentTime = clamp(video.currentTime - (e.shiftKey ? 1 : 1 / project.fps), 0, videoDur()); showPlayerControls(); break
+      case 'ArrowRight': e.preventDefault(); video.pause(); video.currentTime = clamp(video.currentTime + (e.shiftKey ? 1 : 1 / project.fps), 0, videoDur()); showPlayerControls(); break
+      case 'PageUp': e.preventDefault(); gotoLoop(-1); showPlayerControls(); break
+      case 'PageDown': e.preventDefault(); gotoLoop(1); showPlayerControls(); break
+    }
+    return
+  }
+
   // Ctrl+F : recherche dans les répliques — fonctionne même depuis un champ de saisie
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
     e.preventDefault()
@@ -3464,11 +3486,150 @@ async function runExport(outPathOverride) {
 
 $('expGo').addEventListener('click', runExport)
 
+// ============================================================ mode lecture (plein écran)
+// Aperçu immersif « comme à l'export » : vidéo + bande incrustée (sans forme d'onde) ;
+// contrôles auto-masqués (lecture, scène préc./suiv., boucle de scène, affichage des
+// pistes, son). F5 pour entrer, Échap pour quitter.
+const player = { open: false, bandFrac: 0.16, bandPos: 'bottom', loopScene: false, hideTimer: null }
+let playerTracks = new Set()
+const pcanvas = $('playerCanvas')
+const pctx = pcanvas.getContext('2d')
+
+function resizePlayerCanvas() {
+  const dpr = window.devicePixelRatio || 1
+  const w = window.innerWidth, h = window.innerHeight
+  pcanvas.style.width = w + 'px'; pcanvas.style.height = h + 'px'
+  pcanvas.width = Math.round(w * dpr); pcanvas.height = Math.round(h * dpr)
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+
+// disposition vidéo (letterbox) + bande, à la manière de l'export
+function playerLayout() {
+  const W = window.innerWidth, H = window.innerHeight
+  const bandH = clamp(Math.round(H * player.bandFrac), 48, Math.round(H * 0.4))
+  const regionH = H - bandH
+  const ar = (video.videoWidth || 16) / (video.videoHeight || 9)
+  let vw = W, vh = vw / ar
+  if (vh > regionH) { vh = regionH; vw = vh * ar }
+  const regionY = player.bandPos === 'top' ? bandH : 0
+  const bandY = player.bandPos === 'top' ? 0 : regionH
+  return { video: { x: (W - vw) / 2, y: regionY + (regionH - vh) / 2, w: vw, h: vh }, band: { x: 0, y: bandY, w: W, h: bandH } }
+}
+
+function drawPlayer() {
+  const W = window.innerWidth, H = window.innerHeight
+  pctx.fillStyle = '#000'; pctx.fillRect(0, 0, W, H)
+  const L = playerLayout()
+  if (video.videoWidth) pctx.drawImage(video, L.video.x, L.video.y, L.video.w, L.video.h)
+  const winSec = clamp(secondsVisible, SEC_MIN, SEC_MAX)
+  pctx.save()
+  pctx.translate(L.band.x, L.band.y)
+  pctx.beginPath(); pctx.rect(0, 0, L.band.w, L.band.h); pctx.clip()
+  renderBand(pctx, effectiveTime(), L.band.w, L.band.h, L.band.w / winSec, { ruler: false, wave: false, handles: false, theme: bandPal(), trackList: [...playerTracks].sort((a, b) => a - b) })
+  pctx.restore()
+}
+
+// scène (boucle) contenant le point de lecture courant
+function currentScene() {
+  const now = effectiveTime()
+  return (project.loops || []).find((lp) => now >= lp.start && now < lp.end) || null
+}
+
+function buildPlayerTrackToggles() {
+  const wrap = $('pcTracks')
+  wrap.innerHTML = ''
+  const n = laneCount()
+  wrap.style.display = n > 1 ? 'flex' : 'none'
+  if (n <= 1) return
+  for (let i = 0; i < n; i++) {
+    const b = document.createElement('button')
+    b.className = 'pc-btn pc-tk' + (playerTracks.has(i) ? ' on' : '')
+    b.textContent = String(i + 1)
+    b.title = t('track', i + 1)
+    b.addEventListener('click', (e) => {
+      e.stopPropagation()
+      playerTracks.has(i) ? playerTracks.delete(i) : playerTracks.add(i)
+      b.classList.toggle('on')
+      showPlayerControls()
+    })
+    wrap.appendChild(b)
+  }
+}
+
+function showPlayerControls() {
+  $('playerControls').classList.add('show')
+  $('playerMode').classList.remove('cursor-hidden')
+  clearTimeout(player.hideTimer)
+  player.hideTimer = setTimeout(() => {
+    if (player.open && !video.paused) {
+      $('playerControls').classList.remove('show')
+      $('playerMode').classList.add('cursor-hidden')
+    }
+  }, 2600)
+}
+
+function updatePlayerUI() {
+  $('pcPlay').classList.toggle('playing', !video.paused)
+  $('pcLoop').classList.toggle('on', player.loopScene)
+  $('pcMute').classList.toggle('muted', video.muted)
+  const dur = isFinite(video.duration) ? video.duration : 0
+  const now = effectiveTime()
+  if (document.activeElement !== $('pcSeek')) $('pcSeek').value = String(dur ? Math.round((now / dur) * 1000) : 0)
+  $('pcTime').textContent = `${formatTcShort(now)} / ${formatTcShort(dur)}`
+  const sc = currentScene()
+  $('pcScene').textContent = sc ? (sc.type === 'out' ? 'OUT · ' : '') + sc.name : ''
+}
+
+function openPlayer() {
+  if (!project.videoPath || !video.videoWidth) { toast(t('loadVideoFirst')); return }
+  player.open = true
+  playerTracks = new Set(Array.from({ length: laneCount() }, (_, i) => i))
+  buildPlayerTrackToggles()
+  $('playerMode').classList.remove('hidden')
+  resizePlayerCanvas()
+  updatePlayerUI()
+  showPlayerControls()
+  $('playerMode').requestFullscreen?.().catch(() => {})
+}
+
+function closePlayer() {
+  if (!player.open) return
+  player.open = false
+  clearTimeout(player.hideTimer)
+  $('playerMode').classList.add('hidden')
+  $('playerMode').classList.remove('cursor-hidden')
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+}
+
+$('btnPlayer').addEventListener('click', openPlayer)
+$('pcExit').addEventListener('click', closePlayer)
+$('pcPlay').addEventListener('click', (e) => { e.stopPropagation(); togglePlay(); showPlayerControls() })
+$('pcPrev').addEventListener('click', (e) => { e.stopPropagation(); gotoLoop(-1); showPlayerControls() })
+$('pcNext').addEventListener('click', (e) => { e.stopPropagation(); gotoLoop(1); showPlayerControls() })
+$('pcLoop').addEventListener('click', (e) => { e.stopPropagation(); player.loopScene = !player.loopScene; updatePlayerUI(); showPlayerControls() })
+$('pcMute').addEventListener('click', (e) => { e.stopPropagation(); video.muted = !video.muted; updatePlayerUI(); showPlayerControls() })
+$('pcSeek').addEventListener('input', () => {
+  const dur = isFinite(video.duration) ? video.duration : 0
+  if (dur) scrubTo((Number($('pcSeek').value) / 1000) * dur)
+})
+$('playerCanvas').addEventListener('click', () => { togglePlay(); showPlayerControls() })
+$('playerMode').addEventListener('mousemove', showPlayerControls)
+// quitter le plein écran (Échap navigateur) ferme aussi le mode lecture
+document.addEventListener('fullscreenchange', () => { if (player.open && !document.fullscreenElement) closePlayer() })
+
 // ============================================================ main loop
 function loop() {
   $('timecode').textContent = formatTc(effectiveTime(), project.fps)
   btnPlay.classList.toggle('playing', !video.paused)
-  if (activeTab === 'tracks') drawTracks()
+  if (player.open) {
+    // boucle de scène : revenir au début quand on atteint la fin de la scène courante
+    if (player.loopScene && !video.paused) {
+      const sc = currentScene()
+      if (sc && effectiveTime() >= sc.end - 0.03) video.currentTime = sc.start
+    }
+    drawPlayer()
+    updatePlayerUI()
+  } else if (activeTab === 'tracks') drawTracks()
   else draw()
   requestAnimationFrame(loop)
 }

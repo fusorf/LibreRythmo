@@ -55,6 +55,9 @@
         <svg viewBox="0 0 16 16"><path d="M5 3l6 5-6 5V3z"/></svg>
       </button>
     </div>
+    <button id="btnPlayer" class="icon-btn" title="Mode lecture plein écran (F5)">
+      <svg viewBox="0 0 16 16"><path d="M2 2h5v2H4v3H2V2zm12 0v5h-2V4h-3V2h5zM2 9h2v3h3v2H2V9zm12 0v5H9v-2h3V9h2z"/></svg>
+    </button>
     <span id="timecode" title="Timecode courant">00:00:00:00</span>
     <select id="speed" title="Vitesse de lecture">
       <option value="0.5">×0.5</option>
@@ -198,6 +201,44 @@
   </div>
 
   <div id="onomaPop" class="hidden"></div>
+
+  <div id="playerMode" class="hidden">
+    <canvas id="playerCanvas"></canvas>
+    <div id="playerControls">
+      <div class="pc-top">
+        <span id="pcScene"></span>
+        <div class="spacer"></div>
+        <button id="pcExit" class="pc-btn" title="Quitter (Échap)">
+          <svg viewBox="0 0 16 16"><path d="M4 3l9 9-1 1-9-9zM13 4l-9 9-1-1 9-9z"/></svg>
+        </button>
+      </div>
+      <div class="pc-bottom">
+        <input id="pcSeek" type="range" min="0" max="1000" value="0">
+        <div class="pc-row">
+          <button id="pcPrev" class="pc-btn" title="Scène précédente (Page ↑)">
+            <svg viewBox="0 0 16 16"><path d="M4 2h2v12H4zM14 2L6 8l8 6V2z"/></svg>
+          </button>
+          <button id="pcPlay" class="pc-btn pc-play" title="Lecture / pause (Espace)">
+            <span class="ic-play"><svg viewBox="0 0 16 16"><path d="M4.5 2.5l8.5 5.5-8.5 5.5V2.5z"/></svg></span>
+            <span class="ic-pause"><svg viewBox="0 0 16 16"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z"/></svg></span>
+          </button>
+          <button id="pcNext" class="pc-btn" title="Scène suivante (Page ↓)">
+            <svg viewBox="0 0 16 16"><path d="M10 2h2v12h-2zM2 2l8 6-8 6V2z"/></svg>
+          </button>
+          <button id="pcLoop" class="pc-btn" title="Boucler la scène">
+            <svg viewBox="0 0 16 16"><path d="M4 4h6V2.5L13 5l-3 2.5V6H5v3H3V5a1 1 0 011-1zm8 4v3a1 1 0 01-1 1H6v1.5L3 11l3-2.5V10h5V8h1z"/></svg>
+          </button>
+          <span id="pcTime" class="pc-time">0:00 / 0:00</span>
+          <div class="spacer"></div>
+          <div id="pcTracks" class="pc-tracks"></div>
+          <button id="pcMute" class="pc-btn" title="Couper le son">
+            <svg class="ic-snd" viewBox="0 0 16 16"><path d="M2 6v4h3l4 3.5v-11L5 6H2zM11 5.2a3.4 3.4 0 010 5.6V5.2z"/></svg>
+            <svg class="ic-mute" viewBox="0 0 16 16"><path d="M2 6v4h3l4 3.5v-11L5 6H2z"/><path d="M11 6l3 3m0-3l-3 3" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="loadingOverlay" class="hidden">
     <div class="loader-box">
