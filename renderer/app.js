@@ -917,7 +917,7 @@ function renderLinesLog() {
 // Une boucle = une scène : bornes ouverture/fermeture sur la timeline, gérées dans
 // le panneau « Boucles » (création/bornage au point de lecture, navigation, type
 // OUT). Persistées dans le projet (project.loops). Restent internes au .rythmo —
-// non sérialisées en DETX (interopérabilité Cappella/Joker à trancher, cf. ROADMAP).
+// non sérialisées en DETX (restent internes au format .rythmo).
 const loopDur = (lp) => Math.max(0, lp.end - lp.start)
 const sortedLoops = () => [...project.loops].sort((a, b) => a.start - b.start)
 

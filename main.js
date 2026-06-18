@@ -55,7 +55,7 @@ async function checkForUpdate() {
 ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/latest`))
 
 // ---------- réglages persistants — settings.ini dans le dossier userData ----------
-const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, encoder: 'gpu', discord: false }
+const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, encoder: 'gpu', discord: true }
 let settings = { ...DEFAULTS, recent: [] }
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.ini')
