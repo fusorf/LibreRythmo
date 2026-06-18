@@ -3,6 +3,28 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.1.0] - 2026-06-18
+
+Conformité au standard du doublage FR (socle métier).
+
+### Ajouté
+- **Lexique des réacs** (Cappella) : la palette « Réactions » insère les tokens canoniques
+  (`ah`, `oh`, `euh`, `fff`, `hhh`, `(rire)`, `(peur)`, `(snif)`…), avec la convention des
+  parenthèses (onomatopée = texte nu, indication de jeu = entre parenthèses). **Insertion
+  directe par la touche** indiquée sur chaque chip, ou au clic. **Tokens localisés** (FR ou EN
+  selon la langue de l'UI). Une réac est posée comme une réplique courte, sans flèche
+  entrée/sortie par défaut.
+- **Respirations normalisées** intégrées au lexique : `fff` (expiration), `hhh` (aspiration),
+  `(mts)` (lèvres), `(tst)` (langue), `(snif)` (reniflement) — chacune posable en une touche.
+- **Attribut voix off** par réplique (bascule « Voix off » dans l'inspecteur) : bouche non visible
+  à l'écran → texte **souligné** sur la bande. Survit à l'aller-retour DETX via un attribut
+  `voiceoff` (ignoré par les autres outils, relu par LibreRythmo).
+
+### Modifié
+- **Palette d'auto-attribution** : nouveaux rôles en **encres sombres** saturées (lisibles sur
+  fond clair comme sur le thème sombre) ; les couleurs vives/fluo sont réservées aux petits
+  rôles, ambiances et voix médias (choix manuel via le sélecteur de couleur).
+
 ## [1.0.1] - 2026-06-12
 
 ### Ajouté

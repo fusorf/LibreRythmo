@@ -5,7 +5,11 @@ const $ = (id) => document.getElementById(id)
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 const uid = () => Math.random().toString(36).slice(2, 10)
 
-const PALETTE = ['#ff5c5c', '#ffd23f', '#4ecdc4', '#7aa2ff', '#ff8fab', '#9bde7e', '#c792ea', '#f0a35e']
+// Palette d'auto-attribution (v1.1) : encres sombres et saturées, lisibles aussi
+// bien sur fond clair (convention papier du doublage) que sur le thème sombre. Les
+// couleurs vives/fluo sont réservées aux petits rôles, ambiances et voix médias
+// (l'utilisateur les choisit à la main via le sélecteur de couleur).
+const PALETTE = ['#c0392b', '#2e6da4', '#2a8c6a', '#8e44ad', '#c2790f', '#1f7a8c', '#b03a5b', '#4a5a99']
 const MAX_TRACKS = 4 // plafond DETX (track 0-3) = capacité maximale
 const DEFAULT_TRACKS = 1 // nombre de pistes affichées par défaut
 const RULER_H = 30 // hauteur de la règle de temps (un peu plus épaisse que le texte)
@@ -307,6 +311,8 @@ function applyLang() {
     sel.value = prev
   }
 
+  ins.voiceOff.textContent = t('insVoiceOff')
+  ins.voiceOff.title = t('insVoiceOffTitle')
   ins.text.placeholder = t('insTextPh')
   ins.start.title = t('insStart')
   ins.end.title = t('insEnd')
@@ -558,6 +564,7 @@ const ins = {
   track: $('insTrack'),
   entry: $('insEntry'),
   exit: $('insExit'),
+  voiceOff: $('insVoiceOff'),
   text: $('insText'),
   start: $('insStart'),
   end: $('insEnd'),
@@ -582,6 +589,7 @@ function refreshInspector() {
   ins.track.value = String(line.track)
   ins.entry.value = line.entry || ''
   ins.exit.value = line.exit || ''
+  ins.voiceOff.classList.toggle('active', !!line.voiceOff)
   if (document.activeElement !== ins.text) ins.text.value = line.words.map((w) => w.text).join(' ')
   if (document.activeElement !== ins.start) ins.start.value = formatTc(lineStart(line), project.fps)
   if (document.activeElement !== ins.end) ins.end.value = formatTc(lineEnd(line), project.fps)
@@ -602,6 +610,16 @@ ins.entry.addEventListener('change', () => {
 ins.exit.addEventListener('change', () => {
   const l = singleSelected()
   if (l) { pushUndo(); l.exit = ins.exit.value || undefined; markDirty() }
+})
+// voix off : bouche non visible à l'écran → texte souligné sur la bande
+ins.voiceOff.addEventListener('click', () => {
+  const l = singleSelected()
+  if (!l) return
+  pushUndo()
+  l.voiceOff = !l.voiceOff
+  if (!l.voiceOff) delete l.voiceOff
+  refreshInspector()
+  markDirty()
 })
 let insTextPushed = false // une étape d'annulation par session d'édition du texte
 ins.text.addEventListener('focus', () => { insTextPushed = false })
@@ -1088,6 +1106,17 @@ function renderBand(c, now, W, H, pps, opts) {
       c.stroke()
     }
 
+    // voix off (bouche non visible à l'écran) : texte souligné sur toute la réplique
+    if (line.voiceOff) {
+      c.strokeStyle = color
+      c.lineWidth = Math.max(1, Math.round(th * 0.025))
+      c.beginPath()
+      c.moveTo(x0 + 3, y + th * 0.85)
+      c.lineTo(x1 - 3, y + th * 0.85)
+      c.stroke()
+      c.lineWidth = 1
+    }
+
     // flèches d'entrée / sortie : bouche ouverte (▲) ou fermée (▼) en début / fin
     // de réplique. Contenu de la bande → dessiné aussi à l'export. Mappe sur DETX
     // <lipsync> in_open/in_close (au début) et out_open/out_close (à la fin).
@@ -1114,7 +1143,7 @@ function renderBand(c, now, W, H, pps, opts) {
           const hov = hoverEdge && hoverEdge.lineId === line.id &&
             ((hoverEdge.wi === ed.wi && hoverEdge.type === ed.type) ||
               (hoverEdge.type === 'start' && ed.type === 'end' && hoverEdge.wi === ed.wi + 1))
-          const stretch = hov && hoverEdge.ctrl && isExtreme
+          const stretch = hov && isExtreme && !hoverEdge.ctrl
 
           // ligne guide sur toute la hauteur de la piste
           c.strokeStyle = hov ? pal.handleAccent : pal.handle + '55'
@@ -1226,7 +1255,7 @@ function refreshHoverEdge(ctrl) {
   if (hoverEdge) {
     const isFirst = hoverEdge.type === 'start' && hoverEdge.wi === 0
     const isLast = hoverEdge.type === 'end' && hoverEdge.wi === hit.line.words.length - 1
-    canvas.style.cursor = ctrl && (isFirst || isLast) ? 'col-resize' : 'ew-resize'
+    canvas.style.cursor = !ctrl && (isFirst || isLast) ? 'col-resize' : 'ew-resize'
   }
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Control') refreshHoverEdge(true) })
@@ -1393,8 +1422,8 @@ canvas.addEventListener('pointerdown', (e) => {
     const w = line.words[hit.wi]
     const isFirst = hit.type === 'start' && hit.wi === 0
     const isLast = hit.type === 'end' && hit.wi === line.words.length - 1
-    if ((e.ctrlKey || e.metaKey) && (isFirst || isLast)) {
-      // ctrl+bord extrême : étire toute la réplique proportionnellement
+    if ((isFirst || isLast) && !(e.ctrlKey || e.metaKey)) {
+      // bord extrême (sans modificateur) : étire toute la réplique proportionnellement
       drag = {
         kind: 'scale',
         line,
@@ -1404,6 +1433,7 @@ canvas.addEventListener('pointerdown', (e) => {
       }
       canvas.style.cursor = 'col-resize'
     } else {
+      // ctrl sur un bord extrême, ou frontière interne : ajuste seulement ce mot
       // shared boundary with neighbour word (contiguous) → move both
       let alsoWi = -1
       let alsoType = null
@@ -1454,10 +1484,10 @@ canvas.addEventListener('pointermove', (e) => {
       : null
     let cur = hit.kind === 'edge' ? 'ew-resize' : hit.kind === 'line' ? 'move' : 'grab'
     if (hover.y <= RULER_H) cur = 'pointer' // règle : clic = aller à cet endroit
-    if (hit.kind === 'edge' && (e.ctrlKey || e.metaKey)) {
+    if (hit.kind === 'edge' && !(e.ctrlKey || e.metaKey)) {
       const isFirst = hit.type === 'start' && hit.wi === 0
       const isLast = hit.type === 'end' && hit.wi === hit.line.words.length - 1
-      if (isFirst || isLast) cur = 'col-resize' // ctrl : étirement de toute la réplique
+      if (isFirst || isLast) cur = 'col-resize' // bord extrême : étirement de toute la réplique
     }
     canvas.style.cursor = cur
     return
@@ -1618,39 +1648,56 @@ $('btnAddLine').addEventListener('click', () => {
   ins.text.select()
 })
 
-// réactions standard — toujours insérées avec le tag anglais de l'industrie,
-// mais affichées en français dans la palette quand l'UI est en français
-const REACTIONS = [
-  { tag: '(breath)', fr: '(souffle)' },
-  { tag: '(laugh)', fr: '(rire)' },
-  { tag: '(sigh)', fr: '(soupir)' },
-  { tag: '(gasp)', fr: '(inspiration)' },
-  { tag: '(grunt)', fr: '(grognement)' },
-  { tag: '(effort)', fr: '(effort)' },
-  { tag: '(cry)', fr: '(pleurs)' },
-  { tag: '(scream)', fr: '(cri)' },
-  { tag: '(kiss)', fr: '(baiser)' },
-  { tag: '(cough)', fr: '(toux)' },
-  { tag: '(hum)', fr: '(hum)' },
-  { tag: '(sniff)', fr: '(reniflement)' },
-]
+// ============================================================ réacs (lexique)
+// Le lexique vit dans reacs.js (REACS / REAC_BY_KEY). Le token inséré est localisé
+// (FR ou EN selon la langue de l'UI). Une réac est posée comme une réplique courte
+// (kind='reac' pour le DETX), sans flèche entrée/sortie par défaut — comme une
+// réplique normale, l'utilisateur les ajoute s'il le souhaite. Insertion à la
+// palette « Réactions » ou directement par la touche du lexique.
+const REAC_DUR = 0.8 // durée par défaut d'une réac insérée
 const onomaPop = $('onomaPop')
+
+// token écrit dans le projet/DETX, dans la langue courante
+const reacToken = (r) => (lang === 'en' ? r.en : r.fr)
+
+function insertReac(r) {
+  pushUndo()
+  if (!project.characters.length) addCharacter()
+  const start = Math.max(0, effectiveTime())
+  const line = {
+    id: uid(),
+    characterId: selectedCharId || project.characters[0].id,
+    track: findFreeTrack(start, start + REAC_DUR),
+    kind: 'reac',
+    words: splitWords(reacToken(r), start, start + REAC_DUR),
+  }
+  project.lines.push(line)
+  selectedIds = new Set([line.id])
+  refreshInspector()
+  markDirty()
+}
 
 function buildOnomaPop() {
   onomaPop.innerHTML = ''
-  for (const r of REACTIONS) {
+  for (const r of REACS) {
     const b = document.createElement('button')
     b.className = 'ono-chip'
-    b.textContent = lang === 'fr' ? r.fr : r.tag
-    if (lang === 'fr') b.title = r.tag // montre le tag réellement inséré
+    b.title = t('reacChipTitle', reacToken(r), r.key)
+    const tok = document.createElement('span')
+    tok.textContent = reacToken(r)
+    const k = document.createElement('span')
+    k.className = 'k'
+    k.textContent = r.key
+    b.append(tok, k)
     b.addEventListener('click', () => {
-      addLineAt(effectiveTime(), null, r.tag, 0.8)
+      insertReac(r)
       onomaPop.classList.add('hidden')
     })
     onomaPop.appendChild(b)
   }
 }
 buildOnomaPop()
+
 $('btnOnoma').addEventListener('click', (e) => {
   e.stopPropagation()
   if (!onomaPop.classList.contains('hidden')) {
@@ -1677,6 +1724,16 @@ document.addEventListener('keydown', (e) => {
   if (typing) {
     if (e.key === 'Escape') e.target.blur()
     return
+  }
+
+  // touche du lexique = insertion directe d'une réac au point de lecture
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+    const reac = REAC_BY_KEY.get(e.key)
+    if (reac) {
+      e.preventDefault()
+      insertReac(reac)
+      return
+    }
   }
 
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
@@ -1997,11 +2054,13 @@ function buildDetx() {
   o.push('  </roles>')
   o.push('  <body>')
   for (const l of lines) {
-    const isReac = l.words.length === 1 && /^\(.*\)$/.test(l.words[0].text)
+    const isReac = l.kind === 'reac' || (l.words.length === 1 && /^\(.*\)$/.test(l.words[0].text))
     const startType = l.entry === 'open' ? 'in_open' : l.entry === 'closed' ? 'in_close' : 'neutral'
     const endType = l.exit === 'open' ? 'out_open' : l.exit === 'closed' ? 'out_close' : 'neutral'
     const text = l.words.map((w) => w.text).join(' ')
-    o.push(`    <line role="${xmlEsc(l.characterId)}" track="${l.track || 0}"${isReac ? ' type="reac"' : ''}>`)
+    // voiceoff : attribut hors spec Cappella (ignoré par les autres outils) mais
+    // relu à l'import LibreRythmo → survie de la voix off en aller-retour DETX.
+    o.push(`    <line role="${xmlEsc(l.characterId)}" track="${l.track || 0}"${isReac ? ' type="reac"' : ''}${l.voiceOff ? ' voiceoff="true"' : ''}>`)
     o.push(`      <lipsync timecode="${tc(lineStart(l))}" type="${startType}"/>`)
     o.push(`      <text>${xmlEsc(text)}</text>`)
     o.push(`      <lipsync timecode="${tc(lineEnd(l))}" type="${endType}"/>`)
@@ -2052,6 +2111,9 @@ function parseDetx(xmlText, fps) {
     }
     if (inSync) line.entry = inSync.type === 'in_close' ? 'closed' : 'open'
     if (outSync) line.exit = outSync.type === 'out_close' ? 'closed' : 'open'
+    if (ln.getAttribute('type') === 'reac') line.kind = 'reac'
+    const vo = ln.getAttribute('voiceoff')
+    if (vo === 'true' || vo === '1') line.voiceOff = true
     lines.push(line)
     maxTrack = Math.max(maxTrack, track)
   }

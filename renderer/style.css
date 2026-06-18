@@ -413,6 +413,13 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 #insText { flex: 1; font-size: 14px; }
 .tc { width: 110px; font-family: 'Consolas', monospace; text-align: center; }
 .arrow { color: var(--dim); }
+/* bouton bascule de l'inspecteur (voix off) : texte souligné = convention « bouche non visible » */
+.ins-toggle { text-decoration: underline; font-size: 12px; font-weight: 600; padding: 4px 8px; }
+.ins-toggle.active {
+  border-color: var(--toggle-border);
+  color: var(--toggle-text);
+  background: color-mix(in srgb, var(--toggle-text) 10%, transparent);
+}
 
 /* ---------- onomatopoeia popover ---------- */
 #onomaPop {
@@ -422,6 +429,7 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   padding: 8px;
+  max-width: 320px;
   background: var(--panel2);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -429,16 +437,27 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 }
 #onomaPop.hidden { display: none; }
 .ono-chip {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
   background: var(--chip-bg);
   border: 1px solid var(--border);
   border-radius: 5px;
-  padding: 5px 10px;
+  padding: 5px 8px;
   font-size: 12px;
   font-family: 'Consolas', monospace;
   color: var(--chip-text);
   text-align: center;
 }
 .ono-chip:hover { background: var(--hover); color: var(--icon-h); }
+.ono-chip .k {
+  font-size: 10px;
+  opacity: 0.55;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
+}
 
 /* ---------- export modal ---------- */
 #exportModal {
