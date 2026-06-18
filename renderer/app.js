@@ -350,7 +350,6 @@ function applyLang() {
 
   // export
   $('expTitle').textContent = t('expTitle')
-  $('expHint').textContent = t('expHint')
   $('lblRes').textContent = t('lblRes')
   $('optCustom').textContent = t('optCustom')
   $('lblFps').textContent = t('lblFps')
