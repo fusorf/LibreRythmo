@@ -400,6 +400,15 @@ button.active {
 #tPlay .ic-pause { display: none; }
 #tPlay.playing .ic-play { display: none; }
 #tPlay.playing .ic-pause { display: flex; }
+/* bouton lecture/pause : plus large et coloré (action principale) — ressort des autres */
+#tPlay {
+  width: 56px;
+  background: #3a5d99;
+  border-color: #3a5d99;
+}
+#tPlay:hover { background: #4a72b8; }
+#tPlay svg { width: 17px; height: 17px; fill: #fff; }
+#tPlay:hover svg { fill: #fff; }
 
 input[type="range"] {
   -webkit-appearance: none;

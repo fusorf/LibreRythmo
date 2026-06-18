@@ -3,6 +3,12 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.5] - 2026-06-18
+
+### Modifié
+- **Bouton lecture / pause** plus large et bleu (action principale) — il ressort des boutons
+  retour / image par image.
+
 ## [1.4.4] - 2026-06-18
 
 ### Modifié
