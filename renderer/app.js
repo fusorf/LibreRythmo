@@ -313,6 +313,7 @@ function applyLang() {
   $('pcNext').title = t('pcNextTitle')
   $('pcLoop').title = t('pcLoopTitle')
   $('pcMute').title = t('pcMuteTitle')
+  $('pcZoomWrap').title = t('pcZoomTitle')
   $('zoomWrap').title = t('zoomTitle')
   $('trackCount').title = t('trackCountTitle')
   refreshTrackCountUI()
@@ -3490,7 +3491,10 @@ $('expGo').addEventListener('click', runExport)
 // Aperçu immersif « comme à l'export » : vidéo + bande incrustée (sans forme d'onde) ;
 // contrôles auto-masqués (lecture, scène préc./suiv., boucle de scène, affichage des
 // pistes, son). F5 pour entrer, Échap pour quitter.
-const player = { open: false, bandFrac: 0.16, bandPos: 'bottom', loopScene: false, hideTimer: null }
+// winSec = secondes visibles sur la bande du mode lecture (zoom propre, plus serré que
+// l'éditeur par défaut pour une meilleure lisibilité), réglable par un curseur dédié.
+const PLR_SEC_MIN = 2, PLR_SEC_MAX = 8
+const player = { open: false, bandFrac: 0.16, bandPos: 'bottom', loopScene: false, hideTimer: null, winSec: 3.5 }
 let playerTracks = new Set()
 const pcanvas = $('playerCanvas')
 const pctx = pcanvas.getContext('2d')
@@ -3528,7 +3532,7 @@ function drawPlayer() {
   pctx.fillStyle = '#000'; pctx.fillRect(0, 0, W, H)
   const L = playerLayout()
   if (video.videoWidth) pctx.drawImage(video, L.video.x, L.video.y, L.video.w, L.video.h)
-  const winSec = clamp(secondsVisible, SEC_MIN, SEC_MAX)
+  const winSec = clamp(player.winSec, PLR_SEC_MIN, PLR_SEC_MAX)
   pctx.save()
   pctx.translate(L.band.x, L.band.y)
   pctx.beginPath(); pctx.rect(0, 0, L.band.w, L.band.h); pctx.clip()
@@ -3592,6 +3596,7 @@ function openPlayer() {
   player.open = true
   playerTracks = new Set(Array.from({ length: laneCount() }, (_, i) => i))
   buildPlayerTrackToggles()
+  syncPlayerZoom()
   $('playerMode').classList.remove('hidden')
   resizePlayerCanvas()
   updatePlayerUI()
@@ -3619,6 +3624,13 @@ $('pcSeek').addEventListener('input', () => {
   const dur = isFinite(video.duration) ? video.duration : 0
   if (dur) scrubTo((Number($('pcSeek').value) / 1000) * dur)
 })
+$('pcZoom').addEventListener('input', () => {
+  player.winSec = PLR_SEC_MAX * Math.pow(PLR_SEC_MIN / PLR_SEC_MAX, Number($('pcZoom').value))
+  showPlayerControls()
+})
+function syncPlayerZoom() {
+  $('pcZoom').value = String(Math.log(player.winSec / PLR_SEC_MAX) / Math.log(PLR_SEC_MIN / PLR_SEC_MAX))
+}
 $('playerCanvas').addEventListener('click', () => { togglePlay(); showPlayerControls() })
 $('playerMode').addEventListener('mousemove', showPlayerControls)
 // quitter le plein écran (Échap navigateur) ferme aussi le mode lecture

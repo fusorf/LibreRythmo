@@ -3,6 +3,12 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.11] - 2026-06-18
+
+### Ajouté
+- **Mode lecture** : zoom de bande propre, **plus serré par défaut** (meilleure lisibilité), avec
+  un **curseur de zoom** dans les contrôles pour l'ajuster.
+
 ## [1.4.10] - 2026-06-18
 
 ### Corrigé

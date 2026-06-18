@@ -230,6 +230,10 @@
           </button>
           <span id="pcTime" class="pc-time">0:00 / 0:00</span>
           <div class="spacer"></div>
+          <div class="pc-zoom" id="pcZoomWrap" title="Zoom de la bande">
+            <svg viewBox="0 0 16 16"><path d="M6.5 1a5.5 5.5 0 014.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 116.5 1zm0 1.5a4 4 0 100 8 4 4 0 000-8zM5.75 5.75V4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
+            <input id="pcZoom" type="range" min="0" max="1" step="0.001" value="0.6">
+          </div>
           <div id="pcTracks" class="pc-tracks"></div>
           <button id="pcMute" class="pc-btn" title="Couper le son">
             <svg class="ic-snd" viewBox="0 0 16 16"><path d="M2 6v4h3l4 3.5v-11L5 6H2zM11 5.2a3.4 3.4 0 010 5.6V5.2z"/></svg>
