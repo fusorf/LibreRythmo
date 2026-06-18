@@ -3,6 +3,25 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.6] - 2026-06-18
+
+Revue de code : corrections et nettoyage.
+
+### Corrigé
+- **Forme d'onde de n'importe quelle piste active** : une piste embarquée autre que la 1re est
+  extraite (WAV mono 16 kHz temporaire via ffmpeg) pour afficher sa vraie forme d'onde sur la
+  bande et au scrub — auparavant on retombait sur la piste par défaut du conteneur.
+- **Raccourcis clavier limités au bon onglet** : Entrée, Suppr, Ctrl+A/C/X/V n'agissent plus sur
+  les répliques depuis l'onglet Pistes (plus d'actions invisibles).
+- **Décalage de la forme d'onde** correctement restauré à l'annuler/rétablir.
+- **Canaux d'un audio importé** sondés (plus de « stéréo » supposé à tort).
+- **Export d'une scène** : seek d'entrée explicitement frame-exact (`-accurate_seek`).
+- Info « Audio » du panneau : reflète la piste embarquée par défaut, pas une piste active externe.
+
+### Nettoyage
+- Modèle de projet en **version 2** (les anciens projets v1 se rouvrent et se ré-enregistrent en v2).
+- Suppression de clés de traduction et de code morts (anciennes cases export / décalage global).
+
 ## [1.4.5] - 2026-06-18
 
 ### Modifié

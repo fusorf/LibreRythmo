@@ -94,7 +94,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 1, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], audioTracks: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], audioTracks: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
@@ -238,6 +238,7 @@ function restoreState(snap) {
   project.lines = d.lines
   project.loops = d.loops || []
   if (d.audioTracks) project.audioTracks = d.audioTracks
+  waveOffset = (activeAudioTrack()?.offset) || 0 // suit l'offset restauré de la piste active
   if (!getChar(selectedCharId)) selectedCharId = project.characters[0]?.id || null
   selectedIds = new Set([...selectedIds].filter((id) => getLine(id)))
   renderChars()
@@ -1083,10 +1084,6 @@ function activeAudioTrack() {
   const list = project.audioTracks || []
   return audioById(project.activeAudioId) || list.find((a) => a.type === 'embedded') || list[0] || null
 }
-function activeAudioPath() {
-  const a = activeAudioTrack()
-  return a && a.type === 'file' ? a.path : project.videoPath
-}
 function setActiveAudio(id) {
   if (project.activeAudioId === id) return
   project.activeAudioId = id
@@ -1321,15 +1318,25 @@ tcanvas.addEventListener('wheel', (e) => {
 }, { passive: false })
 
 // ---------- import d'un fichier audio externe ----------
-function addExternalAudio(p) {
+async function addExternalAudio(p) {
   if (!project.videoPath) { toast(t('loadVideoFirst')); return }
   if (!p) return
   pushUndo()
-  project.audioTracks.push({ id: uid(), type: 'file', path: p, label: baseName(p), offset: 0, channels: 2 })
+  const tr = { id: uid(), type: 'file', path: p, label: baseName(p), offset: 0, channels: 0 }
+  project.audioTracks.push(tr)
   if (activeTab !== 'tracks') setTab('tracks')
   else renderTracks()
   markDirty()
   toast(t('audioImported', baseName(p)))
+  // sonde le nombre de canaux réel (asynchrone) puis rafraîchit l'en-tête, si la piste
+  // est toujours présente (l'utilisateur a pu la retirer entre-temps)
+  try {
+    const probed = await window.api.probeAudioTracks(p)
+    if (probed && probed[0] && (project.audioTracks || []).includes(tr)) {
+      tr.channels = probed[0].channels
+      if (activeTab === 'tracks') renderTrackHeads()
+    }
+  } catch {}
 }
 $('btnImportAudio').addEventListener('click', async () => {
   const p = await window.api.openAudio()
@@ -1425,9 +1432,21 @@ async function buildWaveform() {
   wave = null
   scrubBuf = null
   const token = ++waveToken
-  // forme d'onde de la piste audio active (fichier externe, sinon la vidéo)
-  const src = (typeof activeAudioPath === 'function' && activeAudioPath()) || project.videoPath
-  waveOffset = (typeof activeAudioTrack === 'function' && activeAudioTrack()?.offset) || 0
+  // forme d'onde de la piste active : fichier externe → le fichier ; piste embarquée
+  // > 0 → extraite en WAV (Chromium ne décode que la 1re piste) ; sinon la vidéo.
+  const a = (typeof activeAudioTrack === 'function' && activeAudioTrack()) || null
+  waveOffset = (a && a.offset) || 0
+  let src = null
+  let isVideoDefault = false
+  if (a && a.type === 'file') {
+    src = a.path
+  } else if (a && a.type === 'embedded' && a.index > 0) {
+    src = await window.api.extractAudioTrack(project.videoPath, a.index)
+    if (token !== waveToken) return
+  } else {
+    src = project.videoPath
+    isVideoDefault = true
+  }
   if (!src) return
   try {
     const buf = await window.api.readFile(src)
@@ -1466,8 +1485,12 @@ async function buildWaveform() {
     scrubCtx ||= new AudioContext()
     scrubBuf = scrubCtx.createBuffer(1, audio.length, audio.sampleRate)
     scrubBuf.copyToChannel(mono, 0)
-    videoInfo = Object.assign(videoInfo || {}, { channels: audio.numberOfChannels })
-    updateVideoInfoPanel()
+    // l'info « Audio » du panneau reflète la piste embarquée par défaut de la vidéo,
+    // pas une piste active externe/extraite (mono)
+    if (isVideoDefault) {
+      videoInfo = Object.assign(videoInfo || {}, { channels: audio.numberOfChannels })
+      updateVideoInfoPanel()
+    }
   } catch {
     if (token === waveToken) toast(t('waveFail'))
   }
@@ -2304,14 +2327,18 @@ document.addEventListener('keydown', (e) => {
     return
   }
 
-  // copier / couper / coller des répliques sélectionnées (calage + bornes conservés)
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyLines(); return }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
-
-  // onglet Pistes : Suppr retire la piste importée sélectionnée
+  // onglet Pistes : seul Suppr (piste importée sélectionnée) est géré ici ; les autres
+  // raccourcis liés aux répliques (copier/coller, sélection, réacs, Entrée) sont inactifs
   if (activeTab === 'tracks') {
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTrackId) { e.preventDefault(); deleteTrack(selectedTrackId); return }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTrackId) { e.preventDefault(); deleteTrack(selectedTrackId) }
+    // on laisse passer Espace / flèches / Page↑↓ / Ctrl+Z·Y (gérés plus bas, indépendants de l'onglet)
+  }
+
+  // copier / couper / coller des répliques sélectionnées (onglet Rythmo)
+  if (activeTab === 'rythmo') {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyLines(); return }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
   }
 
   // touche du lexique = insertion directe d'une réac au point de lecture (onglet Rythmo)
@@ -2324,7 +2351,7 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+  if (activeTab === 'rythmo' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault()
     selectedIds = new Set(project.lines.map((l) => l.id))
     refreshInspector()
@@ -2359,6 +2386,7 @@ document.addEventListener('keydown', (e) => {
       video.currentTime = clamp(video.currentTime + (e.shiftKey ? 1 : 1 / project.fps), 0, videoDur())
       break
     case 'Enter':
+      if (activeTab !== 'rythmo') break
       e.preventDefault()
       addLineAt(video.currentTime, null, '…', 2)
       ins.text.focus()
@@ -2374,7 +2402,7 @@ document.addEventListener('keydown', (e) => {
       break
     case 'Delete':
     case 'Backspace':
-      deleteSelected()
+      if (activeTab === 'rythmo') deleteSelected()
       break
     case 'Escape':
       if (!$('guideModal').classList.contains('hidden')) {
@@ -2484,6 +2512,7 @@ async function openProjectDialog() {
 
 async function loadProjectData(data, path) {
   project = Object.assign(newProject(), data)
+  project.version = 2 // les anciens projets (v1) se rouvrent et sont ré-enregistrés en v2
   project.characters ||= []
   project.lines ||= []
   project.loops ||= []

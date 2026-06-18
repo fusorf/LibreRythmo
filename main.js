@@ -3,6 +3,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, nativeTheme, shell } = requir
 const { spawn } = require('child_process')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const { pathToFileURL } = require('url')
 
 let ffmpegPath = null
@@ -691,6 +692,23 @@ ipcMain.handle('probe-audio-tracks', (e, p) => {
   })
 })
 
+// extrait une piste audio embarquée vers un WAV mono 16 kHz temporaire (léger), pour
+// en calculer la forme d'onde côté renderer — Chromium ne décode que la 1re piste d'un
+// conteneur multiplexé. Résultat mis en cache (hash chemin+index).
+ipcMain.handle('extract-audio-track', (e, videoPath, aIndex) => {
+  if (!ffmpegPath || !videoPath) return null
+  const key = crypto.createHash('md5').update(`${videoPath}|${aIndex}`).digest('hex').slice(0, 10)
+  const out = path.join(app.getPath('temp'), `lr-wave-${key}.wav`)
+  try { if (fs.existsSync(out) && fs.statSync(out).size > 0) return out } catch {}
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpegPath, ['-y', '-i', videoPath, '-map', `0:a:${aIndex}`, '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-vn', out], { stdio: 'ignore' })
+    const done = (ok) => resolve(ok && fs.existsSync(out) ? out : null)
+    proc.on('close', (c) => done(c === 0))
+    proc.on('error', () => resolve(null))
+    setTimeout(() => { try { proc.kill() } catch {} done(false) }, 60000)
+  })
+})
+
 function encoderArgs(enc, W, H, fps) {
   switch (enc) {
     case 'h264_nvenc':
@@ -735,8 +753,10 @@ ipcMain.handle('export-start', async (e, opts) => {
   // son -itsoffset (décalage gravé), puis mappées comme autant de pistes de sortie.
   // plage temporelle : on coupe la vidéo et les pistes audio à startTime (les frames
   // de bande, en entrée 0, sont déjà rendues à partir de startTime côté renderer)
+  // seek d'entrée vers startTime ; -accurate_seek (défaut au ré-encodage) garantit un
+  // démarrage frame-exact, donc la vidéo reste calée sur les frames de bande (rendues dès t0)
   const ss = Math.max(0, Number(opts.startTime) || 0)
-  const seek = ss > 0 ? ['-ss', ss.toFixed(3)] : []
+  const seek = ss > 0 ? ['-accurate_seek', '-ss', ss.toFixed(3)] : []
   const inputs = [
     '-f', 'rawvideo', '-pixel_format', 'rgba',
     '-video_size', `${opts.bandW}x${opts.bandH}`, '-framerate', String(fps), '-i', 'pipe:0',

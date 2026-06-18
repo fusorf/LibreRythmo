@@ -84,15 +84,16 @@ Attribuer par défaut des **encres sombres** aux nouveaux rôles (fond de bande 
 
 ---
 
-## v1.2 — Boucles & structure de scène · P0/P1
+## v1.2 — Scènes & structure · P0/P1
 
-Introduit le concept structurel le plus important encore absent.
+Introduit le concept structurel le plus important encore absent. (Nommé **« scènes »** dans
+l'UI ; appelé « boucles » dans la spec Cappella et conservé sous `loops` en interne.)
 
-### 1.2.1 Concept de boucles · P0 · L
-Une boucle = une scène (unité de travail à l'enregistrement et au mixage). Ajouter :
-- Signes/marqueurs **ouverture/fermeture de boucle** sur la timeline.
-- Navigation boucle suivante/précédente (équivalent F11/F12 Cappella).
-- Avertissement doux si une boucle dépasse la **durée recommandée** (~50 s, 1 min si peu chargée).
+### 1.2.1 Concept de scènes · P0 · L
+Une scène = une unité de travail à l'enregistrement et au mixage. Ajouter :
+- Signes/marqueurs **ouverture/fermeture** sur la timeline.
+- Navigation scène suivante/précédente (équivalent F11/F12 Cappella).
+- Avertissement doux si une scène dépasse la **durée recommandée** (~50 s, 1 min si peu chargée).
 - Persistance dans le projet (voir modèle de données).
 
 ### 1.2.2 Segments « OUT » · P1 · S

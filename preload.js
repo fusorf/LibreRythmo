@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   probeEncoder: () => ipcRenderer.invoke('probe-encoder'),
   probeFps: (p) => ipcRenderer.invoke('probe-fps', p),
   probeAudioTracks: (p) => ipcRenderer.invoke('probe-audio-tracks', p),
+  extractAudioTrack: (p, i) => ipcRenderer.invoke('extract-audio-track', p, i),
   saveProject: (json, p) => ipcRenderer.invoke('save-project', json, p),
   saveProjectAs: (json, p) => ipcRenderer.invoke('save-project-as', json, p),
   importSrt: () => ipcRenderer.invoke('import-srt'),
