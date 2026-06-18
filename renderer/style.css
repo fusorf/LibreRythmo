@@ -581,6 +581,7 @@ body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
 .pc-play .ic-pause { display: none; }
 .pc-play.playing .ic-play { display: none; }
 .pc-play.playing .ic-pause { display: inline-flex; }
+.pc-play .ic-play { transform: translateX(1.5px); } /* recentre optiquement le triangle de lecture */
 #pcLoop.on { background: color-mix(in srgb, var(--toggle-text) 32%, transparent); border-color: var(--toggle-text); }
 .pc-time { color: #fff; font-family: 'Consolas', monospace; font-size: 12px; opacity: .85; margin-left: 4px; }
 .pc-zoom { display: flex; align-items: center; gap: 7px; }
