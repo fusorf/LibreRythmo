@@ -3,6 +3,12 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.12] - 2026-06-18
+
+### Modifié
+- Le nom de scène s'affiche désormais **dans la règle** (au-dessus du trait), pour ne plus
+  masquer le nom du personnage de la première piste.
+
 ## [1.4.11] - 2026-06-18
 
 ### Ajouté

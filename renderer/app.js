@@ -1016,7 +1016,7 @@ function renderLoopsPanel() {
 }
 
 // dessin des boucles sur la bande (overlay éditeur) : bornes verticales + onglet
-// nom sous la règle + liseré le long du haut des pistes. Visualisation seule.
+// nom DANS la règle (au-dessus du trait) + liseré le long du haut des pistes. Visualisation seule.
 function drawLoops() {
   if (!project.loops.length) return
   const now = effectiveTime()
@@ -1048,10 +1048,11 @@ function drawLoops() {
     const tw = ctx.measureText(label).width
     const tabX = clamp(x0 + 2, 0, Math.max(0, cw - tw - 12))
     const tabW = Math.min(tw + 10, cw)
+    // onglet du nom DANS la règle (au-dessus du trait), pour ne pas masquer le nom du perso
     ctx.fillStyle = col
-    ctx.beginPath(); ctx.roundRect(tabX, RULER_H + 2, tabW, 15, 3); ctx.fill()
+    ctx.beginPath(); ctx.roundRect(tabX, 2, tabW, RULER_H - 5, 3); ctx.fill()
     ctx.fillStyle = '#ffffff'
-    ctx.fillText(label, tabX + 5, RULER_H + 10)
+    ctx.fillText(label, tabX + 5, 2 + (RULER_H - 5) / 2)
   }
   ctx.restore()
 }
