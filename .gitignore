@@ -1,6 +1,7 @@
 node_modules/
 dist/
 media/
+cache/
 build-info.json
 *.log
 Thumbs.db

@@ -1385,6 +1385,69 @@ function drawPlans() {
 // chemin du proxy basse résolution s'il a été généré (feature Proxy) ; la détection
 // l'utilise en priorité (analyse bien plus rapide). null = analyser la source.
 let videoProxyPath = null
+let usingProxy = false // le lecteur joue actuellement le proxy (et non la source)
+let sourceVideoUrl = null // URL de la source, pour revenir si le proxy est invalide
+let proxyToken = 0 // invalide une génération en cours si une autre vidéo est ouverte
+let proxyActive = false // une génération de proxy est en cours (pour la pastille)
+
+function showProxyStatus(txt) {
+  const el = $('proxyStatus')
+  el.innerHTML = ''
+  const dot = document.createElement('span'); dot.className = 'px-dot'
+  const t2 = document.createElement('span'); t2.textContent = txt
+  el.append(dot, t2)
+  el.classList.remove('hidden')
+}
+const hideProxyStatus = () => $('proxyStatus').classList.add('hidden')
+
+// génère/réutilise le proxy en tâche de fond puis bascule le lecteur dessus (résolution
+// seule ; durée et cadence identiques → les timecodes ne bougent pas). L'export, lui,
+// repart toujours de project.videoPath (pleine qualité).
+async function generateProxy(sourcePath) {
+  if (!sourcePath) return
+  const myToken = ++proxyToken
+  videoProxyPath = null
+  usingProxy = false
+  proxyActive = true
+  showProxyStatus(t('proxyGenerating', 0))
+  let r
+  try { r = await window.api.ensureProxy(sourcePath) } catch { r = null }
+  if (myToken !== proxyToken) return // une autre vidéo a été ouverte entre-temps
+  proxyActive = false
+  hideProxyStatus()
+  if (!r || r.error || !r.path) return // échec silencieux : on reste sur la source
+  const url = await window.api.fileUrl(r.path)
+  if (!url || myToken !== proxyToken) return
+  // attend que la durée de la source soit connue (proxy en cache → retour quasi instantané,
+  // parfois avant le chargement des métadonnées de la source) pour fiabiliser le garde-fou
+  if (!videoInfo?.duration && video.readyState < 1) {
+    await new Promise((res) => {
+      const done = () => { video.removeEventListener('loadedmetadata', done); res() }
+      video.addEventListener('loadedmetadata', done)
+      setTimeout(done, 4000)
+    })
+    if (myToken !== proxyToken) return
+  }
+  const srcDur = videoInfo?.duration || video.duration || 0
+  videoProxyPath = r.path
+  const at = video.currentTime
+  const wasPaused = video.paused
+  usingProxy = true
+  const onMeta = () => {
+    video.removeEventListener('loadedmetadata', onMeta)
+    // garde-fou : si la durée du proxy diffère trop de la source, on revient à la source
+    if (srcDur && Math.abs((video.duration || 0) - srcDur) > 0.5) {
+      usingProxy = false
+      videoProxyPath = null
+      if (sourceVideoUrl) video.src = sourceVideoUrl
+      return
+    }
+    try { video.currentTime = at } catch {}
+    if (!wasPaused) video.play().catch(() => {})
+  }
+  video.addEventListener('loadedmetadata', onMeta)
+  video.src = url
+}
 
 // ---------- détection automatique des plans (ffmpeg select=scene) ----------
 const detState = { running: false, cancelled: false }
@@ -1790,7 +1853,14 @@ async function detectFps() {
   updateVideoInfoPanel()
 }
 
+window.api.onProxyProgress((pct) => {
+  if (proxyActive) showProxyStatus(t('proxyGenerating', pct))
+})
+
 video.addEventListener('loadedmetadata', () => {
+  // le proxy partage durée/cadence avec la source : on conserve les infos de la source
+  // (résolution, taille, nom) et on ne re-sonde ni le fps ni les pistes audio
+  if (usingProxy) return
   const p = project.videoPath || ''
   videoInfo = Object.assign({}, videoInfo, {
     name: p.replace(/^.*[\\/]/, ''),
@@ -2860,6 +2930,13 @@ async function newProjectAction() {
   wave = null
   scrubBuf = null
   videoInfo = null
+  proxyToken++ // annule une génération de proxy éventuellement en cours
+  proxyActive = false
+  usingProxy = false
+  videoProxyPath = null
+  sourceVideoUrl = null
+  hideProxyStatus()
+  window.api.cancelProxy()
   video.removeAttribute('src')
   video.load()
   $('dropHint').style.display = ''
@@ -2871,6 +2948,7 @@ async function newProjectAction() {
   refreshInspector()
   renderLinesLog()
   renderLoopsPanel()
+  renderPlansPanel()
   if (activeTab === 'tracks') renderTracks()
   setClean()
   updateDiscordActivity()
@@ -2880,12 +2958,16 @@ async function setVideo(path, url) {
   project.videoPath = path
   project.audioTracks = [] // nouveau conteneur → pistes re-sondées (probeAndSyncAudio)
   videoInfo = null
+  usingProxy = false
+  videoProxyPath = null
+  sourceVideoUrl = url
   showLoading(true, t('loadingVideo'))
   video.src = url
   $('dropHint').style.display = 'none'
   markDirty()
   buildWaveform()
   updateDiscordActivity()
+  generateProxy(path) // tâche de fond ; bascule le lecteur sur le proxy quand prêt
 }
 
 async function openVideoDialog() {
@@ -2958,14 +3040,19 @@ async function loadProjectData(data, path) {
   renderPlansPanel()
   setClean()
   updateDiscordActivity()
+  usingProxy = false
+  videoProxyPath = null
+  sourceVideoUrl = null
   if (project.videoPath) {
     const url = await window.api.fileUrl(project.videoPath)
     if (url) {
       videoInfo = null
+      sourceVideoUrl = url
       showLoading(true, t('loadingProject'))
       video.src = url
       $('dropHint').style.display = 'none'
       buildWaveform()
+      generateProxy(project.videoPath) // tâche de fond ; bascule sur le proxy quand prêt
     } else {
       toast(t('videoNotFound', project.videoPath))
     }
@@ -3397,7 +3484,33 @@ window.api.onMenu((action, arg) => {
     pushSettings()
     updateDiscordActivity()
   }
+  else if (action === 'clear-proxy-cache') clearProxyCache()
 })
+
+async function clearProxyCache() {
+  // ne pas supprimer le proxy en cours d'utilisation : on l'annule d'abord
+  proxyToken++
+  proxyActive = false
+  hideProxyStatus()
+  await window.api.cancelProxy()
+  const r = await window.api.clearProxyCache()
+  const n = (r && r.count) || 0
+  const mb = r && r.bytes ? Math.max(1, Math.round(r.bytes / 1e6)) : 0
+  toast(n ? t('proxyCacheCleared', n, mb) : t('proxyCacheEmpty'))
+  // si on jouait un proxy, on revient à la source (le fichier vient d'être supprimé)
+  if (usingProxy && sourceVideoUrl) {
+    usingProxy = false
+    videoProxyPath = null
+    const at = video.currentTime
+    const wasPaused = video.paused
+    video.src = sourceVideoUrl
+    video.addEventListener('loadedmetadata', function once() {
+      video.removeEventListener('loadedmetadata', once)
+      try { video.currentTime = at } catch {}
+      if (!wasPaused) video.play().catch(() => {})
+    })
+  }
+}
 
 async function openRecentProject(p) {
   if (!(await confirmDiscardIfDirty())) return

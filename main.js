@@ -277,6 +277,7 @@ const MENU_STR = {
     videoInfo: 'Infos vidéo',
     lightMode: 'Mode clair',
     discord: 'Discord Rich Presence',
+    clearProxies: 'Vider le cache des proxies',
     language: 'Langue',
     fullscreen: 'Plein écran',
     help: 'Aide',
@@ -343,6 +344,7 @@ const MENU_STR = {
     videoInfo: 'Video info',
     lightMode: 'Light mode',
     discord: 'Discord Rich Presence',
+    clearProxies: 'Clear proxy cache',
     language: 'Language',
     fullscreen: 'Full screen',
     help: 'Help',
@@ -455,6 +457,8 @@ function buildMenu() {
         { label: s.videoInfo, type: 'checkbox', checked: settings.info, click: (item) => send('toggle-video-info', item.checked) },
         { label: s.lightMode, type: 'checkbox', checked: settings.theme === 'light', click: (item) => send('toggle-theme', item.checked) },
         { label: s.discord, type: 'checkbox', checked: settings.discord, click: (item) => send('toggle-discord', item.checked) },
+        { type: 'separator' },
+        { label: s.clearProxies, click: () => send('clear-proxy-cache') },
         { type: 'separator' },
         {
           label: s.language,
@@ -822,6 +826,91 @@ ipcMain.handle('extract-audio-track', (e, videoPath, aIndex) => {
     proc.on('error', () => resolve(null))
     setTimeout(() => { try { proc.kill() } catch {} done(false) }, 60000)
   })
+})
+
+// ---------- proxy vidéo (cache portable basse résolution H.264) ----------
+// Dossier de cache dans le dossier de l'app (portable), repli sur le temp de l'OS si
+// non accessible en écriture (clé USB protégée, emplacement read-only).
+function appBaseDir() {
+  try { return app.isPackaged ? path.dirname(app.getPath('exe')) : __dirname } catch { return __dirname }
+}
+let proxyDirCache = null
+function proxyDir() {
+  if (proxyDirCache) return proxyDirCache
+  const primary = path.join(appBaseDir(), 'cache', 'proxies')
+  const fallback = path.join(app.getPath('temp'), 'librerythmo-proxies')
+  for (const dir of [primary, fallback]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      const probe = path.join(dir, '.w')
+      fs.writeFileSync(probe, '')
+      fs.unlinkSync(probe)
+      return (proxyDirCache = dir)
+    } catch {}
+  }
+  return (proxyDirCache = app.getPath('temp'))
+}
+// nom du proxy = hash(chemin source + taille + mtime) → réutilisé entre sessions,
+// invalidé automatiquement si la source change
+function proxyPathFor(src) {
+  let key = src
+  try { const st = fs.statSync(src); key = `${src}|${st.size}|${Math.round(st.mtimeMs)}` } catch {}
+  const hash = crypto.createHash('md5').update(key).digest('hex').slice(0, 16)
+  return path.join(proxyDir(), `${hash}.mp4`)
+}
+
+let proxyProc = null
+// génère (ou réutilise) un proxy 720p H.264 ; ne change QUE la résolution — jamais la
+// cadence ni la durée (sinon décalage des timecodes). Progression via le `time=`.
+ipcMain.handle('ensure-proxy', (e, src) => {
+  if (!ffmpegPath || !src) return { error: 'no-ffmpeg' }
+  const out = proxyPathFor(src)
+  try { if (fs.existsSync(out) && fs.statSync(out).size > 0) return { path: out, cached: true } } catch {}
+  if (proxyProc) { try { proxyProc.kill('SIGKILL') } catch {} proxyProc = null }
+  return new Promise((resolve) => {
+    const tmp = out + '.part'
+    let dur = 0
+    let logTail = ''
+    // -f mp4 : l'extension temporaire .part n'est pas reconnue par ffmpeg → format forcé
+    const args = ['-y', '-i', src, '-vf', 'scale=-2:720', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac', '-movflags', '+faststart', '-f', 'mp4', tmp]
+    proxyProc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    proxyProc.stderr.on('data', (d) => {
+      const s = String(d); logTail = (logTail + s).slice(-2000)
+      const dm = s.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/)
+      if (dm) dur = +dm[1] * 3600 + +dm[2] * 60 + parseFloat(dm[3])
+      const tm = s.match(/time=\s*(\d+):(\d+):(\d+\.\d+)/)
+      if (tm && dur > 0 && win && !win.isDestroyed()) {
+        const t = +tm[1] * 3600 + +tm[2] * 60 + parseFloat(tm[3])
+        win.webContents.send('proxy-progress', Math.min(99, Math.round((t / dur) * 100)))
+      }
+    })
+    proxyProc.on('close', (code) => {
+      proxyProc = null
+      if (code === 0) {
+        try { fs.renameSync(tmp, out); resolve({ path: out }) } catch (err) { resolve({ error: String(err) }) }
+      } else {
+        try { fs.unlinkSync(tmp) } catch {}
+        resolve({ error: logTail.slice(-200) || 'proxy-failed' })
+      }
+    })
+    proxyProc.on('error', () => { proxyProc = null; resolve({ error: 'spawn-failed' }) })
+  })
+})
+ipcMain.handle('cancel-proxy', () => {
+  if (proxyProc) { try { proxyProc.kill('SIGKILL') } catch {} proxyProc = null }
+  return true
+})
+ipcMain.handle('clear-proxy-cache', () => {
+  let count = 0, bytes = 0
+  try {
+    const dir = proxyDir()
+    for (const f of fs.readdirSync(dir)) {
+      if (!/\.(mp4|part)$/.test(f)) continue
+      const fp = path.join(dir, f)
+      try { bytes += fs.statSync(fp).size; fs.unlinkSync(fp); count++ } catch {}
+    }
+  } catch {}
+  return { count, bytes }
 })
 
 // ---------- détection de plans (changements de plan) via ffmpeg select=scene ----------
