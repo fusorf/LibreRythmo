@@ -66,6 +66,7 @@
       "icon": "build/icon.png",
       "category": "AudioVideo",
       "synopsis": "Bande rythmo libre pour le doublage",
+      "maintainer": "fusorf <fusorf@users.noreply.github.com>",
       "artifactName": "${productName}-${version}.${ext}"
     }
   }
