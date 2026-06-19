@@ -10,6 +10,8 @@ Thumbs.db
 # outils de dev / fichiers temporaires
 scripts/cdp-shot.png
 scripts/_tmp-*
+scripts/cap-window.ps1
+scripts/cdp-readme*.js
 
 # documents de travail (roadmaps versionnées) — non distribués
 ROADMAP-v*.md
