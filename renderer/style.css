@@ -552,7 +552,10 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 
 /* ---------- onglets bandeau bas (Rythmo / Pistes) ---------- */
 /* ---------- onglets bandeau bas (Rythmo / Pistes) ---------- */
-#tabBar { display: flex; gap: 4px; padding: 6px 10px 0; background: var(--panel); border-top: 1px solid var(--border); }
+#tabBar { display: flex; align-items: flex-end; gap: 4px; padding: 6px 10px 0; background: var(--panel); border-top: 1px solid var(--border); }
+/* bascules de panneaux déplacées ici (déclutter de la barre d'action) : alignées à
+   droite, look bouton-pilule distinct des onglets Rythmo/Pistes */
+.panel-toggle { height: 26px; padding: 0 11px; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
 .tab {
   height: 28px;
   padding: 0 16px;

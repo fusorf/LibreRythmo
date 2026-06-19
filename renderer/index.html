@@ -93,16 +93,16 @@
       <svg viewBox="0 0 16 16"><path d="M6.5 1a5.5 5.5 0 014.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 116.5 1zm0 1.5a4 4 0 100 8 4 4 0 000-8zM5.75 5.75V4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
       <input id="zoom" type="range" min="0" max="1" step="0.001" value="0.5">
     </div>
-    <div class="spacer"></div>
-    <button id="btnToggleLoops" title="Afficher / masquer le panneau Scènes">Scènes</button>
-    <button id="btnTogglePlans" title="Afficher / masquer le panneau Plans">Plans</button>
-    <button id="btnToggleLines" class="active" title="Afficher / masquer le panneau Répliques">Répliques</button>
-    <button id="btnTogglePanel" class="active" title="Afficher / masquer le panneau Personnages">Personnages</button>
   </div>
 
   <div id="tabBar">
     <button id="tabRythmo" class="tab active">Rythmo</button>
     <button id="tabTracks" class="tab">Pistes</button>
+    <div class="spacer"></div>
+    <button id="btnToggleLoops" class="panel-toggle" title="Afficher / masquer le panneau Scènes">Scènes</button>
+    <button id="btnTogglePlans" class="panel-toggle" title="Afficher / masquer le panneau Plans">Plans</button>
+    <button id="btnToggleLines" class="panel-toggle active" title="Afficher / masquer le panneau Répliques">Répliques</button>
+    <button id="btnTogglePanel" class="panel-toggle active" title="Afficher / masquer le panneau Personnages">Personnages</button>
   </div>
 
   <canvas id="band"></canvas>
