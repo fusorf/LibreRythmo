@@ -1,6 +1,6 @@
-# Build Windows portable et publication automatique :
-#  - à chaque tag `v*` poussé → build + zip + GitHub Release avec l'artefact
-#  - déclenchement manuel possible (workflow_dispatch) → artefact téléchargeable
+# Build des installeurs (Windows NSIS + macOS DMG) via electron-builder :
+#  - à chaque tag `v*` poussé → build sur les 3 plateformes + GitHub Release avec les installeurs
+#  - déclenchement manuel (workflow_dispatch) → artefacts téléchargeables, sans release
 name: Release
 
 on:
@@ -12,8 +12,13 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-13, macos-14]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,21 +30,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Package portable build
-        run: npm run package
+      # Windows : installeur NSIS + zip portable ; macOS : DMG (arch native du runner —
+      # macos-13 = Intel x64, macos-14 = Apple Silicon arm64). Builds non signés.
+      - name: Build installer
+        run: npm run dist
 
-      - name: Zip portable build
-        run: Compress-Archive -Path dist/LibreRythmo-win32-x64 -DestinationPath LibreRythmo-win32-x64.zip
-
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: LibreRythmo-win32-x64
-          path: LibreRythmo-win32-x64.zip
+          name: LibreRythmo-${{ matrix.os }}
+          path: |
+            dist-installer/*.exe
+            dist-installer/*.dmg
+            dist-installer/*.zip
+          if-no-files-found: ignore
 
-      - name: Publish release
+      - name: Publish to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: LibreRythmo-win32-x64.zip
+          files: |
+            dist-installer/*.exe
+            dist-installer/*.dmg
+            dist-installer/*.zip
+          fail_on_unmatched_files: false
           generate_release_notes: true
