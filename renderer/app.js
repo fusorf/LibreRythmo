@@ -570,10 +570,11 @@ function rowIconButton(kind, title, onClick) {
 }
 
 function renderChars() {
-  // outline du bouton « + Réplique » à la couleur du personnage sélectionné (vers quelle
-  // voix part la prochaine réplique) ; bordure neutre par défaut si aucun personnage
+  // outline du groupe « + Réplique | + Réaction » à la couleur du personnage sélectionné
+  // (vers quelle voix part la prochaine réplique) ; bordure neutre si aucun personnage
   const sel = getChar(selectedCharId)
-  $('btnAddLine').style.borderColor = sel ? sel.color : ''
+  const addGroup = $('btnAddLine').closest('.seg-group')
+  if (addGroup) addGroup.style.borderColor = sel ? sel.color : ''
 
   const list = $('charList')
   list.innerHTML = ''
@@ -589,7 +590,7 @@ function renderChars() {
     sw.addEventListener('input', () => {
       if (!sw.dataset.pushed) { pushUndo(); sw.dataset.pushed = '1' }
       c.color = sw.value
-      if (c.id === selectedCharId) $('btnAddLine').style.borderColor = c.color
+      if (c.id === selectedCharId) { const g = $('btnAddLine').closest('.seg-group'); if (g) g.style.borderColor = c.color }
       markDirty()
     })
     sw.addEventListener('change', () => { delete sw.dataset.pushed })

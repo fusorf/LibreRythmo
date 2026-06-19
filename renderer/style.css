@@ -262,20 +262,26 @@ button.active {
 /* en barre d'action, surcharge le radius/largeur de la règle #transport select */
 #transport .font-sel select { width: 102px; border-radius: 0 6px 6px 0; }
 
-/* groupe segmenté de la barre (+ Réplique | + Réaction) : boutons collés, séparateur 1px */
-.seg-group { display: inline-flex; height: var(--ctl-h); flex: 0 0 auto; }
+/* groupe segmenté (+ Réplique | + Réaction) : boutons collés, séparateur interne 1px.
+   L'outline (bordure du groupe) entoure les deux boutons et prend la couleur du
+   personnage sélectionné (réglée en JS) ; séparateur interne neutre. */
+.seg-group {
+  display: inline-flex;
+  height: var(--ctl-h);
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
 .seg-group > button {
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
   border-radius: 0;
-  border-right: none;
 }
-.seg-group > button:first-child { border-radius: 6px 0 0 6px; }
-.seg-group > button:last-child { border-radius: 0 6px 6px 0; border-right: 1px solid var(--border); }
-/* + Réplique : la bordure (outline) prend la couleur du personnage sélectionné, réglée en JS */
-#btnAddLine:hover { background: var(--hover); }
+.seg-group > button + button { border-left: 1px solid var(--border); }
 
 /* boutons-icônes du transport (aimant…) */
 .icon-btn {
@@ -551,19 +557,15 @@ input[type="range"]::-webkit-slider-thumb {
 }
 input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 
-/* sliders (volume / zoom) en pastilles, alignés sur la hauteur des boutons */
+/* sliders (volume / zoom) : icône + curseur nus, sans cadre */
 .vol {
   display: flex;
   align-items: center;
   gap: 8px;
   height: var(--ctl-h);
-  padding: 0 11px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
 }
 .vol svg { width: 15px; height: 15px; fill: var(--dim); flex: 0 0 auto; }
-#volume, #zoom { width: 82px; }
+#volume, #zoom { width: 84px; }
 
 /* compteur de temps : afficheur type LCD (puits inset, chiffres à chasse fixe) */
 #timecode {
