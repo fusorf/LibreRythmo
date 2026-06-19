@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; media-src 'self' file:; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; media-src 'self' file:; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; font-src 'self' file: data:;">
   <title>LibreRythmo</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -79,6 +79,7 @@
     <button id="btnImportAudio" class="tracks-ctl">+ Importer un audio…</button>
     <div class="sep"></div>
     <select id="trackCount" class="rythmo-ctl" title="Nombre de pistes affichées"></select>
+    <select id="defFont" class="rythmo-ctl" title="Police par défaut de la bande"></select>
     <div class="vol" id="zoomWrap" title="Zoom de la bande (Ctrl+molette)">
       <svg viewBox="0 0 16 16"><path d="M6.5 1a5.5 5.5 0 014.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 116.5 1zm0 1.5a4 4 0 100 8 4 4 0 000-8zM5.75 5.75V4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
       <input id="zoom" type="range" min="0" max="1" step="0.001" value="0.5">
@@ -106,6 +107,7 @@
   <div id="inspector" class="empty">
     <span id="insEmpty">Aucune réplique sélectionnée · appuyez sur F1 pour l'aide</span>
     <select id="insChar" title="Personnage de la réplique"></select>
+    <select id="insFont" title="Police de la réplique"></select>
     <select id="insTrack" title="Piste d'affichage">
       <option value="0">Piste 1</option>
       <option value="1">Piste 2</option>
@@ -141,7 +143,16 @@
           <input id="expW" type="number" min="320" max="7680" value="1920" disabled>
           <span class="arrow">×</span>
           <input id="expH" type="number" min="180" max="4320" value="1080" disabled>
-          <label><span id="lblFps">Images/s</span> <input id="expFps" type="number" min="10" max="120" value="25"></label>
+          <label><span id="lblFps">Images/s</span>
+            <select id="expFpsMode">
+              <option value="source" id="optFpsSource">Source</option>
+              <option value="30">30</option>
+              <option value="60" selected>60</option>
+              <option value="120">120</option>
+              <option value="custom" id="optFpsCustom">Personnalisée</option>
+            </select>
+            <input id="expFps" type="number" min="10" max="120" value="60">
+          </label>
           <label><span id="lblEnc">Encodeur</span> <select id="expEnc"></select></label>
         </fieldset>
         <fieldset class="opt-group">

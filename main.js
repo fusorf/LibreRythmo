@@ -253,7 +253,7 @@ const MENU_STR = {
     newProject: 'Nouveau projet',
     openVideo: 'Ouvrir une vidéo…',
     subtitles: 'Sous-titres',
-    importSrt: 'Importer (SRT)…',
+    importSrt: 'Importer (SRT/VTT/ASS)…',
     exportSrt: 'Exporter (SRT)…',
     updateSrt: 'Mettre à jour depuis un SRT corrigé…',
     detx: 'DETX',
@@ -302,7 +302,10 @@ const MENU_STR = {
     dlgProjectFilter: 'Projet rythmo',
     dlgSave: 'Enregistrer le projet',
     dlgSrt: 'Importer des sous-titres SRT',
+    dlgSubs: 'Importer des sous-titres',
     dlgSrtFilter: 'Sous-titres',
+    dlgFont: 'Charger une police',
+    dlgFontFilter: 'Police (TTF/OTF)',
     dlgDetx: 'Importer un DETX',
     dlgDetxSave: 'Exporter en DETX',
     dlgDetxFilter: 'Bande rythmo DETX',
@@ -316,7 +319,7 @@ const MENU_STR = {
     newProject: 'New project',
     openVideo: 'Open a video…',
     subtitles: 'Subtitles',
-    importSrt: 'Import (SRT)…',
+    importSrt: 'Import (SRT/VTT/ASS)…',
     exportSrt: 'Export (SRT)…',
     updateSrt: 'Update from corrected SRT…',
     detx: 'DETX',
@@ -365,7 +368,10 @@ const MENU_STR = {
     dlgProjectFilter: 'Rythmo project',
     dlgSave: 'Save project',
     dlgSrt: 'Import SRT subtitles',
+    dlgSubs: 'Import subtitles',
     dlgSrtFilter: 'Subtitles',
+    dlgFont: 'Load a font',
+    dlgFontFilter: 'Font (TTF/OTF)',
     dlgDetx: 'Import DETX',
     dlgDetxSave: 'Export DETX',
     dlgDetxFilter: 'DETX rythmo band',
@@ -628,6 +634,18 @@ ipcMain.handle('import-srt', async () => {
   return fs.readFileSync(r.filePaths[0], 'utf8')
 })
 
+// import de sous-titres tous formats (SRT / VTT / ASS / SSA) — le renderer détecte
+// le format d'après le contenu
+ipcMain.handle('import-subs', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: S().dlgSubs,
+    filters: [{ name: S().dlgSrtFilter, extensions: ['srt', 'vtt', 'ass', 'ssa'] }],
+    properties: ['openFile'],
+  })
+  if (r.canceled || !r.filePaths.length) return null
+  return fs.readFileSync(r.filePaths[0], 'utf8')
+})
+
 ipcMain.handle('export-srt', async (e, content, suggested) => {
   const r = await dialog.showSaveDialog(win, {
     title: S().dlgSrtSave,
@@ -637,6 +655,25 @@ ipcMain.handle('export-srt', async (e, content, suggested) => {
   if (r.canceled || !r.filePath) return null
   fs.writeFileSync(r.filePath, content, 'utf8')
   return r.filePath
+})
+
+// sélection d'une police TTF/OTF : renvoie son nom + les octets en base64, embarqués
+// dans le projet par le renderer (portabilité + rendu identique à l'export)
+ipcMain.handle('pick-font', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: S().dlgFont,
+    filters: [{ name: S().dlgFontFilter, extensions: ['ttf', 'otf', 'woff', 'woff2'] }],
+    properties: ['openFile'],
+  })
+  if (r.canceled || !r.filePaths.length) return null
+  const p = r.filePaths[0]
+  try {
+    const data = fs.readFileSync(p).toString('base64')
+    const name = path.basename(p).replace(/\.[^.]+$/, '')
+    return { name, data, ext: path.extname(p).slice(1).toLowerCase() }
+  } catch {
+    return null
+  }
 })
 
 ipcMain.handle('import-detx', async () => {

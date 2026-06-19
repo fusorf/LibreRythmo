@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('api', {
   saveProject: (json, p) => ipcRenderer.invoke('save-project', json, p),
   saveProjectAs: (json, p) => ipcRenderer.invoke('save-project-as', json, p),
   importSrt: () => ipcRenderer.invoke('import-srt'),
+  importSubs: () => ipcRenderer.invoke('import-subs'),
+  pickFont: () => ipcRenderer.invoke('pick-font'),
   exportSrt: (content, suggested) => ipcRenderer.invoke('export-srt', content, suggested),
   importDetx: () => ipcRenderer.invoke('import-detx'),
   exportDetx: (content, suggested) => ipcRenderer.invoke('export-detx', content, suggested),

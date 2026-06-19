@@ -94,7 +94,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], audioTracks: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], audioTracks: [], defaultFont: null, fonts: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
@@ -158,6 +158,73 @@ const BAND_THEMES = {
 let theme = 'dark'
 const bandPal = () => BAND_THEMES[theme]
 
+// ---------- polices personnalisées (TTF/OTF) ----------
+// Les polices sont embarquées dans le projet (project.fonts = [{ name, data(base64),
+// ext }]) pour rester portables et rendre à l'identique à l'export. À l'ouverture, on
+// ré-enregistre chaque police comme FontFace. line.font surcharge project.defaultFont
+// qui surcharge la police interne ("Segoe UI").
+const BAND_FALLBACK = '"Segoe UI", sans-serif'
+const registeredFonts = new Set() // noms déjà ajoutés à document.fonts cette session
+
+async function registerFont(name, dataB64, ext) {
+  if (!name || registeredFonts.has(name)) return registeredFonts.has(name)
+  const mime = ext === 'otf' ? 'font/otf' : ext === 'woff2' ? 'font/woff2' : ext === 'woff' ? 'font/woff' : 'font/ttf'
+  try {
+    const ff = new FontFace(name, `url(data:${mime};base64,${dataB64})`)
+    await ff.load()
+    document.fonts.add(ff)
+    registeredFonts.add(name)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function registerAllFonts() {
+  for (const f of project.fonts || []) await registerFont(f.name, f.data, f.ext)
+}
+
+// chaîne CSS de police pour le rendu canvas d'une réplique (surcharge → défaut → interne)
+function bandFontFamily(line) {
+  const fam = (line && line.font) || project.defaultFont
+  return fam ? `"${fam.replace(/"/g, '')}", ${BAND_FALLBACK}` : BAND_FALLBACK
+}
+
+// remplit les deux sélecteurs de police (défaut global + par réplique) à partir du
+// registre du projet ; valeur '' = police par défaut, '__load__' = charger un fichier
+function populateFontSelects() {
+  const fonts = project.fonts || []
+  const fill = (sel, current, defaultLabel) => {
+    if (!sel) return
+    sel.innerHTML = ''
+    const add = (val, label) => { const o = document.createElement('option'); o.value = val; o.textContent = label; sel.appendChild(o) }
+    add('', defaultLabel)
+    for (const f of fonts) add(f.name, f.name)
+    add('__load__', t('fontLoad'))
+    sel.value = fonts.some((f) => f.name === current) ? current : ''
+  }
+  fill($('defFont'), project.defaultFont || '', t('fontDefaultGlobal'))
+  const line = selectedIds && selectedIds.size === 1 ? project.lines.find((l) => selectedIds.has(l.id)) : null
+  fill($('insFont'), line ? (line.font || '') : '', t('fontDefault'))
+}
+
+// ouvre un fichier TTF/OTF, l'enregistre dans le projet + comme FontFace ; renvoie le
+// nom (ou null si annulé/échec). Évite les doublons de nom.
+async function loadFontFile() {
+  const f = await window.api.pickFont()
+  if (!f || !f.data) return null
+  let name = f.name || 'Police'
+  if (!(project.fonts || []).some((x) => x.name === name) && !registeredFonts.has(name)) {
+    const ok = await registerFont(name, f.data, f.ext)
+    if (!ok) { toast(t('fontLoadFail')); return null }
+    project.fonts.push({ name, data: f.data, ext: f.ext })
+    markDirty()
+  } else {
+    await registerFont(name, f.data, f.ext) // déjà présent : s'assure qu'il est chargé
+  }
+  return name
+}
+
 function setTheme(th) {
   theme = th === 'light' ? 'light' : 'dark'
   document.body.classList.toggle('light', theme === 'light')
@@ -217,7 +284,7 @@ let undoStack = []
 let redoStack = []
 let undoCoalesce = false // les pushUndo d'une même opération (même tick) ne comptent qu'une fois
 
-const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, audioTracks: project.audioTracks })
+const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, audioTracks: project.audioTracks, defaultFont: project.defaultFont })
 
 function pushUndo() {
   if (undoCoalesce) return
@@ -246,9 +313,11 @@ function restoreState(snap) {
   project.lines = d.lines
   project.loops = d.loops || []
   if (d.audioTracks) project.audioTracks = d.audioTracks
+  project.defaultFont = d.defaultFont || null
   waveOffset = (activeAudioTrack()?.offset) || 0 // suit l'offset restauré de la piste active
   if (!getChar(selectedCharId)) selectedCharId = project.characters[0]?.id || null
   selectedIds = new Set([...selectedIds].filter((id) => getLine(id)))
+  populateFontSelects()
   renderChars()
   applyBandHeight()
   buildInsTrackOptions()
@@ -338,6 +407,9 @@ function applyLang() {
   // inspecteur
   $('insEmpty').textContent = t('insEmpty')
   ins.char.title = t('insChar')
+  ins.font.title = t('insFont')
+  $('defFont').title = t('defFontTitle')
+  populateFontSelects()
   ins.track.title = t('insTrack')
   buildInsTrackOptions()
 
@@ -368,6 +440,8 @@ function applyLang() {
   $('lblRes').textContent = t('lblRes')
   $('optCustom').textContent = t('optCustom')
   $('lblFps').textContent = t('lblFps')
+  $('optFpsCustom').textContent = t('optFpsCustom')
+  if (exp.open) syncFpsModeUI()
   $('lblTheme').textContent = t('lblTheme')
   $('optThemeDark').textContent = t('optThemeDark')
   $('optThemeLight').textContent = t('optThemeLight')
@@ -670,6 +744,7 @@ function rescaleLine(line, newEnd) {
 const ins = {
   el: $('inspector'),
   char: $('insChar'),
+  font: $('insFont'),
   track: $('insTrack'),
   entry: $('insEntry'),
   exit: $('insExit'),
@@ -695,6 +770,7 @@ function refreshInspector() {
     ins.char.appendChild(o)
   }
   ins.char.value = line.characterId
+  ins.font.value = (project.fonts || []).some((f) => f.name === line.font) ? line.font : ''
   ins.track.value = String(line.track)
   ins.entry.value = line.entry || ''
   ins.exit.value = line.exit || ''
@@ -711,6 +787,37 @@ ins.char.addEventListener('change', () => {
 ins.track.addEventListener('change', () => {
   const l = singleSelected()
   if (l) { pushUndo(); l.track = Number(ins.track.value); markDirty() }
+})
+// police de la réplique : '' = défaut, '__load__' = charger un TTF/OTF, sinon nom
+ins.font.addEventListener('change', async () => {
+  const l = singleSelected()
+  if (!l) return
+  let v = ins.font.value
+  if (v === '__load__') {
+    const name = await loadFontFile()
+    populateFontSelects()
+    if (!name) { ins.font.value = l.font || ''; return }
+    v = name
+  }
+  pushUndo()
+  if (v) l.font = v
+  else delete l.font
+  ins.font.value = v
+  markDirty()
+})
+// police par défaut globale de la bande (s'applique aux répliques sans police propre)
+$('defFont').addEventListener('change', async () => {
+  let v = $('defFont').value
+  if (v === '__load__') {
+    const name = await loadFontFile()
+    populateFontSelects()
+    if (!name) return
+    v = name
+  }
+  pushUndo()
+  project.defaultFont = v || null
+  populateFontSelects()
+  markDirty()
 })
 ins.entry.addEventListener('change', () => {
   const l = singleSelected()
@@ -921,6 +1028,13 @@ function renderLinesLog() {
 const loopDur = (lp) => Math.max(0, lp.end - lp.start)
 const sortedLoops = () => [...project.loops].sort((a, b) => a.start - b.start)
 
+// stats d'une scène calculées à la volée (jamais stockées) : une réplique compte
+// pour la scène si son début tombe dans [start, end) ; bonus = personnages distincts
+function loopStats(lp) {
+  const inScene = project.lines.filter((l) => l.words.length && lineStart(l) >= lp.start && lineStart(l) < lp.end)
+  return { lines: inScene.length, chars: new Set(inScene.map((l) => l.characterId)).size }
+}
+
 // une boucle est « hors normes » : normale trop longue, ou OUT trop courte
 function loopWarn(lp) {
   if (lp.type === 'out') return loopDur(lp) < LOOP_OUT_MIN_SEC
@@ -962,18 +1076,9 @@ function renderLoopsPanel() {
     const row = document.createElement('div')
     row.className = 'loop-row' + (lp.type === 'out' ? ' out' : '')
 
-    const tc = document.createElement('span')
-    tc.className = 'ltc'
-    tc.textContent = formatTcShort(lp.start)
-
     const nm = document.createElement('span')
     nm.className = 'lp-name'
     nm.textContent = lp.name
-
-    const dur = document.createElement('span')
-    dur.className = 'lp-dur' + (loopWarn(lp) ? ' warn' : '')
-    dur.textContent = formatTcShort(loopDur(lp))
-    dur.title = loopWarn(lp) ? (lp.type === 'out' ? t('loopOutTooShort', LOOP_OUT_MIN_SEC) : t('loopTooLong', LOOP_WARN_SEC)) : ''
 
     // boutons : début/fin au point de lecture · type OUT · renommer · supprimer
     const mkBtn = (txt, title, fn, cls) => {
@@ -1017,7 +1122,30 @@ function renderLoopsPanel() {
       })
     })
 
-    row.append(tc, nm, dur, setStart, setEnd, out, del)
+    // ligne 1 : nom + actions
+    const top = document.createElement('div')
+    top.className = 'lp-top'
+    top.append(nm, setStart, setEnd, out, del)
+
+    // ligne 2 : méta-stats calculées à la volée (plage · durée · répliques · persos)
+    const st = loopStats(lp)
+    const meta = document.createElement('div')
+    meta.className = 'lp-meta'
+    const sep = () => { const s = document.createElement('span'); s.className = 'lp-sep'; s.textContent = '·'; return s }
+    const range = document.createElement('span')
+    range.className = 'lp-range'
+    range.textContent = `${formatTcShort(lp.start)} → ${formatTcShort(lp.end)}`
+    const dur = document.createElement('span')
+    dur.className = 'lp-dur' + (loopWarn(lp) ? ' warn' : '')
+    dur.textContent = formatTcShort(loopDur(lp))
+    dur.title = loopWarn(lp) ? (lp.type === 'out' ? t('loopOutTooShort', LOOP_OUT_MIN_SEC) : t('loopTooLong', LOOP_WARN_SEC)) : ''
+    const cnt = document.createElement('span')
+    cnt.className = 'lp-count'
+    cnt.textContent = t('loopStatLines', st.lines)
+    meta.append(range, sep(), dur, sep(), cnt)
+    if (st.chars > 0) meta.append(sep(), Object.assign(document.createElement('span'), { className: 'lp-count', textContent: t('loopStatChars', st.chars) }))
+
+    row.append(top, meta)
     row.addEventListener('click', () => { video.pause(); scrubTo(lp.start) })
     list.appendChild(row)
   }
@@ -1688,7 +1816,7 @@ function renderBand(c, now, W, H, pps, opts) {
 
     // mots — élongation : chaque mot est étiré sur sa durée réelle
     const fontPx = Math.round(th * 0.52)
-    c.font = `bold ${fontPx}px "Segoe UI", sans-serif`
+    c.font = `bold ${fontPx}px ${bandFontFamily(line)}`
     c.textBaseline = 'alphabetic'
     for (const w of line.words) {
       const wx = xAt(w.start)
@@ -2550,6 +2678,11 @@ async function loadProjectData(data, path) {
   project.characters ||= []
   project.lines ||= []
   project.loops ||= []
+  project.fonts ||= []
+  project.defaultFont ||= null
+  // ré-enregistre les polices embarquées du projet (FontFace) avant le 1er rendu
+  await registerAllFonts()
+  populateFontSelects()
   // rétrocompat : modèle v2 « sources.audioTracks » accepté, sinon liste vide
   project.audioTracks ||= (data.sources && data.sources.audioTracks) || []
   // nombre de pistes : valeur enregistrée si présente, sinon déduite des données
@@ -2603,8 +2736,74 @@ function parseSrt(text) {
   return cues
 }
 
-function importSrtText(text) {
-  const cues = parseSrt(text)
+// VTT : très proche du SRT (cues + timestamps), mais heures optionnelles et balises
+// de cue (<c>, <v Speaker>, timestamps internes) à ignorer ; on ne garde que texte + timing.
+function parseVtt(text) {
+  const cues = []
+  const reTime = /(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{1,3})\s*-->\s*(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{1,3})/
+  const frac = (s) => +s / Math.pow(10, s.length)
+  for (const block of text.replace(/\r/g, '').split(/\n\n+/)) {
+    const lines = block.trim().split('\n')
+    const ti = lines.findIndex((l) => reTime.test(l))
+    if (ti === -1) continue
+    const m = lines[ti].match(reTime)
+    const start = (+m[1] || 0) * 3600 + +m[2] * 60 + +m[3] + frac(m[4])
+    const end = (+m[5] || 0) * 3600 + +m[6] * 60 + +m[7] + frac(m[8])
+    const txt = lines.slice(ti + 1).join(' ')
+      .replace(/<[^>]+>/g, '') // balises de cue (voix, classes, timestamps)
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ').trim()
+    if (txt && end > start) cues.push({ start, end, text: txt })
+  }
+  return cues
+}
+
+// ASS/SSA : on ne lit que les Dialogue: de la section [Events] (texte + timing) ;
+// styles, positions, karaoké et tags d'override {\...} sont ignorés pour rester simple.
+function parseAss(text) {
+  const cues = []
+  const toSec = (s) => {
+    const m = String(s).trim().match(/(\d+):(\d{2}):(\d{2})\.(\d{1,3})/)
+    return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / Math.pow(10, m[4].length) : null
+  }
+  let section = ''
+  let fields = null // ordre des champs déclaré par la ligne Format: de [Events]
+  for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim()
+    const sec = line.match(/^\[(.+)\]$/)
+    if (sec) { section = sec[1].toLowerCase(); continue }
+    if (section !== 'events') continue
+    if (/^Format:/i.test(line)) {
+      fields = line.slice(line.indexOf(':') + 1).split(',').map((s) => s.trim().toLowerCase())
+      continue
+    }
+    if (!/^Dialogue:/i.test(line)) continue
+    const f = fields || ['layer', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text']
+    const iStart = f.indexOf('start'), iEnd = f.indexOf('end'), iText = f.indexOf('text')
+    if (iStart < 0 || iEnd < 0 || iText < 0) continue
+    // le texte est le dernier champ et peut contenir des virgules : on ne découpe
+    // qu'en (nb champs − 1) morceaux pour le préserver intact
+    const parts = line.slice(line.indexOf(':') + 1).split(',')
+    const cols = [...parts.slice(0, f.length - 1), parts.slice(f.length - 1).join(',')]
+    const start = toSec(cols[iStart]), end = toSec(cols[iEnd])
+    const txt = (cols[iText] || '')
+      .replace(/\{[^}]*\}/g, '') // tags d'override
+      .replace(/\\[Nnh]/g, ' ')  // sauts de ligne / espace insécable ASS
+      .replace(/\s+/g, ' ').trim()
+    if (txt && start != null && end != null && end > start) cues.push({ start, end, text: txt })
+  }
+  return cues
+}
+
+// sélection du parser d'après le contenu (robuste quelle que soit l'extension)
+function sniffSubs(text) {
+  if (/^﻿?\s*WEBVTT/.test(text)) return parseVtt
+  if (/\[Script Info\]|\[Events\]/i.test(text) || /^\s*Dialogue:/im.test(text)) return parseAss
+  return parseSrt
+}
+
+function importSubsText(text) {
+  const cues = sniffSubs(text)(text)
   if (!cues.length) {
     toast(t('srtNone'))
     return
@@ -2624,9 +2823,9 @@ function importSrtText(text) {
   toast(t('srtImported', cues.length))
 }
 
-async function importSrtDialog() {
-  const text = await window.api.importSrt()
-  if (text) importSrtText(text)
+async function importSubsDialog() {
+  const text = await window.api.importSubs()
+  if (text) importSubsText(text)
 }
 
 // ---------- export / réimport SRT (correction orthographique externe)
@@ -2910,7 +3109,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'open-project') openProjectDialog()
   else if (action === 'save-project') saveProject()
   else if (action === 'save-project-as') saveProjectAs()
-  else if (action === 'import-srt') importSrtDialog()
+  else if (action === 'import-srt') importSubsDialog()
   else if (action === 'export-srt') exportSrtDialog()
   else if (action === 'update-srt') updateSrtDialog()
   else if (action === 'import-detx') importDetxDialog()
@@ -3009,8 +3208,8 @@ window.addEventListener('drop', async (e) => {
   const file = e.dataTransfer.files[0]
   if (!file) return
   const name = file.name.toLowerCase()
-  if (name.endsWith('.srt')) {
-    importSrtText(await file.text())
+  if (/\.(srt|vtt|ass|ssa)$/.test(name)) {
+    importSubsText(await file.text())
   } else if (name.endsWith('.detx')) {
     if (!(await confirmDiscardIfDirty())) return
     try {
@@ -3045,6 +3244,7 @@ const exp = {
   layout: null, // rects en pixels de sortie : { video:{x,y,w,h}, band:{x,y,w,h} }
   bandPos: 'bottom', // 'bottom' | 'top' : bande en bas ou en haut
   bandFrac: 0.13, // hauteur de bande / hauteur de sortie (réglée par la barre de séparation)
+  fpsMode: '60', // 'source' | '30' | '60' | '120' | 'custom' — cadence de sortie (défaut 60)
   winSec: 5, // secondes visibles sur la bande exportée (même zoom que l'éditeur)
   drag: false, // glissement de la barre de séparation
   running: false,
@@ -3062,6 +3262,21 @@ const PREVIEW_W = 780
 const outW = () => Math.max(320, Math.floor(Number($('expW').value) / 2) * 2)
 const outH = () => Math.max(180, Math.floor(Number($('expH').value) / 2) * 2)
 const expScale = () => expCanvas.width / outW()
+
+// cadence source détectée de la vidéo (métadonnées), repli sur project.fps
+const sourceFps = () => clamp(Math.round(videoInfo?.fpsExact || project.fps), 10, 120)
+// cadence de sortie effective selon le dropdown : Source / 30 / 60 / 120 / Custom
+function effectiveExportFps() {
+  const m = exp.fpsMode
+  if (m === 'source') return sourceFps()
+  if (m === 'custom') return clamp(Number($('expFps').value) || project.fps, 10, 120)
+  return clamp(Number(m) || 60, 10, 120)
+}
+// rafraîchit le libellé « Source (25) » et l'affichage du champ manuel (Custom)
+function syncFpsModeUI() {
+  $('optFpsSource').textContent = `${t('optFpsSource')} (${sourceFps()})`
+  $('expFps').style.display = exp.fpsMode === 'custom' ? '' : 'none'
+}
 
 // dispose vidéo + bande à partir de la position (haut/bas) et de la fraction de
 // hauteur de la bande ; la vidéo est centrée (letterbox) dans la zone restante
@@ -3236,7 +3451,9 @@ function openExportModal() {
   exp.theme = theme // thème de la bande exportée : celui de l'UI par défaut
   $('expTheme').value = exp.theme
   populateEncoderSelect()
-  $('expFps').value = project.fps
+  $('expFpsMode').value = exp.fpsMode
+  $('expFps').value = effectiveExportFps()
+  syncFpsModeUI()
   exp.winSec = clamp(secondsVisible, SEC_MIN, SEC_MAX) // hérite du zoom de l'éditeur
   syncExpZoomSlider()
   updateWinReadout()
@@ -3253,6 +3470,12 @@ function openExportModal() {
 $('expWin').addEventListener('input', () => {
   exp.winSec = SEC_MAX * Math.pow(SEC_MIN / SEC_MAX, Number($('expWin').value))
   updateWinReadout()
+})
+$('expFpsMode').addEventListener('change', () => {
+  exp.fpsMode = $('expFpsMode').value
+  // au passage en Custom, pré-remplir le champ avec la cadence courante (point de départ pratique)
+  if (exp.fpsMode === 'custom') $('expFps').value = effectiveExportFps()
+  syncFpsModeUI()
 })
 $('expTheme').addEventListener('change', () => { exp.theme = $('expTheme').value === 'light' ? 'light' : 'dark' })
 $('expAudio').addEventListener('change', () => { exp.audioId = $('expAudio').value })
@@ -3410,7 +3633,7 @@ async function runExport(outPathOverride) {
 
   const W = outW()
   const H = outH()
-  const fps = clamp(Number($('expFps').value) || project.fps, 10, 120)
+  const fps = effectiveExportFps()
   const winSec = Math.max(1, exp.winSec)
   const L = JSON.parse(JSON.stringify(exp.layout))
   // groupe « Contenu » : plage temporelle (boucles), pistes rythmo et piste audio
