@@ -3,6 +3,43 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.5.0] - 2026-06-19
+
+### Plans
+- Nouveau panneau **Plans** : ajout manuel au point de lecture et **détection automatique**
+  des changements de plan (ffmpeg, slider de sensibilité). Marqueurs flèche sur la bande,
+  liste avec renommage / suppression / clic = positionnement.
+
+### Scènes
+- **Stats à la volée** par scène (plage, durée, nombre de répliques et de personnages),
+  affichées en ligne dans la liste.
+
+### Import
+- Import des sous-titres **ASS / SSA** et **VTT** (en plus de SRT/DETX), avec détection
+  automatique du format.
+
+### Polices
+- **Police par défaut globale** modifiable **+ surcharge par réplique** ; chargement de
+  polices **TTF/OTF** embarquées dans le projet (rendues à l'identique à l'export).
+- **4 polices libres** fournies d'office (Inter, Oswald, Comfortaa, Anton — SIL OFL).
+
+### Édition
+- Menu du bas en **mode multi-sélection** : police, voix off et personnage applicables en
+  lot, avec état indéterminé quand les valeurs diffèrent.
+
+### Performance
+- **Proxy vidéo** : génération en tâche de fond d'un proxy 720p H.264 mis en cache
+  (lecture fluide sur 4K/HEVC, compatibilité codec universelle, détection de plans
+  accélérée). L'export repart toujours de la source en pleine qualité.
+
+### Export
+- Cadence de sortie en **menu déroulant** (Source / 30 / 60 / 120 / Personnalisée), défaut 60.
+
+### Interface
+- Refonte de la **barre d'action** (plateau de transport segmenté, afficheur de temps,
+  sélecteurs compacts), bascules de panneaux regroupées dans le bandeau du bas,
+  uniformisation des listes latérales, icône poubelle pour la suppression de réplique.
+
 ## [2.0.0] - 2026-06-18
 
 ### Conformité doublage FR
