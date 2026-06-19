@@ -3,6 +3,18 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.5.2] - 2026-06-19
+
+### Ajustements
+- Notification de nouvelle version : **bannière jaune persistante** avec bouton de fermeture
+  (au lieu d'un toast qui disparaissait seul).
+- Multi-sélection : la barre du bas permet aussi de **changer la piste** de toutes les
+  répliques sélectionnées.
+
+### Distribution
+- **Installeurs** construits par GitHub Actions : Windows (NSIS `.exe` + zip portable),
+  macOS `.dmg` (Intel & Apple Silicon), Linux `AppImage` / `.deb` (Ubuntu) / `.pacman` (Arch).
+
 ## [2.5.1] - 2026-06-19
 
 ### Ajustements

@@ -60,23 +60,16 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.add('hidden'), 2200)
 }
 
-// notification de mise à jour : toast discret cliquable (ouvre la page Releases),
-// disparaît seul après 10 s — aucune autre interruption
+// notification de mise à jour : bannière jaune persistante (clic = ouvre les Releases),
+// reste affichée jusqu'à ce qu'on la ferme via la croix
 window.api.onUpdateAvailable((v) => {
-  const el = $('toast')
-  el.textContent = t('updateAvailable', v)
-  el.classList.add('clickable')
-  el.classList.remove('hidden')
-  el.onclick = () => {
-    window.api.openReleases()
-    el.classList.add('hidden')
-  }
-  clearTimeout(toast._t)
-  toast._t = setTimeout(() => {
-    el.classList.add('hidden')
-    el.classList.remove('clickable')
-    el.onclick = null
-  }, 10000)
+  $('updateMsg').textContent = t('updateAvailable', v)
+  $('updateBanner').classList.remove('hidden')
+})
+$('updateBanner').addEventListener('click', () => window.api.openReleases())
+$('updateClose').addEventListener('click', (e) => {
+  e.stopPropagation()
+  $('updateBanner').classList.add('hidden')
 })
 
 // overlay de chargement bloquant (affiché pendant le chargement d'une vidéo)
@@ -441,6 +434,7 @@ function applyLang() {
   $('defFont').title = t('defFontTitle')
   $('insMultiChar').title = t('multiCharTitle')
   $('insMultiFont').title = t('multiFontTitle')
+  $('insMultiTrack').title = t('multiTrackTitle')
   $('insMultiVoiceOff').title = t('multiVoiceOffTitle')
   $('insMultiVoiceOff').textContent = t('insVoiceOff')
   populateFontSelects()
@@ -860,6 +854,14 @@ function refreshMultiInspector(lines) {
   addF('__load__', t('fontLoad'))
   const only = [...fontVals][0]
   fontSel.value = mixedFont ? '__mixed__' : (allFontNames().includes(only) ? only : '')
+  // piste : déplacer toutes les répliques vers une piste (état indéterminé si mélange)
+  const trackSel = $('insMultiTrack')
+  trackSel.innerHTML = ''
+  const tracks = new Set(lines.map((l) => l.track || 0))
+  const mixedTrack = tracks.size > 1
+  if (mixedTrack) { const o = document.createElement('option'); o.value = '__mixed__'; o.textContent = t('multiMixed'); trackSel.appendChild(o) }
+  for (let i = 0; i < laneCount(); i++) { const o = document.createElement('option'); o.value = String(i); o.textContent = t('track', i + 1); trackSel.appendChild(o) }
+  trackSel.value = mixedTrack ? '__mixed__' : String([...tracks][0])
   // voix off : actif si toutes ON, indéterminé si mélange
   const off = lines.filter((l) => l.voiceOff).length
   const btn = $('insMultiVoiceOff')
@@ -956,6 +958,14 @@ $('insMultiFont').addEventListener('change', async () => {
   }
   pushUndo()
   selectedLines().forEach((l) => { if (v) l.font = v; else delete l.font })
+  markDirty()
+  refreshInspector()
+})
+$('insMultiTrack').addEventListener('change', () => {
+  const v = $('insMultiTrack').value
+  if (v === '__mixed__') return
+  pushUndo()
+  selectedLines().forEach((l) => { l.track = Number(v) })
   markDirty()
   refreshInspector()
 })

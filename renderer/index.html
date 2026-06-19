@@ -151,6 +151,7 @@
         <span class="font-sel-ico" aria-hidden="true">A</span>
         <select id="insMultiFont"></select>
       </span>
+      <select id="insMultiTrack" title="Piste — déplacer toutes les répliques sélectionnées"></select>
       <button id="insMultiVoiceOff" class="ins-toggle" title="Voix off — toutes les répliques sélectionnées">Voix off</button>
     </div>
   </div>
@@ -314,6 +315,10 @@
 
   <div id="toast" class="hidden"></div>
   <div id="proxyStatus" class="hidden"></div>
+  <div id="updateBanner" class="hidden">
+    <span id="updateMsg"></span>
+    <button id="updateClose" title="Fermer">✕</button>
+  </div>
 
   <script src="i18n.js"></script>
   <script src="reacs.js"></script>

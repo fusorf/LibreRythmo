@@ -1012,6 +1012,40 @@ kbd {
 #toast.hidden { opacity: 0; pointer-events: none; }
 #toast.clickable { cursor: pointer; border-color: var(--toggle-border); }
 #toast.clickable:hover { background: var(--hover); }
+/* bannière « nouvelle version » : jaune, persistante, fermable (clic = ouvre les releases) */
+#updateBanner {
+  position: fixed;
+  bottom: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f5c518;
+  color: #1a1a1a;
+  border: 1px solid #caa400;
+  border-radius: 7px;
+  padding: 8px 8px 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 12;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .3);
+}
+#updateBanner.hidden { display: none; }
+#updateBanner:hover { background: #ffd633; }
+#updateClose {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: #1a1a1a;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+#updateClose:hover { background: rgba(0, 0, 0, .15); }
 /* pastille de progression de génération du proxy (tâche de fond, non bloquante) */
 #proxyStatus {
   position: fixed;
