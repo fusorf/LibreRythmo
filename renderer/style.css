@@ -222,18 +222,20 @@ button.active {
   border-radius: 50%;
 }
 /* pastille du personnage sélectionné sur « + Nouvelle réplique » */
-#btnAddLine {
-  display: inline-flex;
+/* groupe segmenté de la barre (+ Réplique | + Réaction) : boutons collés, séparateur 1px */
+.seg-group { display: inline-flex; height: var(--ctl-h); flex: 0 0 auto; }
+.seg-group > button {
+  height: 100%;
+  display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  border-radius: 0;
+  border-right: none;
 }
-#addLineDot {
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-#addLineDot.hidden { display: none; }
+.seg-group > button:first-child { border-radius: 6px 0 0 6px; }
+.seg-group > button:last-child { border-radius: 0 6px 6px 0; border-right: 1px solid var(--border); }
+/* + Réplique : la bordure (outline) prend la couleur du personnage sélectionné, réglée en JS */
+#btnAddLine:hover { background: var(--hover); }
 
 /* boutons-icônes du transport (aimant…) */
 .icon-btn {
@@ -624,8 +626,7 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 /* contrôles contextuels de la barre d'action : rythmo masqués sur l'onglet Pistes, et
    inversement le bouton « Importer un audio » n'apparaît que sur l'onglet Pistes */
 .tracks-ctl { display: none; }
-body.on-tracks .rythmo-ctl,
-body.on-tracks #btnAddLine { display: none; } /* #btnAddLine a une règle display dédiée → surcharge nécessaire */
+body.on-tracks .rythmo-ctl { display: none; }
 body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
 
 /* ---------- vue Pistes (timeline façon montage) ---------- */

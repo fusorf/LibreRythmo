@@ -557,10 +557,10 @@ function rowIconButton(kind, title, onClick) {
 }
 
 function renderChars() {
-  // pastille du personnage sélectionné sur le bouton « + Nouvelle réplique »
+  // outline du bouton « + Réplique » à la couleur du personnage sélectionné (vers quelle
+  // voix part la prochaine réplique) ; bordure neutre par défaut si aucun personnage
   const sel = getChar(selectedCharId)
-  $('addLineDot').classList.toggle('hidden', !sel)
-  if (sel) $('addLineDot').style.background = sel.color
+  $('btnAddLine').style.borderColor = sel ? sel.color : ''
 
   const list = $('charList')
   list.innerHTML = ''
@@ -576,7 +576,7 @@ function renderChars() {
     sw.addEventListener('input', () => {
       if (!sw.dataset.pushed) { pushUndo(); sw.dataset.pushed = '1' }
       c.color = sw.value
-      if (c.id === selectedCharId) $('addLineDot').style.background = c.color
+      if (c.id === selectedCharId) $('btnAddLine').style.borderColor = c.color
       markDirty()
     })
     sw.addEventListener('change', () => { delete sw.dataset.pushed })

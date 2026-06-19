@@ -80,8 +80,10 @@
       <input id="volume" type="range" min="0" max="1" step="0.01" value="1">
     </div>
     <div class="sep"></div>
-    <button id="btnAddLine" class="rythmo-ctl" title="Nouvelle réplique au point de lecture (Entrée)"><span id="addLineLabel">+ Nouvelle réplique</span><span class="dot" id="addLineDot"></span></button>
-    <button id="btnOnoma" class="rythmo-ctl" title="Insérer une réaction standard au point de lecture">Réactions</button>
+    <div class="seg-group rythmo-ctl">
+      <button id="btnAddLine" title="Nouvelle réplique au point de lecture (Entrée)"><span id="addLineLabel">+ Réplique</span></button>
+      <button id="btnOnoma" title="Insérer une réaction standard au point de lecture">+ Réaction</button>
+    </div>
     <button id="btnMagnet" class="icon-btn rythmo-ctl" title="Mode aimant">
       <svg viewBox="0 0 16 16"><path d="M3 1h4v7a1 1 0 002 0V1h4v7A5 5 0 013 8V1zm1.2 1.2v1.6h1.6V2.2H4.2zm6 0v1.6h1.6V2.2h-1.6z" fill-rule="evenodd"/></svg>
     </button>
