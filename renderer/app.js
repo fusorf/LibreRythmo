@@ -3656,7 +3656,9 @@ function effectiveExportFps() {
 // rafraîchit le libellé « Source (25) » et l'affichage du champ manuel (Custom)
 function syncFpsModeUI() {
   $('optFpsSource').textContent = `${t('optFpsSource')} (${sourceFps()})`
-  $('expFps').style.display = exp.fpsMode === 'custom' ? '' : 'none'
+  // visibility (et non display) : la place du champ reste réservée même masqué, pour
+  // que passer en « Personnalisée » ne change pas la taille de la modale
+  $('expFps').style.visibility = exp.fpsMode === 'custom' ? 'visible' : 'hidden'
 }
 
 // dispose vidéo + bande à partir de la position (haut/bas) et de la fraction de
