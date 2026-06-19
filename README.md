@@ -5,7 +5,7 @@ Free, open-source rythmo band editor for dubbing — sync dialogue to picture fr
 [![Latest release](https://img.shields.io/github/v/release/fusorf/LibreRythmo?label=download)](https://github.com/fusorf/LibreRythmo/releases/latest)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
-**[Download](https://github.com/fusorf/LibreRythmo/releases/latest)** — Windows installer (`.exe`) or portable zip, and macOS `.dmg` (Intel & Apple Silicon).
+**[Download](https://github.com/fusorf/LibreRythmo/releases/latest)** — Windows installer (`.exe`) or portable zip, macOS `.dmg` (Intel & Apple Silicon), and Linux (`AppImage` / `.deb` / `.pacman`).
 
 ![Main window](docs/screenshot-main.png)
 
@@ -97,7 +97,8 @@ npm run dist         # installers → dist-installer/ (electron-builder: NSIS .e
 ```
 
 Releases are built by [GitHub Actions](.github/workflows/release.yml) when a `v*` tag is pushed:
-a Windows installer + portable zip, and macOS `.dmg` for Intel and Apple Silicon.
+a Windows installer + portable zip, macOS `.dmg` (Intel + Apple Silicon), and Linux
+`AppImage` / `.deb` (Ubuntu/Debian) / `.pacman` (Arch).
 
 ## Code structure
 

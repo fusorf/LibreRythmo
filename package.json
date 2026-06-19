@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "package": "node scripts/make-buildinfo.js && electron-packager . LibreRythmo --platform=win32 --arch=x64 --out=dist --icon=assets/icon.ico --overwrite --no-asar --ignore=\"^/media($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/scripts($|/)\"",
-    "dist": "node scripts/make-buildinfo.js && electron-builder"
+    "dist": "node scripts/make-buildinfo.js && electron-builder --publish never"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
@@ -60,6 +60,13 @@
     },
     "dmg": {
       "writeUpdateInfo": false
+    },
+    "linux": {
+      "target": ["AppImage", "deb", "pacman"],
+      "icon": "build/icon.png",
+      "category": "AudioVideo",
+      "synopsis": "Bande rythmo libre pour le doublage",
+      "artifactName": "${productName}-${version}.${ext}"
     }
   }
 }

@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-13, macos-14]
+        os: [windows-latest, macos-13, macos-14, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +43,9 @@ jobs:
             dist-installer/*.exe
             dist-installer/*.dmg
             dist-installer/*.zip
+            dist-installer/*.AppImage
+            dist-installer/*.deb
+            dist-installer/*.pacman
           if-no-files-found: ignore
 
       - name: Publish to release
@@ -53,5 +56,8 @@ jobs:
             dist-installer/*.exe
             dist-installer/*.dmg
             dist-installer/*.zip
+            dist-installer/*.AppImage
+            dist-installer/*.deb
+            dist-installer/*.pacman
           fail_on_unmatched_files: false
           generate_release_notes: true
