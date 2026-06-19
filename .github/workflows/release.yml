@@ -30,6 +30,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # le paquet .pacman (Arch) via fpm a besoin de bsdtar (libarchive-tools)
+      - name: Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
       # Windows : installeur NSIS + zip portable ; macOS : DMG (arch native du runner —
       # macos-13 = Intel x64, macos-14 = Apple Silicon arm64). Builds non signés.
       - name: Build installer
