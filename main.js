@@ -920,7 +920,7 @@ let detectProc = null
 ipcMain.handle('detect-scenes', (e, opts) => {
   if (!ffmpegPath || !opts || !opts.path) return { error: 'ffmpeg introuvable ou chemin manquant' }
   if (detectProc) return { error: 'Une détection est déjà en cours' }
-  const thr = Math.min(0.95, Math.max(0.05, Number(opts.threshold) || 0.4))
+  const thr = Math.min(0.95, Math.max(0.05, Number(opts.threshold) || 0.5))
   return new Promise((resolve) => {
     const times = []
     let logTail = ''

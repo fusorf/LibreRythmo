@@ -1468,8 +1468,8 @@ const detState = { running: false, cancelled: false }
 
 function openDetectModal() {
   if (!project.videoPath) { toast(t('detNeedVideo')); return }
-  $('detSens').value = '0.4'
-  $('detSensVal').textContent = '0.40'
+  $('detSens').value = '0.5'
+  $('detSensVal').textContent = '0.50'
   $('detStatus').textContent = ''
   $('detBar').style.width = '0%'
   $('detGo').disabled = false
@@ -1495,7 +1495,7 @@ async function runDetectScenes() {
   detState.cancelled = false
   $('detGo').disabled = true
   $('detStatus').textContent = t('detRunning')
-  const threshold = Number($('detSens').value) || 0.4
+  const threshold = Number($('detSens').value) || 0.5
   // analyse sur le proxy s'il existe (bien plus rapide, résultat quasi identique)
   const r = await window.api.detectScenes({ path: videoProxyPath || project.videoPath, threshold })
   detState.running = false

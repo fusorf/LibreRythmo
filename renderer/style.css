@@ -1016,7 +1016,7 @@ kbd {
 #proxyStatus {
   position: fixed;
   bottom: 12px;
-  left: 12px;
+  right: 12px;
   background: var(--panel2);
   border: 1px solid var(--border);
   border-radius: 6px;
