@@ -406,7 +406,9 @@ button.active {
   padding: 0 5px;
   cursor: text;
 }
-.char-row .edit, .char-row .x {
+.char-row .edit, .char-row .x,
+.loop-row .edit, .loop-row .x,
+.plan-row .edit, .plan-row .x {
   flex: 0 0 auto;
   height: auto;
   background: none;
@@ -415,9 +417,9 @@ button.active {
   font-size: 12px;
   padding: 2px 4px;
 }
-.char-row .edit:hover { color: var(--text); background: none; }
-.char-row .x:hover { color: var(--accent); background: none; }
-#btnAddChar { width: 100%; }
+.char-row .edit:hover, .loop-row .edit:hover, .plan-row .edit:hover { color: var(--text); background: none; }
+.char-row .x:hover, .loop-row .x:hover, .plan-row .x:hover { color: var(--accent); background: none; }
+#btnAddChar { width: 100%; flex: 0 0 auto; }
 
 /* ---------- transport ---------- */
 #transport {

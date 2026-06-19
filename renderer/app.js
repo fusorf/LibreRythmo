@@ -521,6 +521,42 @@ function addCharacter(name) {
   return c
 }
 
+// renommage en place d'un libellé de liste (personnages / scènes / plans) : remplace
+// le <span> du nom par un champ, commit au blur/Entrée, annule à Échap, puis re-rend.
+function inlineRename(nmSpan, currentValue, onCommit, rerender) {
+  const inp = document.createElement('input')
+  inp.type = 'text'
+  inp.className = 'nm-input'
+  inp.value = currentValue
+  inp.spellcheck = false
+  nmSpan.replaceWith(inp)
+  inp.focus()
+  inp.select()
+  let cancelled = false
+  const done = () => {
+    const nv = inp.value.trim()
+    if (!cancelled && nv && nv !== currentValue) onCommit(nv)
+    rerender()
+  }
+  inp.addEventListener('blur', done)
+  inp.addEventListener('click', (ev) => ev.stopPropagation())
+  inp.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') inp.blur()
+    if (ev.key === 'Escape') { cancelled = true; inp.blur() }
+    ev.stopPropagation()
+  })
+}
+
+// crée un bouton ✎ (renommer) ou ✕ (supprimer) au style des lignes Personnages
+function rowIconButton(kind, title, onClick) {
+  const b = document.createElement('button')
+  b.className = kind === 'edit' ? 'edit' : 'x'
+  b.textContent = kind === 'edit' ? '✎' : '✕'
+  b.title = title
+  b.addEventListener('click', (e) => { e.stopPropagation(); onClick() })
+  return b
+}
+
 function renderChars() {
   // pastille du personnage sélectionné sur le bouton « + Nouvelle réplique »
   const sel = getChar(selectedCharId)
@@ -1198,34 +1234,18 @@ function renderLoopsPanel() {
     const out = mkBtn('OUT', t('loopOutTitle'), () => {
       pushUndo(); lp.type = lp.type === 'out' ? 'normal' : 'out'; renderLoopsPanel(); markDirty()
     }, 'lp-out' + (lp.type === 'out' ? ' active' : ''))
-    const del = mkBtn('✕', t('loopDelete'), () => {
+    // renommer / supprimer au style des lignes Personnages (✎ / ✕)
+    const startRename = () => inlineRename(nm, lp.name, (nv) => { pushUndo(); lp.name = nv; markDirty() }, renderLoopsPanel)
+    const edit = rowIconButton('edit', t('loopRename'), startRename)
+    const del = rowIconButton('del', t('loopDelete'), () => {
       pushUndo(); project.loops = project.loops.filter((k) => k.id !== lp.id); renderLoopsPanel(); markDirty()
-    }, 'lp-x')
-
-    // renommage en place (double-clic sur le nom)
-    nm.addEventListener('dblclick', (e) => {
-      e.stopPropagation()
-      const inp = document.createElement('input')
-      inp.type = 'text'; inp.className = 'nm-input'; inp.value = lp.name; inp.spellcheck = false
-      nm.replaceWith(inp); inp.focus(); inp.select()
-      let cancelled = false
-      const done = () => {
-        const nv = inp.value.trim()
-        if (!cancelled && nv && nv !== lp.name) { pushUndo(); lp.name = nv; markDirty() }
-        renderLoopsPanel()
-      }
-      inp.addEventListener('blur', done)
-      inp.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') inp.blur()
-        if (ev.key === 'Escape') { cancelled = true; inp.blur() }
-        ev.stopPropagation()
-      })
     })
+    nm.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename() })
 
     // ligne 1 : nom + actions
     const top = document.createElement('div')
     top.className = 'lp-top'
-    top.append(nm, setStart, setEnd, out, del)
+    top.append(nm, setStart, setEnd, out, edit, del)
 
     // ligne 2 : méta-stats calculées à la volée (plage · durée · répliques · persos)
     const st = loopStats(lp)
@@ -1324,37 +1344,17 @@ function renderPlansPanel() {
     const nm = document.createElement('span')
     nm.className = 'pl-name'
     nm.textContent = pl.name
-    const del = document.createElement('button')
-    del.className = 'pl-btn pl-x'
-    del.textContent = '✕'
-    del.title = t('planDelete')
-    del.addEventListener('click', (e) => {
-      e.stopPropagation()
+    // renommer / supprimer au style des lignes Personnages (✎ / ✕)
+    const startRename = () => inlineRename(nm, pl.name, (nv) => { pushUndo(); pl.name = nv; markDirty() }, renderPlansPanel)
+    const edit = rowIconButton('edit', t('planRename'), startRename)
+    const del = rowIconButton('del', t('planDelete'), () => {
       pushUndo()
       project.plans = project.plans.filter((k) => k.id !== pl.id)
       renderPlansPanel()
       markDirty()
     })
-    // renommage en place (double-clic sur le nom), comme les scènes
-    nm.addEventListener('dblclick', (e) => {
-      e.stopPropagation()
-      const inp = document.createElement('input')
-      inp.type = 'text'; inp.className = 'nm-input'; inp.value = pl.name; inp.spellcheck = false
-      nm.replaceWith(inp); inp.focus(); inp.select()
-      let cancelled = false
-      const done = () => {
-        const nv = inp.value.trim()
-        if (!cancelled && nv && nv !== pl.name) { pushUndo(); pl.name = nv; markDirty() }
-        renderPlansPanel()
-      }
-      inp.addEventListener('blur', done)
-      inp.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') inp.blur()
-        if (ev.key === 'Escape') { cancelled = true; inp.blur() }
-        ev.stopPropagation()
-      })
-    })
-    row.append(tc, nm, del)
+    nm.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename() })
+    row.append(tc, nm, edit, del)
     row.addEventListener('click', () => { video.pause(); scrubTo(pl.time) })
     list.appendChild(row)
   }
