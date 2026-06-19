@@ -111,7 +111,7 @@ input[type="text"]:focus-visible, input[type="number"]:focus-visible, input[type
   outline-offset: 1px;
 }
 
-.sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+.sep { width: 1px; height: 18px; background: var(--border); margin: 0 6px; opacity: .65; flex: 0 0 auto; }
 .spacer { flex: 1; }
 button.active {
   border-color: var(--toggle-border);
@@ -427,41 +427,67 @@ button.active {
 #transport {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
+  gap: 7px;
+  padding: 8px 12px;
   background: var(--panel);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
   flex: 0 0 auto;
 }
+/* contrôles de la barre : coins arrondis nets, survol qui éclaire la bordure */
+#transport > button, #transport select { border-radius: 6px; }
+#transport > button:hover, #transport select:hover {
+  border-color: color-mix(in srgb, var(--border) 45%, var(--icon));
+}
+/* selects de la barre : chevron maison (gris neutre, lisible clair/sombre) pour un rendu uniforme */
+#transport select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-color: var(--panel2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23888' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+#transport select:hover { background-color: var(--hover); }
 
-.btn-group { display: flex; }
+/* plateau de transport : groupe segmenté en creux, boutons internes arrondis sans bordure */
+.btn-group {
+  display: flex;
+  gap: 2px;
+  height: var(--ctl-h);
+  padding: 2px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
 .btn-group button {
-  width: 38px;
-  height: 30px;
+  width: 34px;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 0;
-  border-right-width: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
 }
-.btn-group button:first-child { border-radius: 5px 0 0 5px; }
-.btn-group button:last-child { border-radius: 0 5px 5px 0; border-right-width: 1px; }
+.btn-group button:hover { background: var(--hover); }
+.btn-group button:active { background: var(--active); }
 .btn-group svg { width: 13px; height: 13px; fill: var(--icon); }
 .btn-group button:hover svg { fill: var(--icon-h); }
 #tPlay span { display: flex; }
 #tPlay .ic-pause { display: none; }
 #tPlay.playing .ic-play { display: none; }
 #tPlay.playing .ic-pause { display: flex; }
-/* bouton lecture/pause : plus large et coloré (action principale) — ressort des autres */
+/* lecture/pause = action principale : segment bleu accentué dans le plateau */
 #tPlay {
-  width: 56px;
+  width: 50px;
   background: #3a5d99;
-  border-color: #3a5d99;
 }
 #tPlay:hover { background: #4a72b8; }
-#tPlay svg { width: 17px; height: 17px; fill: #fff; }
+#tPlay svg { width: 16px; height: 16px; fill: #fff; }
 #tPlay:hover svg { fill: #fff; }
 
 input[type="range"] {
@@ -469,34 +495,51 @@ input[type="range"] {
   appearance: none;
   height: 4px;
   background: var(--border);
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   background: var(--icon);
+  border: 2px solid var(--panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
 }
 input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 
-.vol { display: flex; align-items: center; gap: 7px; }
+/* sliders (volume / zoom) en pastilles, alignés sur la hauteur des boutons */
+.vol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ctl-h);
+  padding: 0 11px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
 .vol svg { width: 15px; height: 15px; fill: var(--dim); flex: 0 0 auto; }
-#volume, #zoom { width: 86px; }
+#volume, #zoom { width: 82px; }
 
+/* compteur de temps : afficheur type LCD (puits inset, chiffres à chasse fixe) */
 #timecode {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: var(--ctl-h);
-  font-family: 'Consolas', monospace;
+  font-family: 'Consolas', ui-monospace, monospace;
   font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+  color: var(--sel-text);
   background: var(--inset);
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0 10px;
-  min-width: 118px;
+  border-radius: 6px;
+  padding: 0 12px;
+  min-width: 124px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .28);
 }
 
 /* ---------- band ---------- */
