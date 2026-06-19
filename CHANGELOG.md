@@ -3,6 +3,15 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.5.1] - 2026-06-19
+
+### Ajustements
+- Pastille « Optimisation de la lecture… » (génération du proxy) déplacée **en bas à droite**
+  pour ne plus recouvrir l'inspecteur.
+- Sensibilité par défaut de la **détection de plans** portée à **0.50**.
+- Export : la place du champ **FPS personnalisé** est réservée — passer en « Personnalisée »
+  ne change plus la taille de la fenêtre.
+
 ## [2.5.0] - 2026-06-19
 
 ### Plans
