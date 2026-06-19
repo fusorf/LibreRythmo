@@ -90,7 +90,10 @@
     <button id="btnImportAudio" class="tracks-ctl">+ Importer un audio…</button>
     <div class="sep"></div>
     <select id="trackCount" class="rythmo-ctl" title="Nombre de pistes affichées"></select>
-    <select id="defFont" class="rythmo-ctl" title="Police par défaut de la bande"></select>
+    <span class="font-sel rythmo-ctl" title="Police par défaut de la bande">
+      <span class="font-sel-ico" aria-hidden="true">A</span>
+      <select id="defFont"></select>
+    </span>
     <div class="vol" id="zoomWrap" title="Zoom de la bande (Ctrl+molette)">
       <svg viewBox="0 0 16 16"><path d="M6.5 1a5.5 5.5 0 014.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 116.5 1zm0 1.5a4 4 0 100 8 4 4 0 000-8zM5.75 5.75V4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
       <input id="zoom" type="range" min="0" max="1" step="0.001" value="0.5">
@@ -119,7 +122,10 @@
   <div id="inspector" class="empty">
     <span id="insEmpty">Aucune réplique sélectionnée · appuyez sur F1 pour l'aide</span>
     <select id="insChar" title="Personnage de la réplique"></select>
-    <select id="insFont" title="Police de la réplique"></select>
+    <span class="font-sel" title="Police de la réplique">
+      <span class="font-sel-ico" aria-hidden="true">A</span>
+      <select id="insFont"></select>
+    </span>
     <select id="insTrack" title="Piste d'affichage">
       <option value="0">Piste 1</option>
       <option value="1">Piste 2</option>
@@ -139,7 +145,10 @@
     <div id="insMulti">
       <span id="insMultiCount"></span>
       <select id="insMultiChar" title="Personnage — appliquer à toutes les répliques sélectionnées"></select>
-      <select id="insMultiFont" title="Police — appliquer à toutes les répliques sélectionnées"></select>
+      <span class="font-sel" title="Police — appliquer à toutes les répliques sélectionnées">
+        <span class="font-sel-ico" aria-hidden="true">A</span>
+        <select id="insMultiFont"></select>
+      </span>
       <button id="insMultiVoiceOff" class="ins-toggle" title="Voix off — toutes les répliques sélectionnées">Voix off</button>
     </div>
   </div>

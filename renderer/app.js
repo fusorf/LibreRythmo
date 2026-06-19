@@ -168,6 +168,18 @@ const bandPal = () => BAND_THEMES[theme]
 const BAND_FALLBACK = '"Segoe UI", sans-serif'
 const registeredFonts = new Set() // noms déjà ajoutés à document.fonts cette session
 
+// polices libres embarquées avec l'app (déclarées en @font-face dans style.css) :
+// disponibles d'office dans les sélecteurs, sans être stockées dans le projet
+const BUNDLED_FONTS = ['Inter', 'Oswald', 'Comfortaa', 'Anton']
+// noms de toutes les polices connues (embarquées app + embarquées projet)
+const allFontNames = () => [...BUNDLED_FONTS, ...((project.fonts || []).map((f) => f.name))]
+// force le décodage des polices embarquées au démarrage (rendu canvas immédiat)
+function loadBundledFonts() {
+  for (const name of BUNDLED_FONTS) {
+    try { document.fonts.load(`700 24px "${name}"`) } catch {}
+  }
+}
+
 async function registerFont(name, dataB64, ext) {
   if (!name || registeredFonts.has(name)) return registeredFonts.has(name)
   const mime = ext === 'otf' ? 'font/otf' : ext === 'woff2' ? 'font/woff2' : ext === 'woff' ? 'font/woff' : 'font/ttf'
@@ -201,9 +213,10 @@ function populateFontSelects() {
     sel.innerHTML = ''
     const add = (val, label) => { const o = document.createElement('option'); o.value = val; o.textContent = label; sel.appendChild(o) }
     add('', defaultLabel)
-    for (const f of fonts) add(f.name, f.name)
+    for (const name of BUNDLED_FONTS) add(name, name) // polices libres embarquées
+    for (const f of fonts) add(f.name, f.name)         // polices propres au projet
     add('__load__', t('fontLoad'))
-    sel.value = fonts.some((f) => f.name === current) ? current : ''
+    sel.value = allFontNames().includes(current) ? current : ''
   }
   fill($('defFont'), project.defaultFont || '', t('fontDefaultGlobal'))
   const line = selectedIds && selectedIds.size === 1 ? project.lines.find((l) => selectedIds.has(l.id)) : null
@@ -841,10 +854,11 @@ function refreshMultiInspector(lines) {
   const addF = (v, lbl) => { const o = document.createElement('option'); o.value = v; o.textContent = lbl; fontSel.appendChild(o) }
   if (mixedFont) addF('__mixed__', t('multiMixed'))
   addF('', t('fontDefault'))
+  for (const name of BUNDLED_FONTS) addF(name, name)
   for (const f of fonts) addF(f.name, f.name)
   addF('__load__', t('fontLoad'))
   const only = [...fontVals][0]
-  fontSel.value = mixedFont ? '__mixed__' : (only && fonts.some((f) => f.name === only) ? only : '')
+  fontSel.value = mixedFont ? '__mixed__' : (allFontNames().includes(only) ? only : '')
   // voix off : actif si toutes ON, indéterminé si mélange
   const off = lines.filter((l) => l.voiceOff).length
   const btn = $('insMultiVoiceOff')
@@ -871,7 +885,7 @@ function refreshInspector() {
     ins.char.appendChild(o)
   }
   ins.char.value = line.characterId
-  ins.font.value = (project.fonts || []).some((f) => f.name === line.font) ? line.font : ''
+  ins.font.value = allFontNames().includes(line.font) ? line.font : ''
   ins.track.value = String(line.track)
   ins.entry.value = line.entry || ''
   ins.exit.value = line.exit || ''
@@ -4278,6 +4292,7 @@ function loop() {
   redoStack = []
   syncUndoMenu()
   setClean()
+  loadBundledFonts() // décode les polices libres embarquées pour le rendu canvas
   applyLang()
   applyBandHeight() // hauteur de bande = nb de pistes × hauteur de piste fixe
   updateDiscordActivity()
