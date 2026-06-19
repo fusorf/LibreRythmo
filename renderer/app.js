@@ -453,7 +453,6 @@ function applyLang() {
   ins.text.placeholder = t('insTextPh')
   ins.start.title = t('insStart')
   ins.end.title = t('insEnd')
-  $('insDel').textContent = t('insDel')
   $('insDel').title = t('insDelTitle')
 
   // export

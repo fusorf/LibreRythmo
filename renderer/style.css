@@ -247,6 +247,8 @@ button.active {
 .icon-btn svg { width: 15px; height: 15px; fill: var(--icon); }
 .icon-btn:hover svg { fill: var(--icon-h); }
 .icon-btn.active svg { fill: var(--toggle-text); }
+/* bouton supprimer la réplique : icône poubelle, rouge au survol (action destructive) */
+#insDel:hover svg { fill: var(--bad, #e8584a); }
 .log-row .ltc {
   flex: 0 0 auto;
   min-width: 32px;
