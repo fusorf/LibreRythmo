@@ -11,6 +11,9 @@ Thumbs.db
 scripts/cdp-shot.png
 scripts/_tmp-*
 
+# documents de travail (roadmaps versionnées) — non distribués
+ROADMAP-v*.md
+
 # assistants IA (configs et caches locaux)
 .claude/
 CLAUDE.md
