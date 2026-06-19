@@ -409,6 +409,10 @@ function applyLang() {
   ins.char.title = t('insChar')
   ins.font.title = t('insFont')
   $('defFont').title = t('defFontTitle')
+  $('insMultiChar').title = t('multiCharTitle')
+  $('insMultiFont').title = t('multiFontTitle')
+  $('insMultiVoiceOff').title = t('multiVoiceOffTitle')
+  $('insMultiVoiceOff').textContent = t('insVoiceOff')
   populateFontSelects()
   ins.track.title = t('insTrack')
   buildInsTrackOptions()
@@ -754,12 +758,49 @@ const ins = {
   end: $('insEnd'),
 }
 
+const selectedLines = () => project.lines.filter((l) => selectedIds.has(l.id))
+
+// mode N répliques : actions en lot (police, voix off, personnage) avec état
+// indéterminé quand les valeurs diffèrent
+function refreshMultiInspector(lines) {
+  $('insMultiCount').textContent = t('multiCount', lines.length)
+  // personnage
+  const charSel = $('insMultiChar')
+  charSel.innerHTML = ''
+  const chars = new Set(lines.map((l) => l.characterId))
+  const mixedChar = chars.size > 1
+  if (mixedChar) { const o = document.createElement('option'); o.value = '__mixed__'; o.textContent = t('multiMixed'); charSel.appendChild(o) }
+  for (const c of project.characters) { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name; charSel.appendChild(o) }
+  charSel.value = mixedChar ? '__mixed__' : [...chars][0]
+  // police
+  const fontSel = $('insMultiFont')
+  fontSel.innerHTML = ''
+  const fonts = project.fonts || []
+  const fontVals = new Set(lines.map((l) => l.font || ''))
+  const mixedFont = fontVals.size > 1
+  const addF = (v, lbl) => { const o = document.createElement('option'); o.value = v; o.textContent = lbl; fontSel.appendChild(o) }
+  if (mixedFont) addF('__mixed__', t('multiMixed'))
+  addF('', t('fontDefault'))
+  for (const f of fonts) addF(f.name, f.name)
+  addF('__load__', t('fontLoad'))
+  const only = [...fontVals][0]
+  fontSel.value = mixedFont ? '__mixed__' : (only && fonts.some((f) => f.name === only) ? only : '')
+  // voix off : actif si toutes ON, indéterminé si mélange
+  const off = lines.filter((l) => l.voiceOff).length
+  const btn = $('insMultiVoiceOff')
+  btn.classList.toggle('active', off === lines.length)
+  btn.classList.toggle('mixed', off > 0 && off < lines.length)
+}
+
 function refreshInspector() {
   const line = singleSelected()
-  ins.el.classList.toggle('empty', !line)
+  const multi = !line && selectedIds.size > 1
+  ins.el.classList.toggle('empty', !line && !multi)
+  ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
+  if (multi) { refreshMultiInspector(selectedLines()); return }
   if (!line) {
-    $('insEmpty').textContent = selectedIds.size > 1 ? t('multiSelected', selectedIds.size) : t('insEmpty')
+    $('insEmpty').textContent = t('insEmpty')
     return
   }
   ins.char.innerHTML = ''
@@ -818,6 +859,40 @@ $('defFont').addEventListener('change', async () => {
   project.defaultFont = v || null
   populateFontSelects()
   markDirty()
+})
+
+// ---------- actions en lot (mode N répliques) ----------
+$('insMultiChar').addEventListener('change', () => {
+  const v = $('insMultiChar').value
+  if (v === '__mixed__') return
+  pushUndo()
+  selectedLines().forEach((l) => { l.characterId = v })
+  markDirty()
+  refreshInspector()
+})
+$('insMultiFont').addEventListener('change', async () => {
+  let v = $('insMultiFont').value
+  if (v === '__mixed__') { refreshInspector(); return }
+  if (v === '__load__') {
+    const name = await loadFontFile()
+    populateFontSelects()
+    if (!name) { refreshInspector(); return }
+    v = name
+  }
+  pushUndo()
+  selectedLines().forEach((l) => { if (v) l.font = v; else delete l.font })
+  markDirty()
+  refreshInspector()
+})
+// voix off en lot : si toutes ne sont pas déjà ON → tout activer, sinon tout désactiver
+$('insMultiVoiceOff').addEventListener('click', () => {
+  const lines = selectedLines()
+  if (!lines.length) return
+  const allOn = lines.every((l) => l.voiceOff)
+  pushUndo()
+  lines.forEach((l) => { if (allOn) delete l.voiceOff; else l.voiceOff = true })
+  markDirty()
+  refreshInspector()
 })
 ins.entry.addEventListener('change', () => {
   const l = singleSelected()
