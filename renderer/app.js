@@ -94,7 +94,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], audioTracks: [], defaultFont: null, fonts: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
@@ -146,6 +146,7 @@ const BAND_THEMES = {
     wave: 'rgba(122, 162, 255, 0.13)', playhead: '#e8443a',
     handle: '#ffffff', handleAccent: '#7aa2ff', selStroke: '#ffffffcc',
     markIn: '#5fbf6a', markOut: '#e8584a', // flèches d'entrée (vert) / sortie (rouge)
+    planMark: '#e8a13a', // marqueur de changement de plan (flèche vers le bas)
   },
   light: {
     bg: '#f6f2e9', lane: '#ece6d8', grid: '#d8d1c0',
@@ -153,6 +154,7 @@ const BAND_THEMES = {
     wave: 'rgba(58, 94, 190, 0.15)', playhead: '#d23a30',
     handle: '#2b2a25', handleAccent: '#3c5d96', selStroke: '#2b2a25cc',
     markIn: '#2f9e44', markOut: '#d23a30',
+    planMark: '#c47d1a',
   },
 }
 let theme = 'dark'
@@ -284,7 +286,7 @@ let undoStack = []
 let redoStack = []
 let undoCoalesce = false // les pushUndo d'une même opération (même tick) ne comptent qu'une fois
 
-const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, audioTracks: project.audioTracks, defaultFont: project.defaultFont })
+const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, plans: project.plans, audioTracks: project.audioTracks, defaultFont: project.defaultFont })
 
 function pushUndo() {
   if (undoCoalesce) return
@@ -312,6 +314,7 @@ function restoreState(snap) {
   project.characters = d.characters
   project.lines = d.lines
   project.loops = d.loops || []
+  project.plans = d.plans || []
   if (d.audioTracks) project.audioTracks = d.audioTracks
   project.defaultFont = d.defaultFont || null
   waveOffset = (activeAudioTrack()?.offset) || 0 // suit l'offset restauré de la piste active
@@ -325,6 +328,7 @@ function restoreState(snap) {
   refreshInspector()
   refreshTrackCountUI()
   renderLoopsPanel()
+  renderPlansPanel()
   if (activeTab === 'tracks') renderTracks()
   markDirty()
 }
@@ -370,6 +374,19 @@ function applyLang() {
   $('btnToggleLines').title = t('linesToggleTitle')
   $('btnToggleLoops').textContent = t('loopsTitle')
   $('btnToggleLoops').title = t('loopsToggleTitle')
+  $('plansTitle').textContent = t('plansTitle')
+  $('btnTogglePlans').textContent = t('plansTitle')
+  $('btnTogglePlans').title = t('plansToggleTitle')
+  $('plansEmpty').textContent = t('plansEmpty')
+  $('btnAddPlan').textContent = t('addPlan')
+  $('btnAddPlan').title = t('addPlanTitle')
+  $('btnDetectPlans').textContent = t('detectPlans')
+  $('btnDetectPlans').title = t('detectPlansTitle')
+  $('detTitle').textContent = t('detTitle')
+  $('detHint').textContent = t('detHint')
+  $('detSensLabel').textContent = t('detSensLabel')
+  $('detGo').textContent = t('detGo')
+  $('detCancel').textContent = t('close')
   $('loopsTitle').textContent = t('loopsTitle')
   $('btnAddLoop').textContent = t('addLoop')
   $('btnAddLoop').title = t('addLoopTitle')
@@ -612,6 +629,14 @@ $('btnToggleLoops').addEventListener('click', () => {
 $('btnAddLoop').addEventListener('click', addLoopAtPlayhead)
 $('btnLoopPrev').addEventListener('click', () => gotoLoop(-1))
 $('btnLoopNext').addEventListener('click', () => gotoLoop(1))
+
+$('btnTogglePlans').addEventListener('click', () => {
+  const panel = $('plansPanel')
+  panel.classList.toggle('hidden')
+  $('btnTogglePlans').classList.toggle('active', !panel.classList.contains('hidden'))
+})
+$('btnAddPlan').addEventListener('click', addPlanAtPlayhead)
+$('btnDetectPlans').addEventListener('click', openDetectModal)
 
 $('btnAddChar').addEventListener('click', () => {
   addCharacter()
@@ -1267,6 +1292,157 @@ function drawLoops() {
   }
   ctx.restore()
 }
+
+// ---------- Plans (changements de plan) — marqueurs ponctuels, panneau dédié ----------
+const sortedPlans = () => [...(project.plans || [])].sort((a, b) => a.time - b.time)
+
+function addPlanAt(time, name) {
+  const pl = { id: uid(), time: Math.max(0, time), name: name || t('planName', (project.plans?.length || 0) + 1) }
+  project.plans.push(pl)
+  return pl
+}
+
+function addPlanAtPlayhead() {
+  pushUndo()
+  addPlanAt(effectiveTime())
+  renderPlansPanel()
+  markDirty()
+}
+
+function renderPlansPanel() {
+  const list = $('plansList')
+  if (!list) return
+  list.innerHTML = ''
+  const plans = sortedPlans()
+  $('plansEmpty').classList.toggle('hidden', plans.length > 0)
+  for (const pl of plans) {
+    const row = document.createElement('div')
+    row.className = 'plan-row'
+    const tc = document.createElement('span')
+    tc.className = 'pl-tc'
+    tc.textContent = formatTcShort(pl.time)
+    const nm = document.createElement('span')
+    nm.className = 'pl-name'
+    nm.textContent = pl.name
+    const del = document.createElement('button')
+    del.className = 'pl-btn pl-x'
+    del.textContent = '✕'
+    del.title = t('planDelete')
+    del.addEventListener('click', (e) => {
+      e.stopPropagation()
+      pushUndo()
+      project.plans = project.plans.filter((k) => k.id !== pl.id)
+      renderPlansPanel()
+      markDirty()
+    })
+    // renommage en place (double-clic sur le nom), comme les scènes
+    nm.addEventListener('dblclick', (e) => {
+      e.stopPropagation()
+      const inp = document.createElement('input')
+      inp.type = 'text'; inp.className = 'nm-input'; inp.value = pl.name; inp.spellcheck = false
+      nm.replaceWith(inp); inp.focus(); inp.select()
+      let cancelled = false
+      const done = () => {
+        const nv = inp.value.trim()
+        if (!cancelled && nv && nv !== pl.name) { pushUndo(); pl.name = nv; markDirty() }
+        renderPlansPanel()
+      }
+      inp.addEventListener('blur', done)
+      inp.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') inp.blur()
+        if (ev.key === 'Escape') { cancelled = true; inp.blur() }
+        ev.stopPropagation()
+      })
+    })
+    row.append(tc, nm, del)
+    row.addEventListener('click', () => { video.pause(); scrubTo(pl.time) })
+    list.appendChild(row)
+  }
+}
+
+// marqueur de plan sur la bande : flèche vers le bas ancrée en haut + trait fin (standard industrie)
+function drawPlans() {
+  const plans = project.plans || []
+  if (!plans.length) return
+  const now = effectiveTime()
+  const col = bandPal().planMark || '#e8a13a'
+  ctx.save()
+  for (const pl of plans) {
+    const x = xAtTime(pl.time, now)
+    if (x < -8 || x > cw + 8) continue
+    ctx.strokeStyle = col
+    ctx.globalAlpha = 0.4
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(x + 0.5, RULER_H); ctx.lineTo(x + 0.5, ch); ctx.stroke()
+    ctx.globalAlpha = 1
+    ctx.fillStyle = col
+    const w = 5, top = 1, h = 10
+    ctx.beginPath(); ctx.moveTo(x - w, top); ctx.lineTo(x + w, top); ctx.lineTo(x, top + h); ctx.closePath(); ctx.fill()
+  }
+  ctx.restore()
+}
+
+// chemin du proxy basse résolution s'il a été généré (feature Proxy) ; la détection
+// l'utilise en priorité (analyse bien plus rapide). null = analyser la source.
+let videoProxyPath = null
+
+// ---------- détection automatique des plans (ffmpeg select=scene) ----------
+const detState = { running: false, cancelled: false }
+
+function openDetectModal() {
+  if (!project.videoPath) { toast(t('detNeedVideo')); return }
+  $('detSens').value = '0.4'
+  $('detSensVal').textContent = '0.40'
+  $('detStatus').textContent = ''
+  $('detBar').style.width = '0%'
+  $('detGo').disabled = false
+  $('plansModal').classList.remove('hidden')
+}
+function closeDetectModal() {
+  if (detState.running) { detState.cancelled = true; window.api.detectCancel() }
+  $('plansModal').classList.add('hidden')
+}
+$('detSens').addEventListener('input', () => { $('detSensVal').textContent = Number($('detSens').value).toFixed(2) })
+$('detCancel').addEventListener('click', closeDetectModal)
+$('plansModal').addEventListener('click', (e) => { if (e.target === $('plansModal')) closeDetectModal() })
+window.api.onDetectProgress((frame) => {
+  if (!detState.running) return
+  const total = Math.max(1, Math.ceil(videoDur() * (project.fps || 25)))
+  $('detBar').style.width = `${Math.min(99, Math.round((frame / total) * 100))}%`
+  $('detStatus').textContent = t('detRunning')
+})
+
+async function runDetectScenes() {
+  if (detState.running || !project.videoPath) return
+  detState.running = true
+  detState.cancelled = false
+  $('detGo').disabled = true
+  $('detStatus').textContent = t('detRunning')
+  const threshold = Number($('detSens').value) || 0.4
+  // analyse sur le proxy s'il existe (bien plus rapide, résultat quasi identique)
+  const r = await window.api.detectScenes({ path: videoProxyPath || project.videoPath, threshold })
+  detState.running = false
+  $('detGo').disabled = false
+  if (detState.cancelled) { $('detStatus').textContent = t('detCancelled'); return }
+  if (r.error) { $('detStatus').textContent = r.error; toast(r.error); return }
+  const fps = project.fps || 25
+  const existing = (project.plans || []).map((p) => p.time)
+  let added = 0
+  pushUndo()
+  for (const sec of (r.times || [])) {
+    const time = Math.round(sec * fps) / fps // calé exactement sur l'image du cut
+    if (existing.some((e) => Math.abs(e - time) < 0.2)) continue // dédoublonne vs plans déjà posés
+    addPlanAt(time)
+    existing.push(time)
+    added++
+  }
+  markDirty()
+  renderPlansPanel()
+  $('detBar').style.width = '100%'
+  $('detStatus').textContent = added ? t('detDone', added) : t('detNone')
+  if ($('plansPanel').classList.contains('hidden')) $('btnTogglePlans').click() // montre le résultat
+}
+$('detGo').addEventListener('click', runDetectScenes)
 
 // ============================================================ onglets + pistes audio/vidéo
 // Onglet « Rythmo » = éditeur de bande. Onglet « Pistes » = timeline façon montage :
@@ -2022,6 +2198,7 @@ function renderBand(c, now, W, H, pps, opts) {
 function draw() {
   renderBand(ctx, effectiveTime(), cw, ch, pxPerSec, { ruler: true, wave: showWave, handles: true, theme: bandPal() })
   drawLoops()
+  drawPlans()
   drawHoverCursor()
   drawDragGuide()
 }
@@ -2753,6 +2930,7 @@ async function loadProjectData(data, path) {
   project.characters ||= []
   project.lines ||= []
   project.loops ||= []
+  project.plans ||= []
   project.fonts ||= []
   project.defaultFont ||= null
   // ré-enregistre les polices embarquées du projet (FontFace) avant le 1er rendu
@@ -2777,6 +2955,7 @@ async function loadProjectData(data, path) {
   refreshInspector()
   renderLinesLog()
   renderLoopsPanel()
+  renderPlansPanel()
   setClean()
   updateDiscordActivity()
   if (project.videoPath) {

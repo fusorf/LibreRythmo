@@ -824,6 +824,43 @@ ipcMain.handle('extract-audio-track', (e, videoPath, aIndex) => {
   })
 })
 
+// ---------- détection de plans (changements de plan) via ffmpeg select=scene ----------
+// On lance le filtre scene + metadata=print et on parse les `pts_time:` (secondes) du
+// flux de log. La progression suit le `frame=`. Calqué sur probe-fps / l'export.
+let detectProc = null
+ipcMain.handle('detect-scenes', (e, opts) => {
+  if (!ffmpegPath || !opts || !opts.path) return { error: 'ffmpeg introuvable ou chemin manquant' }
+  if (detectProc) return { error: 'Une détection est déjà en cours' }
+  const thr = Math.min(0.95, Math.max(0.05, Number(opts.threshold) || 0.4))
+  return new Promise((resolve) => {
+    const times = []
+    let logTail = ''
+    const scan = (s) => {
+      let m
+      const re = /pts_time:([0-9]+(?:\.[0-9]+)?)/g
+      while ((m = re.exec(s))) times.push(parseFloat(m[1]))
+      const fm = s.match(/frame=\s*(\d+)/)
+      if (fm && win && !win.isDestroyed()) win.webContents.send('detect-progress', Number(fm[1]))
+    }
+    const args = ['-hide_banner', '-i', opts.path, '-filter:v', `select='gt(scene,${thr})',metadata=print`, '-an', '-f', 'null', '-']
+    // metadata=print écrit selon les versions sur stdout ou stderr : on lit les deux
+    detectProc = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const onData = (d) => { const s = String(d); logTail = (logTail + s).slice(-4000); scan(s) }
+    detectProc.stdout.on('data', onData)
+    detectProc.stderr.on('data', onData)
+    detectProc.on('close', (code) => {
+      detectProc = null
+      if (code === 0 || times.length) resolve({ times })
+      else resolve({ error: (logTail.slice(-300) || 'échec de la détection') })
+    })
+    detectProc.on('error', () => { detectProc = null; resolve({ error: 'ffmpeg introuvable' }) })
+  })
+})
+ipcMain.handle('detect-cancel', () => {
+  if (detectProc) { try { detectProc.kill('SIGKILL') } catch {} detectProc = null }
+  return true
+})
+
 function encoderArgs(enc, W, H, fps) {
   switch (enc) {
     case 'h264_nvenc':

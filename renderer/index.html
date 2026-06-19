@@ -37,6 +37,15 @@
       <div id="charList"></div>
       <button id="btnAddChar">+ Nouveau personnage</button>
     </aside>
+    <aside id="plansPanel" class="hidden">
+      <h3 id="plansTitle">Plans</h3>
+      <div class="plans-head">
+        <button id="btnAddPlan" title="Ajouter un plan au point de lecture">+ Nouveau plan</button>
+        <button id="btnDetectPlans" title="Détecter automatiquement les changements de plan">Détection auto</button>
+      </div>
+      <div id="plansEmpty" class="panel-empty">Aucun plan</div>
+      <div id="plansList"></div>
+    </aside>
   </div>
 
   <div id="transport">
@@ -86,6 +95,7 @@
     </div>
     <div class="spacer"></div>
     <button id="btnToggleLoops" title="Afficher / masquer le panneau Scènes">Scènes</button>
+    <button id="btnTogglePlans" title="Afficher / masquer le panneau Plans">Plans</button>
     <button id="btnToggleLines" class="active" title="Afficher / masquer le panneau Répliques">Répliques</button>
     <button id="btnTogglePanel" class="active" title="Afficher / masquer le panneau Personnages">Personnages</button>
   </div>
@@ -213,6 +223,25 @@
       <div class="export-row">
         <div class="spacer"></div>
         <button id="guideClose">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="plansModal" class="hidden">
+    <div class="modal-panel">
+      <h2 id="detTitle">Détection automatique des plans</h2>
+      <p id="detHint" class="modal-hint">Place un marqueur à chaque changement de plan détecté. La détection est approximative (~90 %) : les fondus enchaînés sont mal détectés. Ajuste, ajoute ou supprime ensuite les plans manuellement.</p>
+      <div class="detect-row">
+        <label id="detSensLabel" for="detSens">Sensibilité</label>
+        <input id="detSens" type="range" min="0.1" max="0.9" step="0.05" value="0.4">
+        <span id="detSensVal">0.40</span>
+      </div>
+      <div class="export-row">
+        <div id="detProgress"><div id="detBar"></div></div>
+        <span id="detStatus"></span>
+        <div class="spacer"></div>
+        <button id="detCancel">Fermer</button>
+        <button id="detGo" class="primary">Lancer</button>
       </div>
     </div>
   </div>

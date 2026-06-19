@@ -167,7 +167,7 @@ button.active {
 #videoInfo span { color: var(--dim); }
 
 /* ---------- side panels: characters (right) + lines / loops (left) ---------- */
-#sidePanel, #linesPanel, #loopsPanel {
+#sidePanel, #linesPanel, #loopsPanel, #plansPanel {
   flex: 0 0 280px;
   width: 280px;
   background: var(--panel);
@@ -176,10 +176,10 @@ button.active {
   gap: 8px;
   padding: 12px 10px;
 }
-#sidePanel { border-left: 1px solid var(--border); }
+#sidePanel, #plansPanel { border-left: 1px solid var(--border); }
 #linesPanel, #loopsPanel { border-right: 1px solid var(--border); }
-#sidePanel.hidden, #linesPanel.hidden, #loopsPanel.hidden { display: none; }
-#sidePanel h3, #linesPanel h3, #loopsPanel h3 {
+#sidePanel.hidden, #linesPanel.hidden, #loopsPanel.hidden, #plansPanel.hidden { display: none; }
+#sidePanel h3, #linesPanel h3, #loopsPanel h3, #plansPanel h3 {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -326,6 +326,45 @@ button.active {
   color: var(--toggle-text);
   background: color-mix(in srgb, var(--toggle-text) 14%, transparent);
 }
+/* ---------- panneau Plans (changements de plan) ---------- */
+.plans-head { display: flex; gap: 6px; align-items: center; }
+.plans-head button { flex: 1 1 auto; }
+#plansList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.plan-row:hover { background: var(--row-hover); }
+.plan-row .pl-tc { font-family: 'Consolas', monospace; font-size: 10.5px; color: var(--dim); flex: 0 0 auto; }
+.plan-row .pl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-row .pl-btn { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; font-size: 11px; line-height: 1; }
+/* popup de détection automatique */
+#plansModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+}
+#plansModal.hidden { display: none; }
+#plansModal .modal-panel { max-width: 440px; }
+#plansModal .detect-row { display: flex; align-items: center; gap: 10px; margin: 14px 0; }
+#plansModal .detect-row input[type=range] { flex: 1; }
+#plansModal #detSensVal { font-family: 'Consolas', monospace; min-width: 34px; text-align: right; }
 .char-row {
   display: flex;
   align-items: center;
@@ -774,7 +813,7 @@ button.primary:disabled { opacity: .45; cursor: default; }
 }
 #loadingText { color: #e8eefb; font-size: 13px; letter-spacing: .02em; }
 @keyframes spin { to { transform: rotate(360deg); } }
-#expProgress {
+#expProgress, #detProgress {
   width: 220px;
   height: 8px;
   background: var(--panel2);
@@ -782,8 +821,8 @@ button.primary:disabled { opacity: .45; cursor: default; }
   border-radius: 4px;
   overflow: hidden;
 }
-#expBar { height: 100%; width: 0%; background: #4a7ac8; transition: width .15s; }
-#expStatus { font-size: 12px; color: var(--dim); min-width: 180px; }
+#expBar, #detBar { height: 100%; width: 0%; background: #4a7ac8; transition: width .15s; }
+#expStatus, #detStatus { font-size: 12px; color: var(--dim); min-width: 180px; }
 
 /* ---------- guide ---------- */
 #guideModal {
