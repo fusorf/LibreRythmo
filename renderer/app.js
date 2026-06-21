@@ -240,10 +240,11 @@ function setTheme(th) {
 
 let exportEncoder = 'gpu' // préférence persistée ([export] encoder dans settings.ini)
 let discordOn = false // Discord Rich Presence (Affichage → Discord Rich Presence)
+let showSubs = false // sous-titres « classiques » superposés à l'aperçu vidéo (Affichage → Sous-titres)
 
 // pousse tous les réglages au process principal : persistance settings.ini + menu
 function pushSettings() {
-  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, autosave: autosaveOn, encoder: exportEncoder, discord: discordOn })
+  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, subs: showSubs, autosave: autosaveOn, encoder: exportEncoder, discord: discordOn })
 }
 
 // présence Discord : titre du projet + nombre de répliques (poussé sur les évènements clés)
@@ -1557,7 +1558,7 @@ function setTab(name) {
   $('band').classList.toggle('hidden', onTracks)
   $('inspector').classList.toggle('hidden', onTracks)
   $('tracksView').classList.toggle('hidden', !onTracks)
-  if (onTracks) renderTracks()
+  if (onTracks) { hideSubOverlay(); renderTracks() }
 }
 $('tabRythmo').addEventListener('click', () => setTab('rythmo'))
 $('tabTracks').addEventListener('click', () => setTab('tracks'))
@@ -2295,6 +2296,55 @@ function draw() {
   drawPlans()
   drawHoverCursor()
   drawDragGuide()
+  updateSubOverlay()
+}
+
+// sous-titre « classique » superposé à l'aperçu vidéo (éditeur uniquement) :
+// « Personnage : phrase » au bon timing, fond noir, texte blanc, nom du
+// personnage en blanc avec un contour de la couleur du personnage. Les
+// répliques actives simultanées (plusieurs pistes) sont empilées par piste.
+let lastSubKey = null
+function hideSubOverlay() {
+  const el = $('subOverlay')
+  if (el && lastSubKey !== null) { el.hidden = true; el.textContent = ''; lastSubKey = null }
+}
+function updateSubOverlay() {
+  const el = $('subOverlay')
+  if (!el) return
+  if (!showSubs) { hideSubOverlay(); return }
+  const now = effectiveTime()
+  const active = project.lines
+    .filter((l) => l.words.length && lineStart(l) <= now && now < lineEnd(l))
+    .map((l) => {
+      const c = getChar(l.characterId)
+      return {
+        track: l.track || 0,
+        name: c ? c.name : '?',
+        color: c ? c.color : '#ffffff',
+        // les « _ » sont des mots vides (silences) : on ne les affiche pas
+        text: l.words.map((w) => w.text).filter((w) => w !== '_').join(' '),
+      }
+    })
+    .filter((s) => s.text.trim())
+    .sort((a, b) => a.track - b.track)
+  if (!active.length) { hideSubOverlay(); return }
+  // ne re-rend le DOM que lorsque le contenu affiché change (loop ~60 fps)
+  const key = active.map((s) => `${s.track}|${s.name}|${s.color}|${s.text}`).join('\n')
+  if (lastSubKey === key) return
+  lastSubKey = key
+  el.textContent = ''
+  for (const s of active) {
+    const lineEl = document.createElement('div')
+    lineEl.className = 'sub-line'
+    lineEl.style.setProperty('--sub-col', s.color)
+    const nameEl = document.createElement('span')
+    nameEl.className = 'sub-name'
+    nameEl.textContent = s.name
+    lineEl.appendChild(nameEl)
+    lineEl.appendChild(document.createTextNode(` : ${s.text}`))
+    el.appendChild(lineEl)
+  }
+  el.hidden = false
 }
 
 // pendant l'ajustement d'une frontière de mot (ou l'étirement Ctrl) : ligne
@@ -3503,6 +3553,11 @@ window.api.onMenu((action, arg) => {
     updateVideoInfoPanel()
     pushSettings()
   }
+  else if (action === 'toggle-subtitles') {
+    showSubs = !!arg
+    updateSubOverlay()
+    pushSettings()
+  }
   else if (action === 'toggle-discord') {
     discordOn = !!arg
     pushSettings()
@@ -4229,6 +4284,7 @@ function updatePlayerUI() {
 function openPlayer() {
   if (!project.videoPath || !video.videoWidth) { toast(t('loadVideoFirst')); return }
   player.open = true
+  hideSubOverlay() // l'overlay sous-titres reste réservé à l'aperçu éditeur
   playerTracks = new Set(Array.from({ length: laneCount() }, (_, i) => i))
   buildPlayerTrackToggles()
   syncPlayerZoom()
@@ -4297,6 +4353,7 @@ function loop() {
   autosaveOn = !!st.autosave
   showWave = st.wave !== false
   showVideoInfo = !!st.info
+  showSubs = !!st.subs
   exportEncoder = st.encoder === 'cpu' ? 'cpu' : 'gpu'
   discordOn = !!st.discord
   setTheme(st.theme)

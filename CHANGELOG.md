@@ -3,6 +3,15 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.6.0] - 2026-06-21
+
+### Ajouts
+- **Sous-titres** (menu Affichage, désactivé par défaut) : superposition de
+  sous-titres « classiques » sur l'aperçu vidéo de l'éditeur — « Personnage : phrase »
+  au bon timing, en bas et centré, fond noir et texte blanc, le nom du personnage
+  en blanc avec un contour de sa couleur. Les répliques simultanées (plusieurs
+  pistes) sont empilées ; les mots vides `_` ne sont pas affichés.
+
 ## [2.5.2] - 2026-06-19
 
 ### Ajustements

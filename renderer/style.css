@@ -143,6 +143,34 @@ button.active {
   position: relative;
 }
 #video { max-width: 100%; max-height: 100%; }
+.sub-overlay {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  max-width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .3em;
+  pointer-events: none;
+  z-index: 5;
+}
+.sub-overlay[hidden] { display: none; }
+.sub-line {
+  padding: .25em .6em;
+  background: #000;
+  color: #fff;
+  font: 600 clamp(14px, 2.4vw, 24px)/1.3 system-ui, sans-serif;
+  text-align: center;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+.sub-line .sub-name {
+  color: #fff;
+  -webkit-text-stroke: 1px var(--sub-col, #fff);
+  font-weight: 800;
+}
 #dropHint {
   position: absolute;
   display: flex;

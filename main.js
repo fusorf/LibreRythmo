@@ -55,7 +55,7 @@ async function checkForUpdate() {
 ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/latest`))
 
 // ---------- réglages persistants — settings.ini dans le dossier userData ----------
-const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, encoder: 'gpu', discord: true }
+const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, subs: false, encoder: 'gpu', discord: true }
 let settings = { ...DEFAULTS, recent: [] }
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.ini')
@@ -79,6 +79,7 @@ function loadSettings() {
         else if (k === 'autosave') settings.autosave = v === '1'
         else if (k === 'wave') settings.wave = v === '1'
         else if (k === 'info') settings.info = v === '1'
+        else if (k === 'subs') settings.subs = v === '1'
         else if (k === 'discord') settings.discord = v === '1'
       } else if (sec === 'export') {
         if (k === 'encoder' && ['gpu', 'cpu'].includes(v)) settings.encoder = v
@@ -100,6 +101,7 @@ function saveSettings() {
     `autosave=${b(settings.autosave)}`,
     `wave=${b(settings.wave)}`,
     `info=${b(settings.info)}`,
+    `subs=${b(settings.subs)}`,
     `discord=${b(settings.discord)}`,
     '',
     '[export]',
@@ -275,6 +277,7 @@ const MENU_STR = {
     view: 'Affichage',
     wave: "Forme d'onde audio",
     videoInfo: 'Infos vidéo',
+    subs: 'Sous-titres',
     lightMode: 'Mode clair',
     discord: 'Discord Rich Presence',
     clearProxies: 'Vider le cache des proxies',
@@ -342,6 +345,7 @@ const MENU_STR = {
     view: 'View',
     wave: 'Audio waveform',
     videoInfo: 'Video info',
+    subs: 'Subtitles',
     lightMode: 'Light mode',
     discord: 'Discord Rich Presence',
     clearProxies: 'Clear proxy cache',
@@ -455,6 +459,7 @@ function buildMenu() {
       submenu: [
         { label: s.wave, type: 'checkbox', checked: settings.wave, click: (item) => send('toggle-wave', item.checked) },
         { label: s.videoInfo, type: 'checkbox', checked: settings.info, click: (item) => send('toggle-video-info', item.checked) },
+        { label: s.subs, type: 'checkbox', checked: settings.subs, click: (item) => send('toggle-subtitles', item.checked) },
         { label: s.lightMode, type: 'checkbox', checked: settings.theme === 'light', click: (item) => send('toggle-theme', item.checked) },
         { label: s.discord, type: 'checkbox', checked: settings.discord, click: (item) => send('toggle-discord', item.checked) },
         { type: 'separator' },
@@ -506,6 +511,7 @@ ipcMain.handle('set-lang', (e, o) => {
   settings.theme = o.theme === 'light' ? 'light' : 'dark'
   settings.wave = !!o.wave
   settings.info = !!o.info
+  settings.subs = !!o.subs
   settings.autosave = !!o.autosave
   if (['gpu', 'cpu'].includes(o.encoder)) settings.encoder = o.encoder
   if (o.discord !== undefined && !!o.discord !== settings.discord) {
