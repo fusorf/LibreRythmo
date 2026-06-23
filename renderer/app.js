@@ -118,15 +118,79 @@ function recomputePps() {
 const LANE_H = 76
 const bandHeightFor = (n) => Math.round(RULER_H + n * LANE_H)
 
+// Panneau du bas redimensionnable. Une poignée unique en haut du dock (#panelResizer,
+// au-dessus du transport) règle la hauteur TOTALE du bloc bas, identique sur les onglets
+// Rythmo et Pistes. La zone bande/pistes est l'élément flexible qui absorbe l'espace.
+// panelH : hauteur totale choisie pendant la session par glisser (px) ; null = « auto » →
+// hauteur max (toutes les pistes rythmo visibles). Remis à null (donc max) à chaque chargement
+// de projet et à chaque changement du nombre de pistes ; non persisté entre les sessions.
+let panelH = null
+let chromeH = 120 // hauteur transport + tabBar + inspecteur (remesurée)
+const PANEL_MIN_CONTENT = RULER_H + LANE_H // au moins une piste visible
+const bandContentH = () => bandHeightFor(laneCount())
+function measureChrome() {
+  const tr = transport.offsetHeight, tb = tabBar.offsetHeight
+  // l'inspecteur est masqué sur l'onglet Pistes : on mémorise sa hauteur quand il est visible
+  if (!inspector.classList.contains('hidden') && inspector.offsetHeight) measureChrome._ins = inspector.offsetHeight
+  const ins = inspector.classList.contains('hidden') ? (measureChrome._ins || 44) : inspector.offsetHeight
+  if (tr && tb) chromeH = tr + tb + ins
+}
+// hauteur « naturelle » du dock = chrome + toutes les pistes rythmo visibles. Même référence
+// sur les deux onglets : l'onglet Pistes garde donc EXACTEMENT la hauteur de l'onglet Rythmo
+// (son contenu défile si besoin).
+const autoPanelH = () => chromeH + bandContentH()
+// on ne peut pas agrandir au-delà de « toutes les pistes visibles », ni au-delà de la fenêtre
+const panelMax = () => Math.max(chromeH + PANEL_MIN_CONTENT, Math.min(autoPanelH(), window.innerHeight - 140))
+const effectivePanelH = () => clamp(panelH == null ? autoPanelH() : panelH, chromeH + PANEL_MIN_CONTENT, panelMax())
+function setPanelHeight(h) {
+  measureChrome()
+  panelH = clamp(Math.round(h), chromeH + PANEL_MIN_CONTENT, panelMax())
+  applyBandHeight()
+}
+
 function applyBandHeight() {
-  const h = bandHeightFor(laneCount())
-  canvas.style.flex = `0 0 ${h}px`
-  canvas.style.height = `${h}px`
+  // canvas = hauteur de contenu complète (hauteur de piste fixe préservée). Le dock prend une
+  // hauteur explicite ; la zone bande/pistes (flex:1) absorbe le reste → même hauteur totale
+  // quel que soit l'onglet, et défilement vertical si le contenu déborde.
+  measureChrome()
+  canvas.style.height = `${bandContentH()}px`
+  canvas.style.width = '100%'
+  const H = effectivePanelH()
+  bottomPanel.style.flex = `0 0 ${H}px`
+  bottomPanel.style.height = `${H}px`
   resizeCanvas() // met à jour cw/ch immédiatement
+  if (activeTab === 'tracks') resizeTracksCanvas()
 }
 
 const video = $('video')
 const canvas = $('band')
+const bottomPanel = $('bottomPanel')
+const transport = $('transport')
+const tabBar = $('tabBar')
+const inspector = $('inspector')
+
+// poignée de redimensionnement du dock : glisser vers le haut agrandit le panneau du bas
+// (la vidéo rend la place), vers le bas le réduit. Fonctionne sur les deux onglets.
+const panelResizer = $('panelResizer')
+let panelResizeDrag = null
+panelResizer.addEventListener('pointerdown', (e) => {
+  panelResizer.setPointerCapture(e.pointerId)
+  panelResizeDrag = { y0: e.clientY, h0: effectivePanelH() }
+  e.preventDefault()
+})
+panelResizer.addEventListener('pointermove', (e) => {
+  if (!panelResizeDrag) return
+  setPanelHeight(panelResizeDrag.h0 + (panelResizeDrag.y0 - e.clientY))
+})
+const endPanelResize = (e) => {
+  if (!panelResizeDrag) return
+  panelResizeDrag = null
+  panelResizer.releasePointerCapture(e.pointerId)
+}
+panelResizer.addEventListener('pointerup', endPanelResize)
+panelResizer.addEventListener('pointercancel', endPanelResize)
+// fenêtre redimensionnée : re-clamp (la hauteur max dépend de la fenêtre) + remesure du chrome
+window.addEventListener('resize', applyBandHeight)
 const ctx = canvas.getContext('2d')
 
 // ---------- thème sombre / clair (Affichage → Mode clair) ----------
@@ -405,6 +469,8 @@ function applyLang() {
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
   $('btnImportAudio').textContent = t('importAudio')
+  $('tracksEmptyMain').textContent = t('tracksEmptyMain')
+  $('tracksEmptySub').textContent = t('tracksEmptySub')
   if (activeTab === 'tracks') renderTracks()
   // mode lecture plein écran
   $('btnPlayer').title = t('playerBtn')
@@ -1072,6 +1138,7 @@ function setTrackCount(n) {
   pushUndo()
   compactTracksToFit(n)
   project.tracks = n
+  panelH = null // changer le nombre de pistes recale le dock pour afficher toutes les pistes
   applyBandHeight() // moins/plus de pistes → bande plus courte/haute, piste à hauteur fixe
   buildInsTrackOptions()
   buildLineFilterOptions()
@@ -1547,6 +1614,7 @@ const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + 
 
 const tcanvas = $('tracksCanvas')
 const tctx = tcanvas.getContext('2d')
+$('tracksPlayhead').style.left = (READ_RATIO * 100) + '%' // ligne de lecture alignée sur tReadX
 let tcw = 0, tch = 0
 
 function setTab(name) {
@@ -1555,10 +1623,11 @@ function setTab(name) {
   document.body.classList.toggle('on-tracks', onTracks) // cache les contrôles rythmo, montre l'import audio
   $('tabRythmo').classList.toggle('active', !onTracks)
   $('tabTracks').classList.toggle('active', onTracks)
-  $('band').classList.toggle('hidden', onTracks)
+  $('bandWrap').classList.toggle('hidden', onTracks)
   $('inspector').classList.toggle('hidden', onTracks)
   $('tracksView').classList.toggle('hidden', !onTracks)
   if (onTracks) { hideSubOverlay(); renderTracks() }
+  applyBandHeight() // hauteur du dock constante entre onglets + dimensionne le canvas visible
 }
 $('tabRythmo').addEventListener('click', () => setTab('rythmo'))
 $('tabTracks').addEventListener('click', () => setTab('tracks'))
@@ -1603,7 +1672,13 @@ async function probeAndSyncAudio() {
 }
 
 // renderTracks = en-têtes (gauche) + (re)dimensionnement du canvas timeline
-function renderTracks() { renderTrackHeads(); resizeTracksCanvas() }
+function renderTracks() {
+  const noVideo = !project.videoPath
+  $('tracksEmpty').classList.toggle('hidden', !noVideo) // placeholder propre quand pas de vidéo
+  $('tracksWrap').classList.toggle('hidden', noVideo)
+  renderTrackHeads()
+  resizeTracksCanvas()
+}
 
 // ---------- en-têtes de pistes (colonne de gauche, façon NLE) ----------
 function renderTrackHeads() {
@@ -1659,14 +1734,23 @@ function deleteTrack(id) {
 
 // ---------- canvas timeline (même zoom/défilement/curseur que la bande) ----------
 function resizeTracksCanvas() {
+  // canvas = hauteur de CONTENU (stable). L'espace vide sous la dernière piste est couvert par
+  // le fond de #tracksCanvasWrap, et la ligne de lecture est un overlay DOM pleine hauteur
+  // (#tracksPlayhead) — pas de mise à l'échelle du canvas sur le viewport, donc aucune boucle
+  // de rétroaction avec le ResizeObserver / la scrollbar.
   const h = RULER_H + trackLanes().length * TRK_LANE_H
   tcanvas.style.height = h + 'px'
   const r = tcanvas.getBoundingClientRect()
   const dpr = window.devicePixelRatio || 1
   tcw = r.width; tch = h
-  tcanvas.width = Math.round(tcw * dpr)
-  tcanvas.height = Math.round(h * dpr)
-  tctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  // n'assigner width/height (qui EFFACE le canvas) que si les pixels changent vraiment :
+  // un resize vertical ne change ni la largeur ni la hauteur de contenu → pas de clignotement
+  const pw = Math.round(tcw * dpr), ph = Math.round(h * dpr)
+  if (tcanvas.width !== pw || tcanvas.height !== ph) {
+    tcanvas.width = pw
+    tcanvas.height = ph
+    tctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
 }
 new ResizeObserver(() => { if (activeTab === 'tracks') resizeTracksCanvas() }).observe($('tracksCanvasWrap'))
 
@@ -1743,9 +1827,7 @@ function drawTracks() {
     tctx.fillText(isVideo ? t('trackVideoName') : (tr.label || baseName(tr.path)), Math.max(4, cx0 + 7), cy + 9)
   })
 
-  const rx = tReadX()
-  tctx.strokeStyle = pal.playhead; tctx.lineWidth = 2
-  tctx.beginPath(); tctx.moveTo(rx, 0); tctx.lineTo(rx, tch); tctx.stroke(); tctx.lineWidth = 1
+  // ligne de lecture : overlay DOM pleine hauteur (#tracksPlayhead), pas dessinée ici
 }
 
 // ---------- interactions souris (scrub/zoom comme la bande, + glisser offset) ----------
@@ -1994,9 +2076,14 @@ function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1
   cw = r.width
   ch = r.height
-  canvas.width = Math.round(cw * dpr)
-  canvas.height = Math.round(ch * dpr)
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  // même garde que pour les pistes : ne réinitialiser le canvas (effacement) que si ses
+  // dimensions en pixels changent réellement, pour éviter tout clignotement au resize
+  const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr)
+  if (canvas.width !== pw || canvas.height !== ph) {
+    canvas.width = pw
+    canvas.height = ph
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
   recomputePps() // la largeur a pu changer → garder les secondes visibles constantes
 }
 new ResizeObserver(resizeCanvas).observe(canvas)
@@ -3016,6 +3103,7 @@ async function newProjectAction() {
   $('dropHint').style.display = ''
   updateVideoInfoPanel()
   renderChars()
+  panelH = null // nouveau projet → dock à la hauteur max
   applyBandHeight()
   lineFilterTrack = null
   buildLineFilterOptions()
@@ -3105,6 +3193,7 @@ async function loadProjectData(data, path) {
   redoStack = []
   syncUndoMenu()
   renderChars()
+  panelH = null // charger un projet → dock à la hauteur max (toutes les pistes visibles)
   applyBandHeight()
   lineFilterTrack = null
   buildLineFilterOptions()

@@ -49,6 +49,8 @@
     </aside>
   </div>
 
+  <div id="panelResizer" title="Redimensionner"></div>
+  <div id="bottomPanel">
   <div id="transport">
     <div class="btn-group">
       <button id="tStart" title="Revenir au début">
@@ -113,12 +115,21 @@
     <button id="btnTogglePanel" class="panel-toggle active" title="Afficher / masquer le panneau Personnages">Personnages</button>
   </div>
 
-  <canvas id="band"></canvas>
+  <div id="bandWrap"><canvas id="band"></canvas></div>
 
   <div id="tracksView" class="hidden">
+    <div id="tracksEmpty" class="hidden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 2.5 2.5 7 12 11.5 21.5 7 12 2.5Z"/>
+        <path d="m2.5 12 9.5 4.5 9.5-4.5"/>
+        <path d="m2.5 17 9.5 4.5 9.5-4.5"/>
+      </svg>
+      <span id="tracksEmptyMain">Aucune vidéo chargée</span>
+      <span id="tracksEmptySub">Ouvre une vidéo pour gérer les pistes audio et vidéo</span>
+    </div>
     <div id="tracksWrap">
       <div id="trackHeads"></div>
-      <div id="tracksCanvasWrap"><canvas id="tracksCanvas"></canvas></div>
+      <div id="tracksCanvasWrap"><canvas id="tracksCanvas"></canvas><div id="tracksPlayhead"></div></div>
     </div>
   </div>
 
@@ -155,6 +166,7 @@
       <select id="insMultiTrack" title="Piste — déplacer toutes les répliques sélectionnées"></select>
       <button id="insMultiVoiceOff" class="ins-toggle" title="Voix off — toutes les répliques sélectionnées">Voix off</button>
     </div>
+  </div>
   </div>
 
   <div id="exportModal" class="hidden">
