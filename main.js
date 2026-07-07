@@ -834,6 +834,23 @@ ipcMain.handle('extract-audio-track', (e, videoPath, aIndex) => {
   })
 })
 
+// extrait une piste audio embarquée en AAC stéréo pleine qualité (m4a temporaire), pour
+// la LECTURE : Chromium ne joue que la 1re piste d'un conteneur multiplexé, et le proxy
+// ne conserve que celle-là. Résultat mis en cache (hash chemin+index).
+ipcMain.handle('extract-audio-play', (e, videoPath, aIndex) => {
+  if (!ffmpegPath || !videoPath) return null
+  const key = crypto.createHash('md5').update(`${videoPath}|${aIndex}|play`).digest('hex').slice(0, 10)
+  const out = path.join(app.getPath('temp'), `lr-play-${key}.m4a`)
+  try { if (fs.existsSync(out) && fs.statSync(out).size > 0) return out } catch {}
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpegPath, ['-y', '-i', videoPath, '-map', `0:a:${aIndex}`, '-c:a', 'aac', '-b:a', '192k', '-vn', out], { stdio: 'ignore' })
+    const done = (ok) => resolve(ok && fs.existsSync(out) ? out : null)
+    proc.on('close', (c) => done(c === 0))
+    proc.on('error', () => resolve(null))
+    setTimeout(() => { try { proc.kill() } catch {} done(false) }, 180000)
+  })
+})
+
 // ---------- proxy vidéo (cache portable basse résolution H.264) ----------
 // Dossier de cache dans le dossier de l'app (portable), repli sur le temp de l'OS si
 // non accessible en écriture (clé USB protégée, emplacement read-only).

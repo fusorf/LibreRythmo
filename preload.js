@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   clearProxyCache: () => ipcRenderer.invoke('clear-proxy-cache'),
   onProxyProgress: (cb) => ipcRenderer.on('proxy-progress', (e, n) => cb(n)),
   extractAudioTrack: (p, i) => ipcRenderer.invoke('extract-audio-track', p, i),
+  extractAudioPlay: (p, i) => ipcRenderer.invoke('extract-audio-play', p, i),
   saveProject: (json, p) => ipcRenderer.invoke('save-project', json, p),
   saveProjectAs: (json, p) => ipcRenderer.invoke('save-project-as', json, p),
   importSrt: () => ipcRenderer.invoke('import-srt'),

@@ -389,6 +389,7 @@ function restoreState(snap) {
   if (d.audioTracks) project.audioTracks = d.audioTracks
   project.defaultFont = d.defaultFont || null
   waveOffset = (activeAudioTrack()?.offset) || 0 // suit l'offset restauré de la piste active
+  syncPlaybackAudio() // la lecture suit la piste/le décalage restaurés
   if (!getChar(selectedCharId)) selectedCharId = project.characters[0]?.id || null
   selectedIds = new Set([...selectedIds].filter((id) => getLine(id)))
   populateFontSelects()
@@ -1862,12 +1863,14 @@ tcanvas.addEventListener('pointermove', (e) => {
     let off = tdrag.startOff + dx / tPps()
     if (Math.abs(off) < 6 / tPps()) off = 0 // aimant sur l'origine
     tdrag.tr.offset = off
-    if (tdrag.tr.id === project.activeAudioId) waveOffset = off
+    if (tdrag.tr.id === project.activeAudioId) { waveOffset = off; playAOffset = off }
     markDirty()
   }
 })
 function tEndDrag() {
   if (tdrag && tdrag.kind === 'scrub' && tdrag.fromRuler && !tdrag.moved && video.src) scrubTo(tdrag.tClick)
+  // fin d'un glisser d'offset sur la piste active → la lecture doit suivre le décalage
+  if (tdrag && tdrag.kind === 'offset' && tdrag.tr.id === project.activeAudioId) syncPlaybackAudio()
   tdrag = null; scrub.active = false
   if (!scrub.busy && scrub.pending == null) scrub.time = null
   tcanvas.style.cursor = 'grab'
@@ -2004,6 +2007,7 @@ async function buildWaveform() {
   wave = null
   scrubBuf = null
   const token = ++waveToken
+  syncPlaybackAudio() // la lecture suit aussi la piste active
   // forme d'onde de la piste active : fichier externe → le fichier ; piste embarquée
   // > 0 → extraite en WAV (Chromium ne décode que la 1re piste) ; sinon la vidéo.
   const a = (typeof activeAudioTrack === 'function' && activeAudioTrack()) || null
@@ -2067,6 +2071,73 @@ async function buildWaveform() {
     if (token === waveToken) toast(t('waveFail'))
   }
 }
+
+// ---------- lecture de la piste active ----------
+// La vidéo (source ou proxy) ne peut jouer que sa 1re piste audio : pour toute autre
+// piste active (embarquée > 0, fichier externe, ou décalage non nul), un <audio> caché
+// synchronisé sur la vidéo porte le son et la vidéo est réduite au silence.
+let playA = null // élément <audio> de la piste active
+let playAUrl = null // URL en cours, pour ne pas recharger inutilement
+let playAToken = 0
+let playAActive = false // le son passe par playA (sinon : audio natif de la vidéo)
+let playAOffset = 0 // décalage (s) de la piste active, appliqué à la position de lecture
+
+function applyVolume() {
+  const vol = Number($('volume').value)
+  video.volume = playAActive ? 0 : vol
+  if (playA) { playA.volume = vol; playA.muted = video.muted }
+}
+
+// re-cale playA sur la vidéo (hard = seek exigé, sinon seuil de dérive)
+function syncPlayAPosition(hard) {
+  if (!playAActive || !playA || !playAUrl) return
+  const tt = video.currentTime - playAOffset
+  const inRange = tt >= 0 && tt < (playA.duration || Infinity)
+  if (video.paused || !inRange) {
+    if (!playA.paused) playA.pause()
+    if (hard && inRange) { try { playA.currentTime = tt } catch {} }
+    return
+  }
+  if (Math.abs(playA.currentTime - tt) > (hard ? 0.05 : 0.3)) { try { playA.currentTime = tt } catch {} }
+  playA.playbackRate = video.playbackRate
+  if (playA.paused) playA.play().catch(() => {})
+}
+
+// choisit la source de playA selon la piste active (mêmes règles que buildWaveform)
+async function syncPlaybackAudio() {
+  const token = ++playAToken
+  const a = (typeof activeAudioTrack === 'function' && activeAudioTrack()) || null
+  playAOffset = (a && a.offset) || 0
+  // piste par défaut de la vidéo sans décalage → l'audio natif de la vidéo suffit
+  const needsAux = !!a && (a.type === 'file' || a.index > 0 || playAOffset !== 0)
+  if (!needsAux) {
+    playAActive = false
+    playAUrl = null
+    if (playA) { playA.pause(); playA.removeAttribute('src'); playA.load() }
+    applyVolume()
+    return
+  }
+  let src = null
+  if (a.type === 'file') src = a.path
+  else src = await window.api.extractAudioPlay(project.videoPath, a.index)
+  if (token !== playAToken) return
+  if (!src) { playAActive = false; playAUrl = null; applyVolume(); return } // repli : audio natif
+  const url = await window.api.fileUrl(src)
+  if (!url || token !== playAToken) return
+  playA ||= new Audio()
+  playA.preload = 'auto'
+  if (playAUrl !== url) { playAUrl = url; playA.src = url }
+  playAActive = true
+  applyVolume()
+  syncPlayAPosition(true)
+}
+
+video.addEventListener('play', () => syncPlayAPosition(true))
+video.addEventListener('pause', () => { if (playA && !playA.paused) playA.pause() })
+video.addEventListener('seeked', () => syncPlayAPosition(true))
+video.addEventListener('ratechange', () => { if (playA) playA.playbackRate = video.playbackRate })
+video.addEventListener('timeupdate', () => syncPlayAPosition(false))
+video.addEventListener('volumechange', applyVolume)
 
 // ============================================================ canvas rendering
 let cw = 0, ch = 0 // CSS pixels
@@ -2541,7 +2612,8 @@ let lastGrain = 0
 function playScrubGrain(tt) {
   if (!scrubBuf || !scrubCtx) return
   const vol = Number($('volume').value)
-  if (!vol || tt < 0 || tt >= scrubBuf.duration) return
+  const ts = tt - waveOffset // position dans la piste (décalage de la piste active)
+  if (!vol || ts < 0 || ts >= scrubBuf.duration) return
   const nowMs = performance.now()
   if (nowMs - lastGrain < 55) return
   lastGrain = nowMs
@@ -2558,7 +2630,7 @@ function playScrubGrain(tt) {
   src.connect(g)
   g.connect(scrubCtx.destination)
   src.onended = () => { src.disconnect(); g.disconnect() }
-  src.start(0, tt, dur)
+  src.start(0, ts, dur)
 }
 
 // ============================================================ pointer interactions
@@ -2861,7 +2933,7 @@ $('tStart').addEventListener('click', () => { video.currentTime = 0 })
 $('tFrameB').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime - 1 / project.fps, 0, videoDur()) })
 $('tFrameF').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime + 1 / project.fps, 0, videoDur()) })
 $('speed').addEventListener('change', (e) => { video.playbackRate = Number(e.target.value) })
-$('volume').addEventListener('input', (e) => { video.volume = Number(e.target.value) })
+$('volume').addEventListener('input', applyVolume) // vidéo ou piste active (playA)
 
 $('btnAddLine').addEventListener('click', () => {
   addLineAt(video.currentTime, null, '…', 2)
@@ -3090,6 +3162,7 @@ async function newProjectAction() {
   waveToken++ // invalide une éventuelle analyse de forme d'onde en cours
   wave = null
   scrubBuf = null
+  syncPlaybackAudio() // plus de piste active → retour à l'audio natif (silencieux ici)
   videoInfo = null
   proxyToken++ // annule une génération de proxy éventuellement en cours
   proxyActive = false
