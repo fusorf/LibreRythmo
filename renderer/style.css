@@ -505,6 +505,72 @@ button.active {
 .char-row .x:hover, .loop-row .x:hover, .plan-row .x:hover { color: var(--accent); background: none; }
 #btnAddChar { width: 100%; flex: 0 0 auto; }
 
+/* ---------- barre de progression globale (au-dessus du transport) ---------- */
+/* strip fine pleine largeur : clic = saut, glisser = scrub ; gonfle au survol.
+   Mini-carte du projet : scènes (haut), répliques (bas, couleur du personnage),
+   plans (traits verticaux). Masquable via Affichage → Barre de progression. */
+#seekBar {
+  position: relative;
+  height: 7px;
+  flex: 0 0 auto;
+  background: var(--inset);
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  touch-action: none;
+  transition: height .12s ease;
+}
+#seekBar.hidden { display: none; }
+#seekBar:hover, #seekBar.dragging { height: 14px; }
+#seekMarks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#seekFill {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 0%;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-right: 2px solid var(--accent);
+  pointer-events: none;
+}
+#seekDot {
+  position: absolute;
+  top: 50%; left: 0%;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+  transition: transform .12s ease;
+  pointer-events: none;
+}
+#seekBar:hover #seekDot, #seekBar.dragging #seekDot { transform: scale(1); }
+#seekTip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  padding: 6px 9px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 30;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+#seekTip .tip-tc { font-weight: 600; font-variant-numeric: tabular-nums; }
+#seekTip .tip-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
 /* ---------- transport ---------- */
 #transport {
   display: flex;

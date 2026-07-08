@@ -55,7 +55,7 @@ async function checkForUpdate() {
 ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/latest`))
 
 // ---------- réglages persistants — settings.ini dans le dossier userData ----------
-const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, subs: false, encoder: 'gpu', discord: true }
+const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, subs: false, encoder: 'gpu', discord: true, autofocus: true, seekbar: true }
 let settings = { ...DEFAULTS, recent: [] }
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.ini')
@@ -81,6 +81,8 @@ function loadSettings() {
         else if (k === 'info') settings.info = v === '1'
         else if (k === 'subs') settings.subs = v === '1'
         else if (k === 'discord') settings.discord = v === '1'
+        else if (k === 'autofocus') settings.autofocus = v === '1'
+        else if (k === 'seekbar') settings.seekbar = v === '1'
       } else if (sec === 'export') {
         if (k === 'encoder' && ['gpu', 'cpu'].includes(v)) settings.encoder = v
       } else if (sec === 'recent') {
@@ -103,6 +105,8 @@ function saveSettings() {
     `info=${b(settings.info)}`,
     `subs=${b(settings.subs)}`,
     `discord=${b(settings.discord)}`,
+    `autofocus=${b(settings.autofocus)}`,
+    `seekbar=${b(settings.seekbar)}`,
     '',
     '[export]',
     `encoder=${settings.encoder}`,
@@ -275,6 +279,8 @@ const MENU_STR = {
     undo: 'Annuler',
     redo: 'Rétablir',
     view: 'Affichage',
+    autofocusText: 'Autofocus du texte',
+    seekbar: 'Barre de progression',
     wave: "Forme d'onde audio",
     videoInfo: 'Infos vidéo',
     subs: 'Sous-titres',
@@ -343,6 +349,8 @@ const MENU_STR = {
     undo: 'Undo',
     redo: 'Redo',
     view: 'View',
+    autofocusText: 'Text autofocus',
+    seekbar: 'Progress bar',
     wave: 'Audio waveform',
     videoInfo: 'Video info',
     subs: 'Subtitles',
@@ -452,11 +460,14 @@ function buildMenu() {
         // lui-même (et laisse l'annulation native des champs texte intacte)
         { id: 'menu-undo', label: s.undo, accelerator: 'CmdOrCtrl+Z', registerAccelerator: false, enabled: undoState.undo, click: () => send('undo') },
         { id: 'menu-redo', label: s.redo, accelerator: 'CmdOrCtrl+Y', registerAccelerator: false, enabled: undoState.redo, click: () => send('redo') },
+        { type: 'separator' },
+        { label: s.autofocusText, type: 'checkbox', checked: settings.autofocus, click: (item) => send('toggle-autofocus', item.checked) },
       ],
     },
     {
       label: s.view,
       submenu: [
+        { label: s.seekbar, type: 'checkbox', checked: settings.seekbar, click: (item) => send('toggle-seekbar', item.checked) },
         { label: s.wave, type: 'checkbox', checked: settings.wave, click: (item) => send('toggle-wave', item.checked) },
         { label: s.videoInfo, type: 'checkbox', checked: settings.info, click: (item) => send('toggle-video-info', item.checked) },
         { label: s.subs, type: 'checkbox', checked: settings.subs, click: (item) => send('toggle-subtitles', item.checked) },
@@ -513,6 +524,8 @@ ipcMain.handle('set-lang', (e, o) => {
   settings.info = !!o.info
   settings.subs = !!o.subs
   settings.autosave = !!o.autosave
+  settings.autofocus = o.autofocus !== false
+  settings.seekbar = o.seekbar !== false
   if (['gpu', 'cpu'].includes(o.encoder)) settings.encoder = o.encoder
   if (o.discord !== undefined && !!o.discord !== settings.discord) {
     settings.discord = !!o.discord

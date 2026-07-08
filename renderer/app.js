@@ -305,10 +305,18 @@ function setTheme(th) {
 let exportEncoder = 'gpu' // préférence persistée ([export] encoder dans settings.ini)
 let discordOn = false // Discord Rich Presence (Affichage → Discord Rich Presence)
 let showSubs = false // sous-titres « classiques » superposés à l'aperçu vidéo (Affichage → Sous-titres)
+let autofocusText = true // focus du champ texte à la création d'une réplique (Édition → Éditer le texte…)
+
+// focus + sélection du champ texte de l'inspecteur après création d'une réplique
+function focusNewLineText() {
+  if (!autofocusText) return
+  ins.text.focus()
+  ins.text.select()
+}
 
 // pousse tous les réglages au process principal : persistance settings.ini + menu
 function pushSettings() {
-  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, subs: showSubs, autosave: autosaveOn, encoder: exportEncoder, discord: discordOn })
+  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, subs: showSubs, autosave: autosaveOn, encoder: exportEncoder, discord: discordOn, autofocus: autofocusText, seekbar: showSeekBar })
 }
 
 // présence Discord : titre du projet + nombre de répliques (poussé sur les évènements clés)
@@ -771,14 +779,21 @@ function splitWords(text, start, end) {
   return words
 }
 
-function findFreeTrack(start, end) {
-  for (let tr = 0; tr < laneCount(); tr++) {
+// piste d'accueil d'une nouvelle réplique : d'abord les pistes où le personnage
+// figure déjà (de la plus utilisée à la moins), puis les autres dans l'ordre — la
+// première libre sur [start, end[ gagne ; tout occupé → piste du personnage, sinon 1re
+function findFreeTrack(start, end, characterId) {
+  const counts = new Map()
+  for (const l of project.lines) if (l.characterId === characterId) counts.set(l.track, (counts.get(l.track) || 0) + 1)
+  const charTracks = [...counts.keys()].filter((tr) => tr < laneCount()).sort((a, b) => counts.get(b) - counts.get(a) || a - b)
+  const rest = Array.from({ length: laneCount() }, (_, i) => i).filter((tr) => !charTracks.includes(tr))
+  for (const tr of [...charTracks, ...rest]) {
     const busy = project.lines.some(
       (l) => l.track === tr && lineStart(l) < end && lineEnd(l) > start
     )
     if (!busy) return tr
   }
-  return 0
+  return charTracks[0] ?? 0
 }
 
 function addLineAt(start, track, text, dur) {
@@ -786,10 +801,11 @@ function addLineAt(start, track, text, dur) {
   if (!project.characters.length) addCharacter()
   start = Math.max(0, start)
   const end = start + (dur || 2)
+  const characterId = selectedCharId || project.characters[0].id
   const line = {
     id: uid(),
-    characterId: selectedCharId || project.characters[0].id,
-    track: track == null ? findFreeTrack(start, end) : track,
+    characterId,
+    track: track == null ? findFreeTrack(start, end, characterId) : track,
     words: splitWords(text || '…', start, end),
   }
   project.lines.push(line)
@@ -2636,8 +2652,8 @@ function playScrubGrain(tt) {
 // ============================================================ pointer interactions
 let drag = null
 
-// ---------- mode aimant : pendant un glisser de répliques, les bords s'aimantent
-// aux bords des autres répliques et au point de lecture (seuil 8 px à l'écran)
+// ---------- mode aimant : pendant un glisser ou un resize de répliques, les bords
+// s'aimantent aux bords des autres répliques et au point de lecture (seuil 8 px à l'écran)
 let magnetOn = false
 
 $('btnMagnet').addEventListener('click', () => {
@@ -2664,6 +2680,24 @@ function magnetAdjust(d, group) {
     }
   }
   return best === null ? d : d + best
+}
+
+// aimante un temps t (bord en cours de resize) sur le point de lecture et les bords
+// des autres répliques — même seuil que magnetAdjust (8 px à l'écran)
+function magnetSnapTime(t, excludeId) {
+  const thresh = 8 / pxPerSec
+  let best = null
+  const consider = (tt) => {
+    const delta = tt - t
+    if (Math.abs(delta) <= thresh && (best === null || Math.abs(delta) < Math.abs(best))) best = delta
+  }
+  consider(effectiveTime())
+  for (const l of project.lines) {
+    if (l.id === excludeId || !l.words.length) continue
+    consider(lineStart(l))
+    consider(lineEnd(l))
+  }
+  return best === null ? t : t + best
 }
 
 function hitTest(x, y) {
@@ -2815,7 +2849,8 @@ canvas.addEventListener('pointermove', (e) => {
     }
   } else if (drag.kind === 'scale') {
     if (!drag.pushed) { pushUndo(); drag.pushed = true }
-    const t = timeAtX(x, effectiveTime())
+    let t = timeAtX(x, effectiveTime())
+    if (magnetOn) t = magnetSnapTime(t, drag.line.id)
     const { line, snapshot, anchor, fromStart } = drag
     const MIN = 0.1
     if (fromStart) {
@@ -2840,7 +2875,8 @@ canvas.addEventListener('pointermove', (e) => {
     const now = effectiveTime()
     const line = drag.line
     const w = line.words[drag.wi]
-    const t = timeAtX(x, now)
+    let t = timeAtX(x, now)
+    if (magnetOn) t = magnetSnapTime(t, line.id)
     const MIN = 0.06
     if (drag.type === 'end') {
       const lo = w.start + MIN
@@ -2886,8 +2922,7 @@ canvas.addEventListener('dblclick', (e) => {
     const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
     const t = timeAtX(x, effectiveTime())
     addLineAt(t, tr, '…', 2)
-    ins.text.focus()
-    ins.text.select()
+    focusNewLineText()
   }
 })
 
@@ -2935,10 +2970,131 @@ $('tFrameF').addEventListener('click', () => { video.pause(); video.currentTime 
 $('speed').addEventListener('change', (e) => { video.playbackRate = Number(e.target.value) })
 $('volume').addEventListener('input', applyVolume) // vidéo ou piste active (playA)
 
+// ============================================================ barre de progression globale
+// Strip fine au-dessus du transport : clic = saut, glisser = scrub (sans mettre en
+// pause), survol = timecode + contexte (scène, plan, répliques). Mini-carte dessinée
+// à chaque frame par drawSeekBar() (appelée depuis loop()).
+const seekBar = $('seekBar')
+const seekFill = $('seekFill')
+const seekDot = $('seekDot')
+const seekMarks = $('seekMarks')
+const seekTip = $('seekTip')
+let showSeekBar = true // Affichage → Barre de progression (persisté dans settings.ini)
+let seekDrag = false
+
+const seekFrac = (e) => {
+  const r = seekBar.getBoundingClientRect()
+  return clamp((e.clientX - r.left) / Math.max(1, r.width), 0, 1)
+}
+// durée réelle uniquement (videoDur() renvoie 1e9 tant que la vidéo n'est pas chargée)
+const seekDur = () => (video.src && isFinite(video.duration) && video.duration > 0 ? video.duration : 0)
+
+function drawSeekBar() {
+  if (!showSeekBar) return
+  const dur = seekDur()
+  const pct = (dur ? clamp(effectiveTime() / dur, 0, 1) : 0) * 100
+  seekFill.style.width = pct + '%'
+  seekDot.style.left = pct + '%'
+  const dpr = window.devicePixelRatio || 1
+  const w = seekBar.clientWidth
+  const h = seekBar.clientHeight
+  if (!w || !h) return
+  if (seekMarks.width !== Math.round(w * dpr) || seekMarks.height !== Math.round(h * dpr)) {
+    seekMarks.width = Math.round(w * dpr)
+    seekMarks.height = Math.round(h * dpr)
+  }
+  const c = seekMarks.getContext('2d')
+  c.setTransform(dpr, 0, 0, dpr, 0, 0)
+  c.clearRect(0, 0, w, h)
+  if (!dur) return
+  const px = (t) => (t / dur) * w
+  // scènes : bandeaux bleutés sur la moitié haute
+  c.fillStyle = 'rgba(122, 162, 255, 0.45)'
+  for (const lp of project.loops) c.fillRect(px(lp.start), 0, Math.max(1, px(lp.end - lp.start)), h * 0.4)
+  // répliques : tirets sur la moitié basse, couleur du personnage
+  for (const l of project.lines) {
+    if (!l.words.length) continue
+    const x0 = px(lineStart(l))
+    c.fillStyle = getChar(l.characterId)?.color || '#888'
+    c.fillRect(x0, h * 0.55, Math.max(1.5, px(lineEnd(l)) - x0), h * 0.45)
+  }
+  // plans : traits verticaux ambre pleine hauteur
+  c.fillStyle = 'rgba(230, 162, 60, 0.9)'
+  for (const pl of project.plans) c.fillRect(px(pl.time) - 0.5, 0, 1, h)
+}
+
+// tooltip : timecode + scène/plan courants + répliques sous le curseur (max 3)
+function seekTipUpdate(e) {
+  const dur = seekDur()
+  if (!dur) { seekTip.classList.add('hidden'); return }
+  const t = seekFrac(e) * dur
+  seekTip.innerHTML = ''
+  const addRow = (txt, color) => {
+    const d = document.createElement('div')
+    if (color) {
+      const dot = document.createElement('span')
+      dot.className = 'tip-dot'
+      dot.style.background = color
+      d.appendChild(dot)
+    }
+    d.appendChild(document.createTextNode(txt))
+    seekTip.appendChild(d)
+    return d
+  }
+  addRow(formatTc(t, project.fps)).className = 'tip-tc'
+  const lp = project.loops.find((k) => t >= k.start && t <= k.end)
+  if (lp) addRow(lp.name)
+  const pl = sortedPlans().filter((k) => k.time <= t).pop()
+  if (pl) addRow(pl.name)
+  let n = 0
+  for (const l of project.lines) {
+    if (!l.words.length || t < lineStart(l) || t > lineEnd(l)) continue
+    if (++n > 3) { addRow('…'); break }
+    const ch = getChar(l.characterId)
+    const txt = l.words.map((w) => w.text).join(' ')
+    addRow(`${ch?.name || '?'} : ${txt.length > 48 ? txt.slice(0, 48) + '…' : txt}`, ch?.color)
+  }
+  seekTip.classList.remove('hidden')
+  const r = seekBar.getBoundingClientRect()
+  seekTip.style.left = clamp(e.clientX - r.left - seekTip.offsetWidth / 2, 4, Math.max(4, r.width - seekTip.offsetWidth - 4)) + 'px'
+}
+
+seekBar.addEventListener('pointerdown', (e) => {
+  if (!seekDur()) return
+  seekBar.setPointerCapture(e.pointerId)
+  seekDrag = true
+  seekBar.classList.add('dragging')
+  scrub.active = true
+  scrubTo(seekFrac(e) * seekDur())
+})
+seekBar.addEventListener('pointermove', (e) => {
+  seekTipUpdate(e)
+  if (seekDrag) {
+    scrubTo(seekFrac(e) * seekDur())
+    if (video.paused) playScrubGrain(scrub.time)
+  }
+})
+function seekEndDrag(e) {
+  if (!seekDrag) return
+  seekDrag = false
+  seekBar.classList.remove('dragging')
+  scrub.active = false
+  if (!scrub.busy && scrub.pending == null) scrub.time = null
+  // la capture du pointeur a pu retenir le pointerleave : cacher le tooltip si besoin
+  const r = seekBar.getBoundingClientRect()
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) seekTip.classList.add('hidden')
+}
+seekBar.addEventListener('pointerup', seekEndDrag)
+seekBar.addEventListener('pointercancel', seekEndDrag)
+seekBar.addEventListener('pointerleave', () => { if (!seekDrag) seekTip.classList.add('hidden') })
+
+function applySeekBarVisibility() {
+  seekBar.classList.toggle('hidden', !showSeekBar)
+}
+
 $('btnAddLine').addEventListener('click', () => {
   addLineAt(video.currentTime, null, '…', 2)
-  ins.text.focus()
-  ins.text.select()
+  focusNewLineText()
 })
 
 // ============================================================ réacs (lexique)
@@ -2957,10 +3113,11 @@ function insertReac(r) {
   pushUndo()
   if (!project.characters.length) addCharacter()
   const start = Math.max(0, effectiveTime())
+  const characterId = selectedCharId || project.characters[0].id
   const line = {
     id: uid(),
-    characterId: selectedCharId || project.characters[0].id,
-    track: findFreeTrack(start, start + REAC_DUR),
+    characterId,
+    track: findFreeTrack(start, start + REAC_DUR, characterId),
     kind: 'reac',
     words: splitWords(reacToken(r), start, start + REAC_DUR),
   }
@@ -3102,8 +3259,7 @@ document.addEventListener('keydown', (e) => {
       if (activeTab !== 'rythmo') break
       e.preventDefault()
       addLineAt(video.currentTime, null, '…', 2)
-      ins.text.focus()
-      ins.text.select()
+      focusNewLineText()
       break
     case 'PageUp':
       e.preventDefault()
@@ -3178,6 +3334,8 @@ async function newProjectAction() {
   renderChars()
   panelH = null // nouveau projet → dock à la hauteur max
   applyBandHeight()
+  buildInsTrackOptions() // re-cale le sélecteur « Piste » sur le nombre de pistes par défaut
+  refreshTrackCountUI()
   lineFilterTrack = null
   buildLineFilterOptions()
   refreshInspector()
@@ -3268,6 +3426,8 @@ async function loadProjectData(data, path) {
   renderChars()
   panelH = null // charger un projet → dock à la hauteur max (toutes les pistes visibles)
   applyBandHeight()
+  buildInsTrackOptions() // le sélecteur « Piste » de l'inspecteur suit les pistes du projet
+  refreshTrackCountUI() // idem pour le menu « Pistes » de la barre de transport
   lineFilterTrack = null
   buildLineFilterOptions()
   refreshInspector()
@@ -3392,7 +3552,7 @@ function importSubsText(text) {
     project.lines.push({
       id: uid(),
       characterId: charId,
-      track: findFreeTrack(cue.start, cue.end),
+      track: findFreeTrack(cue.start, cue.end, charId),
       words: splitWords(cue.text, cue.start, cue.end),
     })
   }
@@ -3718,6 +3878,15 @@ window.api.onMenu((action, arg) => {
   else if (action === 'toggle-subtitles') {
     showSubs = !!arg
     updateSubOverlay()
+    pushSettings()
+  }
+  else if (action === 'toggle-seekbar') {
+    showSeekBar = !!arg
+    applySeekBarVisibility()
+    pushSettings()
+  }
+  else if (action === 'toggle-autofocus') {
+    autofocusText = !!arg
     pushSettings()
   }
   else if (action === 'toggle-discord') {
@@ -4493,6 +4662,7 @@ document.addEventListener('fullscreenchange', () => { if (player.open && !docume
 function loop() {
   $('timecode').textContent = formatTc(effectiveTime(), project.fps)
   btnPlay.classList.toggle('playing', !video.paused)
+  drawSeekBar()
   if (player.open) {
     // boucle de scène : revenir au début quand on atteint la fin de la scène courante
     if (player.loopScene && !video.paused) {
@@ -4513,6 +4683,9 @@ function loop() {
   const st = await window.api.getSettings()
   lang = st.lang === 'en' ? 'en' : 'fr'
   autosaveOn = !!st.autosave
+  autofocusText = st.autofocus !== false
+  showSeekBar = st.seekbar !== false
+  applySeekBarVisibility()
   showWave = st.wave !== false
   showVideoInfo = !!st.info
   showSubs = !!st.subs

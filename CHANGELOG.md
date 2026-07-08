@@ -3,6 +3,38 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.7.0] - 2026-07-08
+
+### Ajouts
+- **Barre de progression globale** au-dessus de la barre de transport : clic = saut,
+  glisser = scrub (sans mettre en pause), survol = timecode + scène / plan / répliques
+  sous le curseur. Mini-carte du projet : scènes (bandeaux bleutés), répliques (tirets
+  aux couleurs des personnages), plans (traits ambre). Désactivable via
+  Affichage → Barre de progression.
+- **Autofocus du texte** (menu Édition, activé par défaut) : permet de désactiver le
+  focus automatique du champ texte à la création d'une réplique.
+
+### Corrections
+- **Lecture : la piste audio active est désormais jouée** (le scrub le faisait déjà,
+  pas la lecture) — piste embarquée ≠ 1 extraite en AAC pleine qualité (mise en cache),
+  fichier externe joué directement, décalage de piste appliqué à la lecture et au
+  grain de scrub.
+- À l'ouverture d'un projet, le sélecteur « Piste » de l'inspecteur et le menu
+  « Pistes » reflètent immédiatement le nombre de pistes du projet (il fallait
+  auparavant toucher au menu « Pistes » pour les resynchroniser).
+
+### Ajustements
+- **Aimant** : le redimensionnement des répliques (bords de mots et étirement complet)
+  s'aimante aussi au point de lecture et aux bords des autres répliques.
+- **Nouvelle réplique** (+ Réplique, Entrée, réactions, import SRT/VTT) : placée en
+  priorité sur la piste où le personnage figure déjà, sinon première piste libre.
+
+## [2.6.1] - 2026-06-23
+
+### Ajustements
+- **Panneau du bas redimensionnable** (poignée au-dessus de la barre de transport).
+- Nettoyage de l'onglet **Pistes**.
+
 ## [2.6.0] - 2026-06-21
 
 ### Ajouts
