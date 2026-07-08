@@ -3,6 +3,19 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.7.1] - 2026-07-08
+
+### Ajustements
+- **Barre de progression** : hauteur fixe (plus d'agrandissement au survol), le point
+  de lecture est un trait qui s'épaissit pendant le scrub (plus de pastille), et
+  l'infobulle est bien cachée par défaut et disparaît quand la souris quitte la barre
+  (elle restait affichée, vide, sans projet chargé).
+
+### Distribution
+- CI : retrait du build macOS Intel (runners `macos-13` retirés par GitHub — le job
+  attendait 24 h et faisait annuler le run entier ; v2.6.0/v2.6.1 n'avaient jamais
+  eu leurs installeurs complets). macOS = DMG Apple Silicon uniquement.
+
 ## [2.7.0] - 2026-07-08
 
 ### Ajouts

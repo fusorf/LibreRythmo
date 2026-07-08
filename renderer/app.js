@@ -2976,7 +2976,6 @@ $('volume').addEventListener('input', applyVolume) // vidéo ou piste active (pl
 // à chaque frame par drawSeekBar() (appelée depuis loop()).
 const seekBar = $('seekBar')
 const seekFill = $('seekFill')
-const seekDot = $('seekDot')
 const seekMarks = $('seekMarks')
 const seekTip = $('seekTip')
 let showSeekBar = true // Affichage → Barre de progression (persisté dans settings.ini)
@@ -2994,7 +2993,6 @@ function drawSeekBar() {
   const dur = seekDur()
   const pct = (dur ? clamp(effectiveTime() / dur, 0, 1) : 0) * 100
   seekFill.style.width = pct + '%'
-  seekDot.style.left = pct + '%'
   const dpr = window.devicePixelRatio || 1
   const w = seekBar.clientWidth
   const h = seekBar.clientHeight

@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-15-intel, macos-14, ubuntu-latest]
+        os: [windows-latest, macos-14, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -35,9 +35,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools
 
-      # Windows : installeur NSIS + zip portable ; macOS : DMG (arch native du runner —
-      # macos-15-intel = Intel x64 (macos-13 retiré par GitHub fin 2025),
-      # macos-14 = Apple Silicon arm64). Builds non signés.
+      # Windows : installeur NSIS + zip portable ; macOS : DMG Apple Silicon uniquement
+      # (les runners Intel macos-13 ont été retirés par GitHub et bloquaient le run
+      # pendant 24 h — plus de build Intel x64). Builds non signés.
       - name: Build installer
         run: npm run dist
 

@@ -506,21 +506,19 @@ button.active {
 #btnAddChar { width: 100%; flex: 0 0 auto; }
 
 /* ---------- barre de progression globale (au-dessus du transport) ---------- */
-/* strip fine pleine largeur : clic = saut, glisser = scrub ; gonfle au survol.
-   Mini-carte du projet : scènes (haut), répliques (bas, couleur du personnage),
-   plans (traits verticaux). Masquable via Affichage → Barre de progression. */
+/* strip pleine largeur à hauteur fixe : clic = saut, glisser = scrub (trait de
+   lecture épaissi). Mini-carte du projet : scènes (haut), répliques (bas, couleur
+   du personnage), plans (traits verticaux). Masquable via Affichage. */
 #seekBar {
   position: relative;
-  height: 7px;
+  height: 14px;
   flex: 0 0 auto;
   background: var(--inset);
   border-top: 1px solid var(--border);
   cursor: pointer;
   touch-action: none;
-  transition: height .12s ease;
 }
 #seekBar.hidden { display: none; }
-#seekBar:hover, #seekBar.dragging { height: 14px; }
 #seekMarks {
   position: absolute;
   inset: 0;
@@ -533,21 +531,10 @@ button.active {
   top: 0; bottom: 0; left: 0;
   width: 0%;
   background: color-mix(in srgb, var(--accent) 30%, transparent);
-  border-right: 2px solid var(--accent);
+  border-right: 2px solid var(--accent); /* trait de lecture, épaissi pendant le scrub */
   pointer-events: none;
 }
-#seekDot {
-  position: absolute;
-  top: 50%; left: 0%;
-  width: 12px; height: 12px;
-  margin: -6px 0 0 -6px;
-  border-radius: 50%;
-  background: var(--accent);
-  transform: scale(0);
-  transition: transform .12s ease;
-  pointer-events: none;
-}
-#seekBar:hover #seekDot, #seekBar.dragging #seekDot { transform: scale(1); }
+#seekBar:hover #seekFill, #seekBar.dragging #seekFill { border-right-width: 4px; }
 #seekTip {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -563,6 +550,7 @@ button.active {
   z-index: 30;
   box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
 }
+#seekTip.hidden { display: none; }
 #seekTip .tip-tc { font-weight: 600; font-variant-numeric: tabular-nums; }
 #seekTip .tip-dot {
   display: inline-block;
