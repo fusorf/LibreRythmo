@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-13, macos-14, ubuntu-latest]
+        os: [windows-latest, macos-15-intel, macos-14, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools
 
       # Windows : installeur NSIS + zip portable ; macOS : DMG (arch native du runner —
-      # macos-13 = Intel x64, macos-14 = Apple Silicon arm64). Builds non signés.
+      # macos-15-intel = Intel x64 (macos-13 retiré par GitHub fin 2025),
+      # macos-14 = Apple Silicon arm64). Builds non signés.
       - name: Build installer
         run: npm run dist
 
