@@ -704,6 +704,32 @@ function renderChars() {
       })
     })
 
+    // piste préférée : P1–P4 même si la piste n'est pas affichée (fallback auto
+    // au placement par priorité tant qu'elle n'existe pas), « – » = automatique
+    const trk = document.createElement('select')
+    trk.className = 'pref'
+    trk.title = t('charPrefTrack')
+    const auto = document.createElement('option')
+    auto.value = ''
+    auto.textContent = '–'
+    trk.appendChild(auto)
+    for (let i = 0; i < MAX_TRACKS; i++) {
+      const o = document.createElement('option')
+      o.value = String(i)
+      o.textContent = t('charPrefOpt', i + 1)
+      trk.appendChild(o)
+    }
+    trk.value = c.prefTrack != null ? String(c.prefTrack) : ''
+    trk.classList.toggle('set', trk.value !== '')
+    trk.addEventListener('click', (e) => e.stopPropagation())
+    trk.addEventListener('change', () => {
+      pushUndo()
+      if (trk.value === '') delete c.prefTrack
+      else c.prefTrack = Number(trk.value)
+      trk.classList.toggle('set', trk.value !== '')
+      markDirty()
+    })
+
     const x = document.createElement('button')
     x.className = 'x'
     x.textContent = '✕'
@@ -718,7 +744,7 @@ function renderChars() {
       markDirty()
     })
 
-    row.append(sw, nm, edit, x)
+    row.append(sw, nm, trk, edit, x)
     row.addEventListener('click', () => {
       selectedCharId = c.id
       renderChars()
@@ -779,10 +805,14 @@ function splitWords(text, start, end) {
   return words
 }
 
-// piste d'accueil d'une nouvelle réplique : d'abord les pistes où le personnage
-// figure déjà (de la plus utilisée à la moins), puis les autres dans l'ordre — la
-// première libre sur [start, end[ gagne ; tout occupé → piste du personnage, sinon 1re
+// piste d'accueil d'une nouvelle réplique : la piste préférée du personnage
+// (panneau Personnages) prime si elle est affichée ; sinon d'abord les pistes où le
+// personnage figure déjà (de la plus utilisée à la moins), puis les autres dans
+// l'ordre — la première libre sur [start, end[ gagne ; tout occupé → piste du
+// personnage, sinon 1re
 function findFreeTrack(start, end, characterId) {
+  const pref = getChar(characterId)?.prefTrack
+  if (pref != null && pref < laneCount()) return pref
   const counts = new Map()
   for (const l of project.lines) if (l.characterId === characterId) counts.set(l.track, (counts.get(l.track) || 0) + 1)
   const charTracks = [...counts.keys()].filter((tr) => tr < laneCount()).sort((a, b) => counts.get(b) - counts.get(a) || a - b)
@@ -953,17 +983,22 @@ function refreshMultiInspector(lines) {
   btn.classList.toggle('mixed', off > 0 && off < lines.length)
 }
 
+let insShownId = null // réplique affichée dans l'inspecteur : si elle change, les
+// champs sont réécrits même focalisés (la garde ne protège que la frappe en cours)
 function refreshInspector() {
   const line = singleSelected()
   const multi = !line && selectedIds.size > 1
   ins.el.classList.toggle('empty', !line && !multi)
   ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
-  if (multi) { refreshMultiInspector(selectedLines()); return }
+  if (multi) { insShownId = null; refreshMultiInspector(selectedLines()); return }
   if (!line) {
+    insShownId = null
     $('insEmpty').textContent = t('insEmpty')
     return
   }
+  const changed = insShownId !== line.id
+  insShownId = line.id
   ins.char.innerHTML = ''
   for (const c of project.characters) {
     const o = document.createElement('option')
@@ -977,9 +1012,9 @@ function refreshInspector() {
   ins.entry.value = line.entry || ''
   ins.exit.value = line.exit || ''
   ins.voiceOff.classList.toggle('active', !!line.voiceOff)
-  if (document.activeElement !== ins.text) ins.text.value = line.words.map((w) => w.text).join(' ')
-  if (document.activeElement !== ins.start) ins.start.value = formatTc(lineStart(line), project.fps)
-  if (document.activeElement !== ins.end) ins.end.value = formatTc(lineEnd(line), project.fps)
+  if (changed || document.activeElement !== ins.text) ins.text.value = line.words.map((w) => w.text).join(' ')
+  if (changed || document.activeElement !== ins.start) ins.start.value = formatTc(lineStart(line), project.fps)
+  if (changed || document.activeElement !== ins.end) ins.end.value = formatTc(lineEnd(line), project.fps)
 }
 
 ins.char.addEventListener('change', () => {
@@ -2400,7 +2435,7 @@ function renderBand(c, now, W, H, pps, opts) {
           const hov = hoverEdge && hoverEdge.lineId === line.id &&
             ((hoverEdge.wi === ed.wi && hoverEdge.type === ed.type) ||
               (hoverEdge.type === 'start' && ed.type === 'end' && hoverEdge.wi === ed.wi + 1))
-          const stretch = hov && isExtreme && !hoverEdge.ctrl
+          const stretch = hov && !hoverEdge.ctrl
 
           // ligne guide sur toute la hauteur de la piste
           c.strokeStyle = hov ? pal.handleAccent : pal.handle + '55'
@@ -2426,7 +2461,8 @@ function renderBand(c, now, W, H, pps, opts) {
           c.lineTo(hx + 1.5, ky + kh - 4)
           c.stroke()
 
-          // Ctrl sur une extrémité : chevrons « étirement proportionnel »
+          // sans Ctrl : chevrons « proportionnel » (extrémité = toute la réplique,
+          // frontière interne = le texte du côté opposé se compresse / s'étend)
           if (stretch) {
             c.strokeStyle = pal.handleAccent
             c.lineWidth = 1.5
@@ -2521,12 +2557,12 @@ function updateSubOverlay() {
   el.hidden = false
 }
 
-// pendant l'ajustement d'une frontière de mot (ou l'étirement Ctrl) : ligne
+// pendant l'ajustement d'une frontière de mot ou l'étirement d'un bord : ligne
 // guide bleue sur toute la bande + timecode de la frontière dans la règle
 function drawDragGuide() {
   if (!drag) return
   let tt = null
-  if (drag.kind === 'edge') tt = drag.line.words[drag.wi][drag.type]
+  if (drag.kind === 'edge' || drag.kind === 'squeeze') tt = drag.line.words[drag.wi][drag.type]
   else if (drag.kind === 'scale') tt = drag.fromStart ? lineStart(drag.line) : lineEnd(drag.line)
   if (tt == null) return
   const pal = bandPal()
@@ -2759,8 +2795,8 @@ canvas.addEventListener('pointerdown', (e) => {
         anchor: isFirst ? lineEnd(line) : lineStart(line),
       }
       canvas.style.cursor = 'col-resize'
-    } else {
-      // ctrl sur un bord extrême, ou frontière interne : ajuste seulement ce mot
+    } else if (e.ctrlKey || e.metaKey) {
+      // ctrl : ajuste seulement ce mot (la frontière ne décale que le voisin)
       // shared boundary with neighbour word (contiguous) → move both
       let alsoWi = -1
       let alsoType = null
@@ -2770,6 +2806,12 @@ canvas.addEventListener('pointerdown', (e) => {
         alsoWi = hit.wi - 1; alsoType = 'end'
       }
       drag = { kind: 'edge', line, wi: hit.wi, type: hit.type, alsoWi, alsoType, x0: x }
+      canvas.style.cursor = 'ew-resize'
+    } else {
+      // frontière interne sans modificateur : le mot s'étire et tout le texte du
+      // côté opposé se compresse / s'étend proportionnellement — les bornes de la
+      // réplique ne bougent pas
+      drag = { kind: 'squeeze', line, wi: hit.wi, type: hit.type, snapshot: line.words.map((wd) => ({ ...wd })) }
       canvas.style.cursor = 'ew-resize'
     }
   } else if (hit.kind === 'line') {
@@ -2867,6 +2909,37 @@ canvas.addEventListener('pointermove', (e) => {
         w.start = anchor + (snapshot[i].start - anchor) * k
         w.end = anchor + (snapshot[i].end - anchor) * k
       })
+    }
+    markDirty()
+    refreshInspector()
+  } else if (drag.kind === 'squeeze') {
+    // frontière déplacée librement : les mots du côté opposé sont recalés
+    // proportionnellement entre la frontière et la borne (fixe) de la réplique
+    if (!drag.pushed) { pushUndo(); drag.pushed = true }
+    const { line, snapshot, wi, type } = drag
+    let t = timeAtX(x, effectiveTime())
+    if (magnetOn) t = magnetSnapTime(t, line.id)
+    const MIN = 0.06
+    if (type === 'end') {
+      const endT = snapshot[snapshot.length - 1].end
+      const b0 = snapshot[wi].end
+      t = clamp(t, snapshot[wi].start + MIN, endT - MIN * (snapshot.length - 1 - wi))
+      const k = (endT - t) / Math.max(0.001, endT - b0)
+      line.words[wi].end = t
+      for (let j = wi + 1; j < line.words.length; j++) {
+        line.words[j].start = endT - (endT - snapshot[j].start) * k
+        line.words[j].end = endT - (endT - snapshot[j].end) * k
+      }
+    } else {
+      const startT = snapshot[0].start
+      const b0 = snapshot[wi].start
+      t = clamp(t, startT + MIN * wi, snapshot[wi].end - MIN)
+      const k = (t - startT) / Math.max(0.001, b0 - startT)
+      line.words[wi].start = t
+      for (let j = 0; j < wi; j++) {
+        line.words[j].start = startT + (snapshot[j].start - startT) * k
+        line.words[j].end = startT + (snapshot[j].end - startT) * k
+      }
     }
     markDirty()
     refreshInspector()
@@ -3327,7 +3400,7 @@ async function newProjectAction() {
   window.api.cancelProxy()
   video.removeAttribute('src')
   video.load()
-  $('dropHint').style.display = ''
+  setDropHint()
   updateVideoInfoPanel()
   renderChars()
   panelH = null // nouveau projet → dock à la hauteur max
@@ -3343,6 +3416,14 @@ async function newProjectAction() {
   if (activeTab === 'tracks') renderTracks()
   setClean()
   updateDiscordActivity()
+}
+
+// invite « Glisse une vidéo ici » — textes par défaut, ou message personnalisé
+// (vidéo du projet introuvable)
+function setDropHint(main, sub) {
+  $('dropHintMain').textContent = main || t('dropMain')
+  $('dropHintSub').textContent = sub || t('dropSub')
+  $('dropHint').style.display = ''
 }
 
 async function setVideo(path, url) {
@@ -3448,6 +3529,12 @@ async function loadProjectData(data, path) {
       buildWaveform()
       generateProxy(project.videoPath) // tâche de fond ; bascule sur le proxy quand prêt
     } else {
+      // vidéo introuvable : lecteur vidé (l'ancienne vidéo ne doit pas rester
+      // affichée) + invite persistante — le toast seul disparaît trop vite
+      video.removeAttribute('src')
+      video.load()
+      setDropHint(t('videoNotFoundHint'), t('videoNotFoundSub'))
+      updateVideoInfoPanel()
       toast(t('videoNotFound', project.videoPath))
     }
   }

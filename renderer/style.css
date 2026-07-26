@@ -490,6 +490,21 @@ button.active {
   padding: 0 5px;
   cursor: text;
 }
+/* piste préférée du personnage : select minuscule, fondu dans la ligne (bordure
+   transparente au repos), valeur teintée quand une piste est forcée */
+.char-row .pref {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 3px;
+  font-size: 11px;
+  color: var(--dim);
+  background: transparent;
+  border-color: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.char-row:hover .pref, .char-row.selected .pref { border-color: var(--border); background: var(--panel2); }
+.char-row .pref.set { color: var(--text); font-weight: 600; }
 .char-row .edit, .char-row .x,
 .loop-row .edit, .loop-row .x,
 .plan-row .edit, .plan-row .x {

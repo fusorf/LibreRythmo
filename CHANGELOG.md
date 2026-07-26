@@ -3,6 +3,30 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.7.2] - 2026-07-26
+
+### Ajouts
+- **Piste préférée par personnage** : menu compact P1–P4 sur chaque ligne du panneau
+  Personnages — les nouvelles répliques du personnage vont en priorité sur cette
+  piste ; « – » (défaut) ou piste non affichée dans le projet = placement
+  automatique habituel (piste où le personnage figure déjà, sinon première libre).
+
+### Corrections
+- **Inspecteur** : champ texte actif + clic sur une autre réplique → le champ
+  gardait l'ancien texte (qui pouvait alors écraser la réplique nouvellement
+  sélectionnée à la frappe). Les champs texte / début / fin suivent désormais le
+  changement de réplique même quand ils ont le focus.
+- **Vidéo de projet introuvable** : le lecteur est vidé (une vidéo chargée
+  précédemment restait affichée avec les répliques du nouveau projet) et l'invite
+  « Vidéo du projet introuvable — glisse la vidéo ici… » reste visible, au lieu
+  d'un simple toast de 2 secondes.
+
+### Ajustements
+- **Redimensionnement des mots** : glisser une frontière compresse / étend
+  proportionnellement tout le texte du côté opposé, sans bouger les bornes de la
+  réplique ; Ctrl + glisser retrouve l'ancien comportement (seuls le mot et son
+  voisin bougent). Chevrons de survol et guide mis à jour.
+
 ## [2.7.1] - 2026-07-08
 
 ### Ajustements
