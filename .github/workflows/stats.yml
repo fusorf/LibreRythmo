@@ -1,0 +1,39 @@
+# Journalise chaque jour le total de téléchargements (toutes releases) dans
+# stats/downloads.json, pour tracer une courbe plus tard. N'affecte pas le
+# déploiement du site (le fichier est hors website/, donc pages.yml ne se relance pas).
+name: Download stats
+
+on:
+  schedule:
+    - cron: '17 4 * * *' # tous les jours 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stats
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Collect download total
+        run: node website/collect-stats.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stats/downloads.json
+          git diff --cached --quiet || git commit -m "chore(stats): log daily download total"
+          git push

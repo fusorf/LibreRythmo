@@ -17,6 +17,13 @@ scripts/cdp-readme*.js
 # documents de travail (roadmaps versionnées) — non distribués
 ROADMAP-v*.md
 
+# site vitrine : sortie générée + artefacts de preview locaux
+website/dist/
+website/preview-*.png
+website/slice-*.png
+website/.chrome-tmp/
+website/.frames/
+
 # assistants IA (configs et caches locaux)
 .claude/
 CLAUDE.md

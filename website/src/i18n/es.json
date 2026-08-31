@@ -1,0 +1,147 @@
+{
+  "lang": "es",
+  "locale": "es_ES",
+  "meta": {
+    "title": "LibreRythmo: Editor de banda rítmica gratis para doblaje",
+    "description": "LibreRythmo es un editor de banda rítmica libre y gratuito para doblaje. Sincroniza el texto bajo la imagen fotograma a fotograma, reproduce 4K sin tirones y exporta un vídeo compuesto, un guion PDF, un DETX o subtítulos. Windows, macOS y Linux.",
+    "keywords": "banda rítmica, editor banda rítmica, software doblaje gratis, doblaje sincronización, sincronía labial, DETX, fandub, herramienta de doblaje, ritmo banda doblaje, guion de doblaje"
+  },
+  "nav": {
+    "features": "Funciones",
+    "faq": "FAQ",
+    "download": "Descargar",
+    "github": "GitHub"
+  },
+  "hero": {
+    "badge": "Libre y gratis · Windows · macOS · Linux",
+    "title": "La banda rítmica simple y gratis.",
+    "subtitle": "La forma más fluida de diseñar una banda rítmica: sincronía al fotograma, scrub deslizado incluso en 4K, reacciones con una tecla y exportación DETX, PDF o MP4 en un clic. **Gratis**, **muy rápido**, **sin límite de tamaño de vídeo**. Windows, macOS y Linux.",
+    "ctaPrimary": "Descargar para {os}",
+    "ctaSecondary": "Todas las plataformas y código",
+    "release": "{version} · publicado el {date}"
+  },
+  "what": {
+    "kicker": "¿Qué es una banda rítmica?",
+    "title": "La herramienta de doblaje que muestra cada sílaba.",
+    "body": "La banda rítmica es la franja de texto que se desplaza bajo la imagen en un estudio de doblaje, estirada para que cada palabra caiga justo en los labios del actor. Así los doblajes quedan perfectamente sincronizados. LibreRythmo lleva esa técnica de estudio a todo el mundo: sin suscripción, sin límite de duración de vídeo, sin interfaces anticuadas."
+  },
+  "features": [
+    {
+      "kicker": "Precisión al fotograma",
+      "title": "Timing a la palabra, pegado a los labios.",
+      "body": "El timing se ajusta a la palabra y cada límite encaja en los labios, al fotograma, con el imán ayudando a enganchar. Para ir rápido, la multiselección cambia el personaje, la fuente o la voz en off en decenas de líneas a la vez, el estirado proporcional mantiene todo cuadrado en 1 a 4 pistas, y los silencios ajustables entran donde haga falta. La sincronía más fina posible, sin pelearse con la herramienta.",
+      "img": "screenshot-sync.webp",
+      "alt": "Ajuste de palabras al fotograma en la banda rítmica de LibreRythmo"
+    },
+    {
+      "kicker": "Desplazamiento deslizado",
+      "title": "Scrub suavísimo, incluso en 4K o HEVC.",
+      "body": "La rueda desliza la banda al ritmo del sonido, fotograma a fotograma, sin un tirón. Un proxy 720p creado y cacheado en segundo plano hace instantánea cualquier fuente en cualquier códec, mientras la exportación parte del original a máxima calidad. La respuesta es inmediata: el diseño va a la velocidad del pensamiento.",
+      "img": "screenshot-player.webp",
+      "alt": "Reproducción a pantalla completa de LibreRythmo con la banda rítmica compuesta"
+    },
+    {
+      "kicker": "Personajes y reacciones",
+      "title": "Reacciones con una tecla, fuentes dentro del proyecto.",
+      "body": "Una reacción (ah, oh, fff, (risa)…) entra con una sola tecla o desde la paleta, una línea puede pasar a voz en off subrayada, y cada actor tiene su color. Cada línea puede llevar además su propia fuente: cualquier TTF/OTF se incrusta en el .rythmo, que conserva sus fuentes al compartirlo, junto a las fuentes libres incluidas (Inter, Oswald, Comfortaa, Anton).",
+      "img": "screenshot-characters.webp",
+      "alt": "Panel de personajes y paleta de reacciones en LibreRythmo"
+    },
+    {
+      "kicker": "Escenas y planos",
+      "title": "Detección automática de planos, estadísticas de escena en vivo.",
+      "body": "LibreRythmo detecta solo los cambios de plano (ffmpeg) y coloca marcas en la línea de tiempo: no se escapa ningún corte. Las escenas traen contadores en vivo (líneas, duración, personajes), los segmentos OUT señalan los pasajes sin nada que doblar y la navegación salta de escena en escena con el teclado.",
+      "img": "screenshot-scenes.webp",
+      "alt": "Marcadores de escena y detección de planos en la línea de tiempo de LibreRythmo"
+    },
+    {
+      "kicker": "Formatos pro",
+      "title": "DETX, PDF, subtítulos, MP4 por GPU: entrega en un clic.",
+      "body": "Por un lado, DETX (Joker / Cappella) y SRT / ASS / VTT; por otro, un guion PDF, un DETX, subtítulos o un vídeo MP4 totalmente compuesto y codificado en la GPU (NVENC, QuickSync, AMF, x264 de reserva), a la tasa de fotogramas elegida, con pistas, escenas y audio seleccionados. La entrega llega en el formato exacto que el estudio espera.",
+      "img": "screenshot-export.webp",
+      "alt": "Exportación MP4 con codificación GPU en LibreRythmo"
+    }
+  ],
+  "why": {
+    "kicker": "Por qué LibreRythmo",
+    "title": "Creado por un apasionado del doblaje, para todos.",
+    "body": "LibreRythmo nació porque cada herramienta existente era demasiado antigua, poco ergonómica o encerrada tras una suscripción que limitaba la duración del vídeo. Los ordenadores de hoy pueden hacerlo mucho mejor, así que este está muy optimizado y es totalmente gratuito.",
+    "points": [
+      {
+        "title": "Gratis para siempre",
+        "body": "Sin suscripción, sin límite de duración, sin muro de pago. Libre, bajo licencia GPL-3."
+      },
+      {
+        "title": "Rápido y ligero",
+        "body": "Muy optimizado para seguir fluido incluso en un equipo normal, de la edición a la exportación."
+      },
+      {
+        "title": "Hecho para creadores",
+        "body": "Ideal para comunidades de fandub, asociaciones y trabajo semiprofesional: admite los estándares profesionales."
+      },
+      {
+        "title": "Evoluciona rápido",
+        "body": "Un proyecto joven que avanza deprisa. Los comentarios de los usuarios orientan directamente lo que viene."
+      }
+    ]
+  },
+  "faq": {
+    "kicker": "FAQ",
+    "title": "Preguntas, respondidas.",
+    "items": [
+      {
+        "q": "¿Qué es un editor de banda rítmica?",
+        "a": "Un editor de banda rítmica permite escribir el diálogo en una franja que se desplaza bajo el vídeo y estirar cada palabra para que coincida con los labios del actor. Es la técnica estándar del doblaje. LibreRythmo es un editor de banda rítmica libre y gratuito para Windows, macOS y Linux."
+      },
+      {
+        "q": "¿LibreRythmo es realmente gratis?",
+        "a": "Sí. LibreRythmo es totalmente gratuito y de código abierto bajo licencia GPL-3, sin suscripción, sin marca de agua y sin límite de duración de vídeo. Seguirá siendo gratis para siempre."
+      },
+      {
+        "q": "¿Qué puedo exportar?",
+        "a": "Un vídeo MP4 compuesto con codificación GPU, un guion de doblaje en PDF, un archivo DETX (compatible con Joker y Cappella) y subtítulos (SRT / ASS / VTT). Las pistas, las escenas, la pista de audio y la tasa de fotogramas son seleccionables."
+      },
+      {
+        "q": "¿Qué plataformas admite?",
+        "a": "Windows (instalador o zip portable), macOS (.dmg Apple Silicon) y Linux (AppImage, .deb y .pacman)."
+      },
+      {
+        "q": "¿Puede con material 4K o HEVC?",
+        "a": "Sí. LibreRythmo crea un proxy 720p en caché en segundo plano para que las fuentes 4K y HEVC pesadas sigan fluidas mientras se edita, y regenera la exportación desde el original a máxima calidad."
+      },
+      {
+        "q": "¿Es una buena alternativa a las herramientas de doblaje de pago?",
+        "a": "LibreRythmo admite formatos estándar de la industria como DETX y exporta guiones PDF profesionales, así que encaja en flujos amateur, fandub y semiprofesional, sin el coste ni los límites de duración de muchas herramientas de pago o en línea."
+      }
+    ]
+  },
+  "download": {
+    "kicker": "Descargar",
+    "title": "Consigue LibreRythmo",
+    "subtitle": "Gratis, sin cuenta, sin límites. Una versión para cada plataforma.",
+    "current": "Última versión {version} · publicada el {date}",
+    "downloads": "Descargado {count} veces",
+    "platforms": {
+      "windows": "Windows",
+      "macos": "macOS",
+      "linux": "Linux"
+    },
+    "labels": {
+      "windows-installer": "Instalador (.exe)",
+      "windows-portable": "Portable (.zip)",
+      "macos-arm": "Apple Silicon (.dmg)",
+      "macos-intel": "Intel (.dmg)",
+      "linux-appimage": "AppImage",
+      "linux-deb": "Debian / Ubuntu (.deb)",
+      "linux-pacman": "Arch (.pacman)"
+    },
+    "allReleases": "Todas las versiones y changelog"
+  },
+  "footer": {
+    "tagline": "Editor de banda rítmica libre y gratuito para doblaje.",
+    "made": "Creado por",
+    "contact": "Comentarios y contacto:",
+    "license": "GPL-3.0 · Código en GitHub",
+    "nav": "Navegación"
+  }
+}

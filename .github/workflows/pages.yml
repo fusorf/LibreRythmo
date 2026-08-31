@@ -1,0 +1,60 @@
+# Déploie le site vitrine (website/) sur GitHub Pages.
+#  - à chaque push sur main touchant le site → rebuild + déploiement
+#  - à chaque release publiée → rebuild (numéro de version, date et liens de DL à jour)
+#  - cron hebdomadaire + déclenchement manuel → filet de sécurité
+# Prérequis (une seule fois) : Settings → Pages → Source = "GitHub Actions".
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/pages.yml'
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 6 * * 1' # tous les lundis 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# une seule exécution à la fois ; ne pas annuler un déploiement en cours
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build site
+        run: node website/build.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Domaine custom plus tard : décommenter et adapter (et ajouter un fichier website/dist/CNAME).
+          # SITE_ORIGIN: https://librerythmo.com
+          # SITE_BASE: ''
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

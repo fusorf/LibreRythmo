@@ -1,0 +1,147 @@
+{
+  "lang": "en",
+  "locale": "en_US",
+  "meta": {
+    "title": "LibreRythmo: Free rythmo band editor for dubbing",
+    "description": "LibreRythmo is a free, open-source rythmo band editor for dubbing. Sync dialogue to picture frame by frame, preview 4K footage smoothly, and export a composited video, PDF script, DETX or subtitles. Windows, macOS and Linux.",
+    "keywords": "rythmo band editor, free dubbing software, dubbing editor, lip sync software, DETX editor, fandub tool, rythmo band software, dub script editor, open source dubbing"
+  },
+  "nav": {
+    "features": "Features",
+    "faq": "FAQ",
+    "download": "Download",
+    "github": "GitHub"
+  },
+  "hero": {
+    "badge": "Free & open-source · Windows · macOS · Linux",
+    "title": "The simple, free rythmo band editor.",
+    "subtitle": "The smoothest way to design a rythmo band: frame-perfect sync, glide scrubbing even in 4K, reactions on a keystroke, and one-click DETX, PDF or MP4 export. **Free**, **blazing fast**, **no video length limit**. Windows, macOS and Linux.",
+    "ctaPrimary": "Download for {os}",
+    "ctaSecondary": "All platforms & source",
+    "release": "{version} · released {date}"
+  },
+  "what": {
+    "kicker": "What is a rythmo band?",
+    "title": "The dubbing tool that shows every syllable.",
+    "body": "A rythmo band is the scrolling strip of text that runs under the picture in a dubbing studio, stretched so each word lands exactly on the actor's lips. It's how professional dubs stay perfectly in sync. LibreRythmo brings that studio technique to everyone: no subscription, no video length limit, no dated interface."
+  },
+  "features": [
+    {
+      "kicker": "Frame-perfect",
+      "title": "Timing to the word, locked to the lips.",
+      "body": "Timing adjusts to the word, and each boundary lines up on the lips down to the frame, with the magnet snapping in to help. For speed, multi-select changes the character, font or voice-over across dozens of lines at once, proportional stretch keeps everything aligned across 1 to 4 tracks, and adjustable silences slot in wherever needed. The tightest sync possible, without fighting the tool.",
+      "img": "screenshot-sync.webp",
+      "alt": "Adjusting words down to the frame on the LibreRythmo rythmo band"
+    },
+    {
+      "kicker": "Glide scrubbing",
+      "title": "Butter-smooth scrub, even in 4K or HEVC.",
+      "body": "The wheel glides the band along the sound, frame by frame, without a hitch. A 720p proxy built and cached in the background makes any source instant in any codec, while the export re-renders from the full-quality original. Feedback is immediate, so design keeps pace with thought.",
+      "img": "screenshot-player.webp",
+      "alt": "LibreRythmo fullscreen playback with the composited rythmo band"
+    },
+    {
+      "kicker": "Characters & reactions",
+      "title": "Reactions on a keystroke, fonts baked into the project.",
+      "body": "A reaction (ah, oh, fff, laughter…) goes in on a single key or from the palette, a line can turn into underlined voice-over, and every actor has a color. Any line can also carry its own font: any TTF/OTF embeds into the .rythmo, which keeps its fonts once shared, alongside the bundled open-source faces (Inter, Oswald, Comfortaa, Anton).",
+      "img": "screenshot-characters.webp",
+      "alt": "Character panel and reaction palette in LibreRythmo"
+    },
+    {
+      "kicker": "Scenes & shots",
+      "title": "Automatic shot detection, live scene stats.",
+      "body": "LibreRythmo finds shot changes on its own (ffmpeg) and drops markers on the timeline, so no cut slips by. Scenes come with live counters (lines, duration, characters), OUT segments flag the passages with nothing to dub, and navigation jumps scene to scene from the keyboard.",
+      "img": "screenshot-scenes.webp",
+      "alt": "Scene markers and shot detection on the LibreRythmo timeline"
+    },
+    {
+      "kicker": "Pro formats",
+      "title": "DETX, PDF, subtitles, GPU MP4: deliver in one click.",
+      "body": "In come DETX (Joker / Cappella) and SRT / ASS / VTT; out go a PDF script, a DETX, subtitles, or a fully composited MP4 encoded on the GPU (NVENC, QuickSync, AMF, x264 fallback), at a chosen frame rate, with tracks, scenes and audio selected. Delivery lands in the exact format the studio expects.",
+      "img": "screenshot-export.webp",
+      "alt": "MP4 export with GPU encoding in LibreRythmo"
+    }
+  ],
+  "why": {
+    "kicker": "Why LibreRythmo",
+    "title": "Built by a dubbing fan, for everyone.",
+    "body": "LibreRythmo started because every existing tool was too old, too clumsy, or locked behind a subscription that capped how long a video could be. Modern computers can do so much better, so this one is heavily optimized and completely free.",
+    "points": [
+      {
+        "title": "Free forever",
+        "body": "No subscription, no video length limit, no paywall. Open-source under the GPL-3 license."
+      },
+      {
+        "title": "Fast and light",
+        "body": "Heavily optimized to stay fluid even on ordinary machines, from editing to export."
+      },
+      {
+        "title": "Made for makers",
+        "body": "Ideal for fandub communities, associations and semi-pro work: it supports the professional standards."
+      },
+      {
+        "title": "Evolving quickly",
+        "body": "This is a young project that ships fast. User feedback directly shapes what comes next."
+      }
+    ]
+  },
+  "faq": {
+    "kicker": "FAQ",
+    "title": "Questions, answered.",
+    "items": [
+      {
+        "q": "What is a rythmo band editor?",
+        "a": "A rythmo band editor lets you write dialogue on a scrolling strip beneath the video and stretch each word so it matches the actor's lips exactly. It's the standard technique for dubbing and voice-over localization. LibreRythmo is a free, open-source rythmo band editor for Windows, macOS and Linux."
+      },
+      {
+        "q": "Is LibreRythmo really free?",
+        "a": "Yes. LibreRythmo is completely free and open-source under the GPL-3 license, with no subscription, no watermark and no limit on video length. It will stay free forever."
+      },
+      {
+        "q": "What can I export?",
+        "a": "A composited MP4 video with GPU encoding, a PDF dubbing script, a DETX file (compatible with Joker and Cappella), and subtitles (SRT / ASS / VTT). The tracks, scenes, audio track and output frame rate are all selectable."
+      },
+      {
+        "q": "Which platforms are supported?",
+        "a": "Windows (installer or portable zip), macOS (Apple Silicon .dmg) and Linux (AppImage, .deb and .pacman)."
+      },
+      {
+        "q": "Can it handle 4K or HEVC footage?",
+        "a": "Yes. LibreRythmo builds a cached 720p proxy in the background so heavy 4K and HEVC sources stay smooth while editing, and re-renders the export from the full-quality original."
+      },
+      {
+        "q": "Is it a good alternative to paid dubbing tools?",
+        "a": "LibreRythmo supports industry-standard formats like DETX and exports professional PDF scripts, so it fits amateur, fandub and semi-professional workflows, without the cost or the video length limits of many paid or online tools."
+      }
+    ]
+  },
+  "download": {
+    "kicker": "Download",
+    "title": "Get LibreRythmo",
+    "subtitle": "Free, no account, no limits. A build for every platform.",
+    "current": "Latest version {version} · released {date}",
+    "downloads": "Downloaded {count} times",
+    "platforms": {
+      "windows": "Windows",
+      "macos": "macOS",
+      "linux": "Linux"
+    },
+    "labels": {
+      "windows-installer": "Installer (.exe)",
+      "windows-portable": "Portable (.zip)",
+      "macos-arm": "Apple Silicon (.dmg)",
+      "macos-intel": "Intel (.dmg)",
+      "linux-appimage": "AppImage",
+      "linux-deb": "Debian / Ubuntu (.deb)",
+      "linux-pacman": "Arch (.pacman)"
+    },
+    "allReleases": "All releases & changelog"
+  },
+  "footer": {
+    "tagline": "Free, open-source rythmo band editor for dubbing.",
+    "made": "Made by",
+    "contact": "Feedback and contact:",
+    "license": "GPL-3.0 · Source on GitHub",
+    "nav": "Navigation"
+  }
+}
