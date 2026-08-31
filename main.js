@@ -907,8 +907,13 @@ ipcMain.handle('ensure-proxy', (e, src) => {
     const tmp = out + '.part'
     let dur = 0
     let logTail = ''
-    // -f mp4 : l'extension temporaire .part n'est pas reconnue par ffmpeg → format forcé
-    const args = ['-y', '-i', src, '-vf', 'scale=-2:720', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac', '-movflags', '+faststart', '-f', 'mp4', tmp]
+    // -map 0:V:0? : la VRAIE piste vidéo (V majuscule exclut les images attachées type
+    //   pochette mjpeg des .mkv) ; -map 0:a:0? : la 1re piste audio ; -sn -dn : pas de
+    //   sous-titres/données. format=yuv420p + -pix_fmt yuv420p : force le 8-bit — une source
+    //   HEVC/H.264 10 bits (fréquent sur les .mkv d'anime « 10bits ») donnerait sinon un
+    //   proxy H.264 High 10 que Chromium ne sait pas décoder → image figée/noire, tout
+    //   décalé. -f mp4 : l'extension .part n'est pas reconnue par ffmpeg → format forcé.
+    const args = ['-y', '-i', src, '-map', '0:V:0?', '-map', '0:a:0?', '-sn', '-dn', '-vf', 'scale=-2:720,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ac', '2', '-movflags', '+faststart', '-f', 'mp4', tmp]
     proxyProc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
     proxyProc.stderr.on('data', (d) => {
       const s = String(d); logTail = (logTail + s).slice(-2000)

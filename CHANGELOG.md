@@ -3,6 +3,23 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.7.3] - 2026-08-31
+
+### Corrections
+- **Forme d'onde / scrub décalés du son au chargement** : la forme d'onde était
+  construite avant le sondage des pistes audio embarquées et retombait sur le
+  décodage du conteneur brut (`.mkv`) par le navigateur, dont le rééchantillonnage
+  48 kHz → 16 kHz dérivait progressivement (jusqu'à plusieurs secondes d'avance en
+  fin de vidéo). Elle est désormais (re)construite une fois les pistes connues, à
+  partir de l'extraction ffmpeg de la piste active — calée sur la lecture, sans
+  dérive. Toute piste embarquée (la première comprise) passe par cette extraction,
+  au lieu de laisser `decodeAudioData` décoder le conteneur.
+- **Proxy vidéo 10 bits** : une source 10 bits (HEVC ou H.264 « 10bits », fréquent
+  sur les `.mkv`) produisait un proxy H.264 High 10 que Chromium ne sait pas décoder
+  (image figée / noire). Le proxy est désormais forcé en 8 bits (`format=yuv420p`) et
+  ne mappe que la vraie piste vidéo + la première piste audio (les images de
+  couverture et pistes de sous-titres/données sont exclues).
+
 ## [2.7.2] - 2026-07-26
 
 ### Ajouts

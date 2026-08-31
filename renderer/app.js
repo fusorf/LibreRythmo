@@ -1721,6 +1721,11 @@ async function probeAndSyncAudio() {
   project.audioTracks = [...embedded, ...externals]
   if (!audioById(project.activeAudioId)) project.activeAudioId = (embedded[0] || externals[0] || {}).id || null
   if (activeTab === 'tracks') renderTracks()
+  // (re)construit la forme d'onde MAINTENANT que les pistes sont connues : buildWaveform()
+  // est appelé au chargement AVANT ce sondage (audioTracks encore vide), ce qui le faisait
+  // retomber sur le conteneur .mkv brut → decodeAudioData qui dérive. Ici la piste active
+  // est une vraie piste embarquée → extraction ffmpeg propre, calée sur la lecture.
+  buildWaveform()
 }
 
 // renderTracks = en-têtes (gauche) + (re)dimensionnement du canvas timeline
@@ -2060,16 +2065,27 @@ async function buildWaveform() {
   const token = ++waveToken
   syncPlaybackAudio() // la lecture suit aussi la piste active
   // forme d'onde de la piste active : fichier externe → le fichier ; piste embarquée
-  // > 0 → extraite en WAV (Chromium ne décode que la 1re piste) ; sinon la vidéo.
+  // (index 0 compris) → extraite en WAV 16 kHz par ffmpeg ; sinon la vidéo.
   const a = (typeof activeAudioTrack === 'function' && activeAudioTrack()) || null
   waveOffset = (a && a.offset) || 0
   let src = null
   let isVideoDefault = false
   if (a && a.type === 'file') {
     src = a.path
-  } else if (a && a.type === 'embedded' && a.index > 0) {
+  } else if (a && a.type === 'embedded') {
+    // Toute piste embarquée passe par l'extraction ffmpeg — on ne feed JAMAIS le
+    // conteneur .mkv brut à decodeAudioData : sur certains fichiers (audio 48 kHz),
+    // son rééchantillonnage interne 48→16 kHz DÉRIVE (audio compressé de ~0,35 %,
+    // soit plusieurs secondes d'avance en fin de vidéo ; forme d'onde et scrub
+    // décalés de la lecture). Le WAV 16 kHz d'ffmpeg conserve la durée exacte.
     src = await window.api.extractAudioTrack(project.videoPath, a.index)
     if (token !== waveToken) return
+    // panneau info : nb de canaux réels de la piste par défaut via le sondage
+    // (l'extraction est mono, donc audio.numberOfChannels ne le reflète pas)
+    if (a.index === 0 && a.channels) {
+      videoInfo = Object.assign(videoInfo || {}, { channels: a.channels })
+      updateVideoInfoPanel()
+    }
   } else {
     src = project.videoPath
     isVideoDefault = true
