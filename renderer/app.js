@@ -104,10 +104,10 @@ let selectedCharId = null
 let selectedIds = new Set() // sélection multiple ; l'inspecteur n'apparaît que pour 1 réplique
 const singleSelected = () => (selectedIds.size === 1 ? getLine([...selectedIds][0]) : null)
 // Zoom exprimé en SECONDES VISIBLES sur la largeur de la bande ; pxPerSec en découle
-// (recomputePps) selon la largeur courante. Dézoom max = 10 s, défaut = 5 s, zoom max = 1 s.
-let secondsVisible = 5
-const SEC_MAX = 10 // dézoomé au maximum
-const SEC_MIN = 3 // zoomé au maximum
+// (recomputePps) selon la largeur courante. Dézoom max = 5 s, défaut = 3 s, zoom max = 1,8 s.
+let secondsVisible = 3
+const SEC_MAX = 5 // dézoomé au maximum
+const SEC_MIN = 1.8 // zoomé au maximum
 let pxPerSec = 120
 function recomputePps() {
   if (cw > 0) pxPerSec = cw / clamp(secondsVisible, SEC_MIN, SEC_MAX)
@@ -116,6 +116,7 @@ function recomputePps() {
 // Hauteur de piste FIXE : une piste a toujours la même hauteur. Moins de pistes =
 // bande plus courte en bas (la vidéo récupère la place).
 const LANE_H = 76
+const NEW_LINE_DUR = 1 // durée (s) par défaut d'une nouvelle réplique
 const bandHeightFor = (n) => Math.round(RULER_H + n * LANE_H)
 
 // Panneau du bas redimensionnable. Une poignée unique en haut du dock (#panelResizer,
@@ -133,7 +134,12 @@ function measureChrome() {
   // l'inspecteur est masqué sur l'onglet Pistes : on mémorise sa hauteur quand il est visible
   if (!inspector.classList.contains('hidden') && inspector.offsetHeight) measureChrome._ins = inspector.offsetHeight
   const ins = inspector.classList.contains('hidden') ? (measureChrome._ins || 44) : inspector.offsetHeight
-  if (tr && tb) chromeH = tr + tb + ins
+  // la barre de progression (#seekBar, ajoutée en 2.7.1) est un enfant du dock au-dessus du
+  // transport : sa hauteur doit entrer dans le chrome, sinon autoPanelH la sous-estime et le
+  // drag-up max laisse une barre de défilement verticale au niveau des pistes. 0 si masquée.
+  const seek = $('seekBar')
+  const sb = seek.classList.contains('hidden') ? 0 : seek.offsetHeight
+  if (tr && tb) chromeH = tr + tb + ins + sb
 }
 // hauteur « naturelle » du dock = chrome + toutes les pistes rythmo visibles. Même référence
 // sur les deux onglets : l'onglet Pistes garde donc EXACTEMENT la hauteur de l'onglet Rythmo
@@ -830,7 +836,7 @@ function addLineAt(start, track, text, dur) {
   pushUndo()
   if (!project.characters.length) addCharacter()
   start = Math.max(0, start)
-  const end = start + (dur || 2)
+  const end = start + (dur || NEW_LINE_DUR)
   const characterId = selectedCharId || project.characters[0].id
   const line = {
     id: uid(),
@@ -2358,11 +2364,18 @@ function renderBand(c, now, W, H, pps, opts) {
     const y = rh + row * th
     const selected = opts.handles && selectedIds.has(line.id)
 
-    c.fillStyle = color + '22'
-    c.beginPath()
-    c.roundRect(x0, y + 3, Math.max(4, x1 - x0), th - 6, 5)
-    c.fill()
+    // fond coloré du bloc de réplique : uniquement dans l'éditeur (opts.blocks).
+    // À l'export, dans la preview d'export et en mode lecture plein écran, on ne
+    // veut que le texte, sans rectangle de fond.
+    if (opts.blocks) {
+      c.fillStyle = color + '22'
+      c.beginPath()
+      c.roundRect(x0, y + 3, Math.max(4, x1 - x0), th - 6, 5)
+      c.fill()
+    }
     if (selected) {
+      c.beginPath() // retrace le bloc (le fond peut être masqué) pour le contour
+      c.roundRect(x0, y + 3, Math.max(4, x1 - x0), th - 6, 5)
       c.strokeStyle = pal.selStroke
       c.lineWidth = 1.5
       c.stroke()
@@ -2517,7 +2530,7 @@ function renderBand(c, now, W, H, pps, opts) {
 }
 
 function draw() {
-  renderBand(ctx, effectiveTime(), cw, ch, pxPerSec, { ruler: true, wave: showWave, handles: true, theme: bandPal() })
+  renderBand(ctx, effectiveTime(), cw, ch, pxPerSec, { ruler: true, wave: showWave, handles: true, blocks: true, theme: bandPal() })
   drawLoops()
   drawPlans()
   drawHoverCursor()
@@ -3010,7 +3023,7 @@ canvas.addEventListener('dblclick', (e) => {
   } else if (y > RULER_H) {
     const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
     const t = timeAtX(x, effectiveTime())
-    addLineAt(t, tr, '…', 2)
+    addLineAt(t, tr, '…', NEW_LINE_DUR)
     focusNewLineText()
   }
 })
@@ -3030,7 +3043,7 @@ canvas.addEventListener('wheel', (e) => {
   playScrubGrain(scrub.time)
 }, { passive: false })
 
-// slider de zoom (transport) — échelle logarithmique : gauche = 10 s, droite = 1 s
+// slider de zoom (transport) — échelle logarithmique : gauche = 5 s (dézoom), droite = 1,8 s (zoom)
 const zoomSlider = $('zoom')
 
 function syncZoomSlider() {
@@ -3177,10 +3190,11 @@ seekBar.addEventListener('pointerleave', () => { if (!seekDrag) seekTip.classLis
 
 function applySeekBarVisibility() {
   seekBar.classList.toggle('hidden', !showSeekBar)
+  applyBandHeight() // la barre entre dans le chrome du dock → re-cale la hauteur au toggle
 }
 
 $('btnAddLine').addEventListener('click', () => {
-  addLineAt(video.currentTime, null, '…', 2)
+  addLineAt(video.currentTime, null, '…', NEW_LINE_DUR)
   focusNewLineText()
 })
 
@@ -3345,7 +3359,7 @@ document.addEventListener('keydown', (e) => {
     case 'Enter':
       if (activeTab !== 'rythmo') break
       e.preventDefault()
-      addLineAt(video.currentTime, null, '…', 2)
+      addLineAt(video.currentTime, null, '…', NEW_LINE_DUR)
       focusNewLineText()
       break
     case 'PageUp':
@@ -4123,7 +4137,7 @@ const exp = {
   bandPos: 'bottom', // 'bottom' | 'top' : bande en bas ou en haut
   bandFrac: 0.13, // hauteur de bande / hauteur de sortie (réglée par la barre de séparation)
   fpsMode: '60', // 'source' | '30' | '60' | '120' | 'custom' — cadence de sortie (défaut 60)
-  winSec: 5, // secondes visibles sur la bande exportée (même zoom que l'éditeur)
+  winSec: 3, // secondes visibles sur la bande exportée (même zoom que l'éditeur)
   drag: false, // glissement de la barre de séparation
   running: false,
   cancelled: false,
@@ -4615,8 +4629,8 @@ $('expGo').addEventListener('click', runExport)
 // pistes, son). F5 pour entrer, Échap pour quitter.
 // winSec = secondes visibles sur la bande du mode lecture (zoom propre, plus serré que
 // l'éditeur par défaut pour une meilleure lisibilité), réglable par un curseur dédié.
-const PLR_SEC_MIN = 2, PLR_SEC_MAX = 8
-const player = { open: false, bandFrac: 0.16, bandPos: 'bottom', loopScene: false, hideTimer: null, winSec: 3.5 }
+const PLR_SEC_MIN = 2.25, PLR_SEC_MAX = 4 // milieu du slider = √(2.25×4) = 3 s (= défaut winSec)
+const player = { open: false, bandFrac: 0.16, bandPos: 'bottom', loopScene: false, hideTimer: null, winSec: 3 }
 let playerTracks = new Set()
 const pcanvas = $('playerCanvas')
 const pctx = pcanvas.getContext('2d')

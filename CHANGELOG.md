@@ -3,6 +3,25 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [2.7.4] - 2026-08-31
+
+### Ajustements
+- **Bande à l'export, dans la preview d'export et en plein écran** : les blocs de
+  réplique ne montrent plus leur fond coloré — seul le texte (nom, mots, ligne de
+  base, flèches de bouche) est rendu, pour une lecture plus nette sur la vidéo. Le
+  fond reste affiché dans l'éditeur.
+- **Plages de zoom resserrées** (on ne dézoome plus autant, le zoom max devient le
+  défaut) : éditeur / export `1,8 → 3 → 5 s` (au lieu de `3 → 5 → 10`) ; plein écran
+  `2,25 → 3 → 4 s` (au lieu de `2 → 3,5 → 8`), le défaut tombant pile au milieu du
+  curseur.
+- **Nouvelle réplique** : durée par défaut ramenée de 2 s à 1 s.
+
+### Corrections
+- **Hauteur du panneau du bas** : la barre de progression (ajoutée en 2.7.1) n'était
+  pas comptée dans le calcul de hauteur du dock — agrandir le panneau au maximum
+  laissait une barre de défilement verticale au niveau des pistes. Elle est désormais
+  incluse (et l'afficher / masquer recale le dock).
+
 ## [2.7.3] - 2026-08-31
 
 ### Corrections
