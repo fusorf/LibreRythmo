@@ -4479,8 +4479,11 @@ document.addEventListener('keydown', (e) => {
   }
 
   // chiffres 1-9 : sélectionne le Nième personnage (destinataire des nouvelles répliques)
-  if (activeTab === 'rythmo' && !e.ctrlKey && !e.metaKey && !e.altKey && /^[1-9]$/.test(e.key)) {
-    const idx = Number(e.key) - 1
+  // On lit e.code (Digit1..Digit9 / Numpad1..Numpad9), position physique de la touche,
+  // pour que ça marche quelle que soit la disposition (AZERTY : &é"'(-è_ç, etc.)
+  const digitCode = e.code && e.code.match(/^(?:Digit|Numpad)([1-9])$/)
+  if (activeTab === 'rythmo' && !e.ctrlKey && !e.metaKey && !e.altKey && digitCode) {
+    const idx = Number(digitCode[1]) - 1
     if (idx < project.characters.length) { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
   }
 
