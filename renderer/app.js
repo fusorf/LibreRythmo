@@ -537,7 +537,6 @@ function applyLang() {
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
   $('tabRec').textContent = t('tabRec')
-  $('recCharLabel').textContent = t('recCharLabel')
   $('recEmptyMain').textContent = t('recEmptyMain')
   $('recEmptySub').textContent = t('recEmptySub')
   if (activeTab === 'rec') renderRecTab()
@@ -1355,7 +1354,7 @@ function selectClip(id) {
     recTargetChar = clip.characterId
     markDirty()
   }
-  renderRecCharList(); renderRecCharSel()
+  renderRecCharList(); updateRecCharBadge()
 }
 let clipDrag = null
 recClipsCanvas.addEventListener('pointerdown', (e) => {
@@ -1396,17 +1395,23 @@ function renderRecTab() {
   if (noChars) return
   resizeRecBand()
   resizeRecClips()
-  renderRecCharSel()
+  updateRecCharBadge()
   renderRecCharList()
   updateRecUI()
 }
 
-// sélecteur du personnage ciblé par l'enregistrement (barre d'outils)
-function renderRecCharSel() {
-  const sel = $('recCharSel'); if (!sel) return
-  sel.innerHTML = ''
-  for (const c of project.characters) { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name; sel.appendChild(o) }
-  sel.value = recTargetId() || ''
+// badge du personnage ciblé par l'enregistrement (comme le badge « + Réplique » du menu
+// rythmo) : nom rempli de la couleur du perso, outline porté par le groupe
+function updateRecCharBadge() {
+  const c = getChar(recTargetId())
+  const badge = $('recCharBadge')
+  if (badge) {
+    badge.textContent = c ? c.name : '—'
+    badge.style.background = c ? c.color : 'transparent'
+    badge.style.color = c ? textOn(c.color) : 'var(--dim)'
+    badge.title = c ? c.name : ''
+  }
+  const grp = $('recSegGroup'); if (grp) grp.style.borderColor = c ? c.color : ''
 }
 
 const clipLabel = (cl, i) => `${t('recTakeN', i + 1)} · ${formatTc(cl.startTime, project.fps).slice(3)} · ${(cl.dur || 0).toFixed(1)}s`
@@ -1438,7 +1443,7 @@ function renderRecCharList() {
     const clips = (project.recordings || []).filter((r) => r.characterId === c.id).sort((a, b) => a.startTime - b.startTime)
     const row = document.createElement('div')
     row.className = 'rec-ch' + (c.id === target ? ' target' : '') + (isRecMuted(c.id) ? ' muted' : '')
-    row.addEventListener('click', () => { recTargetChar = c.id; renderRecCharList(); renderRecCharSel() })
+    row.addEventListener('click', () => { recTargetChar = c.id; renderRecCharList(); updateRecCharBadge() })
     // ligne 1 : pastille + nom + mute
     const head = document.createElement('div'); head.className = 'rec-ch-head'
     const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
@@ -1471,7 +1476,6 @@ function renderRecCharList() {
 }
 
 $('recBigBtn').addEventListener('click', toggleRecord)
-$('recCharSel').addEventListener('change', () => { recTargetChar = $('recCharSel').value || null; renderRecCharList() })
 
 
 // ============================================================ transcription automatique
@@ -2244,7 +2248,7 @@ function refreshInspector() {
   ins.el.classList.toggle('empty', !line && !multi)
   ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
-  if (activeTab === 'rec') { renderRecCharSel(); renderRecCharList() } // suit l'ajout/retrait de personnages
+  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList() } // suit l'ajout/retrait de personnages
   if (multi) { insShownId = null; refreshMultiInspector(selectedLines()); return }
   if (!line) {
     insShownId = null
@@ -5102,9 +5106,12 @@ document.addEventListener('keydown', (e) => {
   // On lit e.code (Digit1..Digit9 / Numpad1..Numpad9), position physique de la touche,
   // pour que ça marche quelle que soit la disposition (AZERTY : &é"'(-è_ç, etc.)
   const digitCode = e.code && e.code.match(/^(?:Digit|Numpad)([1-9])$/)
-  if (activeTab === 'rythmo' && !e.ctrlKey && !e.metaKey && !e.altKey && digitCode) {
+  if (digitCode && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const idx = Number(digitCode[1]) - 1
-    if (idx < project.characters.length) { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
+    if (idx < project.characters.length) {
+      if (activeTab === 'rythmo') { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
+      if (activeTab === 'rec') { e.preventDefault(); recTargetChar = project.characters[idx].id; updateRecCharBadge(); renderRecCharList(); return }
+    }
   }
 
   // palette de détection ouverte : les touches posent un signe de détection sur la

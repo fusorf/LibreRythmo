@@ -108,9 +108,12 @@
       <span id="btnDubLabel">Voix par personnage</span>
     </button>
     <div id="dubPop" class="dub-pop hidden"></div>
-    <button id="recBigBtn" class="rec-ctl rec-big" title="Enregistrer"><span class="rec-dot"></span><span id="recBigLabel">Enregistrer</span></button>
+    <div class="sep rec-ctl"></div>
+    <div class="seg-group rec-ctl" id="recSegGroup">
+      <span id="recCharBadge" title="Personnage à enregistrer (touches 1-9)"></span>
+      <button id="recBigBtn" class="rec-big" title="Enregistrer"><span class="rec-dot"></span><span id="recBigLabel">Enregistrer</span></button>
+    </div>
     <div id="recBigMeter" class="rec-ctl rec-big-meter"><div id="recBigMeterBar"></div></div>
-    <label class="rec-ctl rec-charlbl"><span id="recCharLabel">Personnage</span><select id="recCharSel"></select></label>
     <div class="sep"></div>
     <select id="trackCount" class="rythmo-ctl" title="Nombre de pistes affichées"></select>
     <span class="font-sel rythmo-ctl" title="Police par défaut de la bande">
