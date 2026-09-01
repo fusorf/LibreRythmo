@@ -43,7 +43,8 @@ logiciel de fandub complet : vidéo → détection → texte → calage → enre
   renvoient aux Paramètres si rien n'est configuré. Rien n'est bundlé.
 - **Confort** : recherche rapide et **fusion de personnages**, **zoom sur l'image**
   (Ctrl+molette, glisser, double-clic pour réinitialiser), **signets** libres
-  (Ctrl+B ; Ctrl+, / Ctrl+. pour naviguer) distincts des scènes et des plans.
+  (Ctrl+B ; Ctrl+, / Ctrl+. pour naviguer) distincts des scènes et des plans, et
+  **reprise à la position de lecture** enregistrée dans le projet à sa réouverture.
 
 Le format `.rythmo` s'étend (prises, signes de détection, repères ADR, signets, sens de
 lecture) en restant rétrocompatible : les anciens projets s'ouvrent inchangés.

@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0 }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
@@ -361,7 +361,7 @@ function scheduleAutosave() {
   clearTimeout(scheduleAutosave._t)
   scheduleAutosave._t = setTimeout(async () => {
     if (!autosaveOn || !projectPath || !dirty || exp.running) return
-    const p = await window.api.saveProject(JSON.stringify(project, null, 2), projectPath)
+    const p = await window.api.saveProject(projectJson(), projectPath)
     if (p) setClean()
   }, 1500)
 }
@@ -4441,8 +4441,15 @@ async function openVideoDialog() {
   if (r) setVideo(r.path, r.url)
 }
 
+// sérialise le projet en estampillant la position de lecture courante, pour reprendre
+// au même timecode à la réouverture du projet
+function projectJson() {
+  project.playhead = Math.max(0, effectiveTime() || 0)
+  return JSON.stringify(project, null, 2)
+}
+
 async function saveProject() {
-  const json = JSON.stringify(project, null, 2)
+  const json = projectJson()
   const p = await window.api.saveProject(json, projectPath)
   if (p) {
     projectPath = p
@@ -4452,7 +4459,7 @@ async function saveProject() {
   }
 }
 async function saveProjectAs() {
-  const p = await window.api.saveProjectAs(JSON.stringify(project, null, 2), projectPath)
+  const p = await window.api.saveProjectAs(projectJson(), projectPath)
   if (p) {
     projectPath = p
     setClean()
@@ -4521,6 +4528,14 @@ async function loadProjectData(data, path) {
       sourceVideoUrl = url
       showLoading(true, t('loadingProject'))
       video.src = url
+      // reprend au timecode enregistré dans le projet (position de lecture au dernier save)
+      const resumeAt = Math.max(0, Number(project.playhead) || 0)
+      if (resumeAt > 0.05) {
+        video.addEventListener('loadedmetadata', function once() {
+          video.removeEventListener('loadedmetadata', once)
+          try { video.currentTime = Math.min(resumeAt, video.duration || resumeAt) } catch {}
+        })
+      }
       $('dropHint').style.display = 'none'
       buildWaveform()
       generateProxy(project.videoPath) // tâche de fond ; bascule sur le proxy quand prêt

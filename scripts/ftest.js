@@ -196,6 +196,18 @@ const TESTS = [
     return loopWarn({ type: 'normal', start: 0, end: 300 }) === false
       && loopWarn({ type: 'out', start: 0, end: 5 }) === true
   })()`],
+  // --- resume playhead ---
+  ['Playhead stamped in saved JSON', `(() => {
+    if (typeof projectJson !== 'function') return true
+    scrub.time = 12.34
+    const j = JSON.parse(projectJson())
+    scrub.time = null
+    return Math.abs((j.playhead || 0) - 12.34) < 0.01
+  })()`],
+  ['Playhead persists through reload', `(() => {
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [], characters: [], lines: [], playhead: 8.5 }, null)
+    return project.playhead === 8.5
+  })()`],
   // --- Capture device selector + settings ---
   ['Cap audio-config roundtrip', `(async () => {
     if (!window.api.audioConfigSet) return true
