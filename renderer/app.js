@@ -540,7 +540,7 @@ function applyLang() {
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
   $('btnImportAudio').textContent = t('importAudio')
-  $('btnDub').textContent = t('dubBtn')
+  $('btnDubLabel').textContent = t('dubBtn')
   $('btnDub').title = t('dubBtnTitle')
   $('tracksEmptyMain').textContent = t('tracksEmptyMain')
   $('tracksEmptySub').textContent = t('tracksEmptySub')
@@ -2678,8 +2678,8 @@ const TRK_LANE_H = 56
 const SPK_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a4 4 0 0 1 0 7"/><path d="M18.7 6a7 7 0 0 1 0 12"/></svg>'
 const SPK_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9.5l4.5 5M21.5 9.5l-4.5 5"/></svg>'
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></svg>'
-// icône micro = marqueur « piste voix par défaut » (monitoring doublage)
-const VOICE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>'
+// icône bouche = marqueur « piste voix par défaut » (monitoring doublage)
+const VOICE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-4 14-4 18 0-4 4-14 4-18 0z"/><path d="M3 12h18"/></svg>'
 const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
 const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + ' ch' : '')
 
@@ -2849,7 +2849,6 @@ function setDubMuted(id, muted) {
 }
 function buildDubPop() {
   const pop = $('dubPop'); pop.innerHTML = ''
-  const title = document.createElement('div'); title.className = 'dub-pop-title'; title.textContent = t('dubPopTitle'); pop.appendChild(title)
   const chars = project.characters || []
   if (!chars.length) { const e = document.createElement('div'); e.className = 'dub-pop-empty'; e.textContent = t('dubNoChars'); pop.appendChild(e); return }
   for (const c of chars) {
@@ -2860,7 +2859,6 @@ function buildDubPop() {
     const nm = document.createElement('span'); nm.className = 'dub-name'; nm.textContent = c.name || '—'
     row.append(cb, dot, nm); pop.appendChild(row)
   }
-  const hint = document.createElement('div'); hint.className = 'dub-pop-hint'; hint.textContent = t('dubHint'); pop.appendChild(hint)
 }
 function toggleDubPop() {
   const pop = $('dubPop')
