@@ -470,6 +470,7 @@ function applyLang() {
   $('trHint').textContent = t('trHint')
   $('trInLabel').textContent = t('trInLabel')
   $('trModelLabel').textContent = t('trModelLabel')
+  $('trSpeakersLabel').textContent = t('trSpeakersLabel')
   $('trLangLabel').textContent = t('trLangLabel')
   $('trOpenSettings').textContent = t('aiOpenSettings')
   $('trClose').textContent = t('close')
@@ -1227,6 +1228,7 @@ async function openTranscribeDialog() {
   const lsel = $('trLang'); const cur = lsel.value || 'auto'; lsel.innerHTML = ''
   for (const [code, key] of TR_LANGS) { const o = document.createElement('option'); o.value = code; o.textContent = t(key); lsel.appendChild(o) }
   lsel.value = cur
+  $('trSpeakers').value = localStorage.getItem('trSpeakers') || '0'
 }
 const TR_LANGS = [['auto', 'langAuto'], ['fr', 'langFr'], ['en', 'langEn'], ['es', 'langEs'], ['de', 'langDe'], ['it', 'langIt'], ['pt', 'langPt'], ['ja', 'langJa'], ['zh', 'langZh'], ['ru', 'langRu'], ['ar', 'langAr'], ['he', 'langHe']]
 let trTracks = []
@@ -1250,11 +1252,13 @@ async function runTranscribe() {
   const model = $('trModel').value || activeWhisper()
   if (!model) { toast(t('trNeedModel')); return }
   const lang = $('trLang').value
+  const numSpeakers = Number($('trSpeakers').value) || 0
+  localStorage.setItem('trSpeakers', String(numSpeakers))
   const tr = trTracks[Number($('trInTrack').value) || 0] || trTracks[0] || { source: project.videoPath, aIndex: 0 }
   trBusy = true; $('trGo').disabled = true; $('trClose').textContent = t('cancel')
   try {
     $('trStatus').textContent = t('trTranscribing', 0)
-    const r = await window.api.whisperTranscribe({ source: tr.source, aIndex: tr.aIndex, model, language: lang })
+    const r = await window.api.whisperTranscribe({ source: tr.source, aIndex: tr.aIndex, model, language: lang, numSpeakers })
     if (!r || r.error) {
       const map = { 'no-engine': 'trNeedEngine', 'no-model': 'trNeedModel', 'no-source': 'trNeedVideo' }
       toast(t(map[r && r.error] || 'trFailed'))
@@ -1308,6 +1312,10 @@ function buildLinesFromSegments(segments) {
     speakerChar.set(key, c.id)
     return c.id
   }
+  // crée d'abord un personnage par locuteur (ordre d'apparition) et ADAPTE le nombre
+  // de pistes AVANT de placer les répliques (pour que findFreeTrack ait les lanes)
+  for (const seg of segments) charFor(seg.speaker)
+  project.tracks = clamp(Math.max(1, speakerChar.size), 1, MAX_TRACKS)
   let added = 0
   for (const seg of segments) {
     const cid = charFor(seg.speaker)

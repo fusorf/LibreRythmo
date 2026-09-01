@@ -1076,7 +1076,7 @@ const WHISPER_PY = `import sys, json, wave
 import numpy as np
 import sherpa_onnx
 
-wav_path, enc, dec, tok, vad_model, seg_model, emb_model, lang, out_json = sys.argv[1:10]
+wav_path, enc, dec, tok, vad_model, seg_model, emb_model, lang, num_speakers, out_json = sys.argv[1:11]
 
 recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
     encoder=enc, decoder=dec, tokens=tok,
@@ -1097,7 +1097,7 @@ if seg_model and emb_model:
             segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
                 pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=seg_model)),
             embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=emb_model),
-            clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=0.5),
+            clustering=(sherpa_onnx.FastClusteringConfig(num_clusters=int(num_speakers)) if int(num_speakers) > 0 else sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=0.7)),
             min_duration_on=0.3, min_duration_off=0.5,
         )
         sd = sherpa_onnx.OfflineSpeakerDiarization(dcfg)
@@ -1181,7 +1181,8 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
   const outJson = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.json`)
   const lang = opts.language || 'auto'
   const inv = pythonInvoke(py)
-  const args = [...inv.slice(1), scriptPath, wav, f.enc, f.dec, f.tok, vadModelPath(), diar.seg || '', diar.emb || '', lang, outJson]
+  const numSpeakers = Math.max(0, Math.min(10, Number(opts.numSpeakers) || 0))
+  const args = [...inv.slice(1), scriptPath, wav, f.enc, f.dec, f.tok, vadModelPath(), diar.seg || '', diar.emb || '', lang, String(numSpeakers), outJson]
   return await new Promise((resolve) => {
     let tail = ''
     try { whisperProc = spawn(inv[0], args, { stdio: ['ignore', 'pipe', 'pipe'] }) } catch { return resolve({ error: 'engine-spawn-failed' }) }

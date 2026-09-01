@@ -187,7 +187,7 @@ const TESTS = [
     const chars = project.characters.length
     const reac = project.lines.some((l) => l.kind === 'reac')
     const speakers = new Set(project.lines.map((l) => l.characterId)).size
-    return n >= 4 && chars >= 2 && reac && speakers >= 2
+    return n >= 4 && chars >= 2 && reac && speakers >= 2 && project.tracks >= 2
   })()`],
   ['A4 dialog opens with a video', `(() => {
     if (typeof openTranscribeDialog !== 'function') return true
