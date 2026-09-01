@@ -955,7 +955,7 @@ const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture / monito
 const retainedTake = (line) => (line.takes || []).find((k) => k.id === line.take) || null
 
 // config capture (persistée côté main : audio-config.json)
-const audioCfg = { api: 'system', device: null, output: null }
+const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null }
 
 function resetMic() {
   try { if (recorder.stream) recorder.stream.getTracks().forEach((t2) => t2.stop()) } catch {}
@@ -988,17 +988,8 @@ function toDualMono(ac, node) {
 async function ensureMic() {
   if (recorder.stream) return recorder.stream
   const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  const getAudio = (c) => navigator.mediaDevices.getUserMedia({ audio: c })
-  try {
-    if (audioCfg.device) {
-      // deviceId exact → on capture vraiment le périphérique choisi ; repli sur le
-      // défaut si celui-ci a été débranché (évite l'échec silencieux de « ideal »)
-      try { recorder.stream = await getAudio({ ...base, deviceId: { exact: audioCfg.device } }) }
-      catch { recorder.stream = await getAudio(base) }
-    } else {
-      recorder.stream = await getAudio(base)
-    }
-  } catch (e) { toast(t('recMicDenied')); return null }
+  try { recorder.stream = await openMic(base) } // périphérique mémorisé (par id, sinon par nom)
+  catch (e) { toast(t('recMicDenied')); return null }
   try {
     recorder.ac = makeAcForStream(recorder.stream) // même taux que l'entrée (sinon pitch)
     const src = recorder.ac.createMediaStreamSource(recorder.stream)
@@ -1413,7 +1404,54 @@ function fmtDlSize(mb) {
   if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang === 'fr') s = s.replace('.', ','); return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
   return Math.round(mb) + ' ' + t('unitMB')
 }
-function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, output: audioCfg.output }) }
+function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, deviceLabel: audioCfg.deviceLabel, output: audioCfg.output, outputLabel: audioCfg.outputLabel }) }
+
+// ---- préchargement Paramètres : listes en cache pour un affichage instantané ----
+// Les deviceId de Chromium changent d'une session à l'autre (surtout sous file://) :
+// on mémorise aussi le NOM du périphérique et on le retrouve par nom si l'id a changé.
+let capInDevs = []  // périphériques d'entrée (audioinput) en cache
+let capOutDevs = [] // périphériques de sortie (audiooutput) en cache
+const modelCache = { trEngine: null, trModels: null, sepModels: null, python: null }
+
+function pickDevice(devs, id, label) {
+  return devs.find((d) => d.deviceId && d.deviceId === id) || (label ? devs.find((d) => d.label && d.label === label) : null) || null
+}
+async function currentInputId(id, label) {
+  let devs = []
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput') } catch {}
+  const m = pickDevice(devs, id, label)
+  return m ? m.deviceId : null
+}
+// met en cache les listes de périphériques et réconcilie les choix mémorisés par nom
+async function refreshDeviceCaches() {
+  let devs = []
+  try { devs = await navigator.mediaDevices.enumerateDevices() } catch {}
+  capInDevs = devs.filter((d) => d.kind === 'audioinput')
+  capOutDevs = devs.filter((d) => d.kind === 'audiooutput')
+  const mi = pickDevice(capInDevs, audioCfg.device, audioCfg.deviceLabel)
+  if (mi && mi.deviceId !== audioCfg.device) { audioCfg.device = mi.deviceId; if (mi.label) audioCfg.deviceLabel = mi.label; saveAudioCfg() }
+  const mo = pickDevice(capOutDevs, audioCfg.output, audioCfg.outputLabel)
+  if (mo && mo.deviceId !== audioCfg.output) { audioCfg.output = mo.deviceId; if (mo.label) audioCfg.outputLabel = mo.label; saveAudioCfg() }
+  applyOutputSink()
+}
+// ouvre le micro mémorisé (id exact) ; si l'id a changé entre sessions, le retrouve par nom
+async function openMic(base) {
+  const getAudio = (c) => navigator.mediaDevices.getUserMedia({ audio: c })
+  if (!audioCfg.device && !audioCfg.deviceLabel) return getAudio(base)
+  try { return await getAudio({ ...base, deviceId: { exact: audioCfg.device } }) }
+  catch {
+    const id = await currentInputId(audioCfg.device, audioCfg.deviceLabel) // la tentative a accordé la permission → libellés lisibles
+    if (id && id !== audioCfg.device) { audioCfg.device = id; saveAudioCfg() }
+    try { return id ? await getAudio({ ...base, deviceId: { exact: id } }) : await getAudio(base) }
+    catch { return getAudio(base) }
+  }
+}
+// au démarrage : débloque les noms de périphériques (accès micro bref) + précharge les listes
+async function preloadSettings() {
+  refreshTrCache(); refreshSepCache() // modèles (IPC + fs), en tâche de fond
+  try { const s = await navigator.mediaDevices.getUserMedia({ audio: true }); s.getTracks().forEach((tr) => tr.stop()) } catch {}
+  await refreshDeviceCaches()
+}
 
 async function fillCaptureDevices() {
   const api = $('capApi').value
@@ -1421,12 +1459,15 @@ async function fillCaptureDevices() {
   devSel.innerHTML = ''
   $('capNote').textContent = ''
   if (api === 'system') {
-    let devs = []
-    try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput') } catch {}
+    const devs = capInDevs // cache préchargé (affichage instantané)
     if (!devs.some((d) => d.label)) $('capNote').textContent = t('capGrantMic')
     const def = document.createElement('option'); def.value = ''; def.textContent = t('capDefault'); devSel.appendChild(def)
     for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); devSel.appendChild(o) }
-    devSel.value = audioCfg.device || ''
+    const m = pickDevice(devs, audioCfg.device, audioCfg.deviceLabel)
+    if (m) {
+      devSel.value = m.deviceId
+      if (m.deviceId !== audioCfg.device || (m.label && m.label !== audioCfg.deviceLabel)) { audioCfg.device = m.deviceId; if (m.label) audioCfg.deviceLabel = m.label; saveAudioCfg() }
+    } else { devSel.value = audioCfg.device || '' }
   } else {
     const r = await window.api.listCaptureDevices(api)
     const devs = (r && r.devices) || []
@@ -1445,17 +1486,18 @@ async function fillCaptureDevices() {
 }
 
 // ---- sortie audio : sélection du périphérique de lecture + test (retour audio + visuel) ----
-async function fillOutputDevices() {
+function fillOutputDevices() {
   const sel = $('outDevice')
   sel.innerHTML = ''
-  let devs = []
-  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput') } catch {}
+  const devs = capOutDevs // cache préchargé (affichage instantané)
   $('outNote').textContent = devs.some((d) => d.label) ? '' : t('capGrantMic')
   const def = document.createElement('option'); def.value = ''; def.textContent = t('capDefault'); sel.appendChild(def)
   for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); sel.appendChild(o) }
-  // on garde le choix mémorisé même s'il n'est pas encore dans la liste (avant
-  // l'autorisation micro, les deviceId sont masqués) — surtout ne pas l'effacer
-  sel.value = devs.some((d) => d.deviceId === audioCfg.output) ? audioCfg.output : ''
+  const m = pickDevice(devs, audioCfg.output, audioCfg.outputLabel)
+  if (m) {
+    sel.value = m.deviceId
+    if (m.deviceId !== audioCfg.output || (m.label && m.label !== audioCfg.outputLabel)) { audioCfg.output = m.deviceId; if (m.label) audioCfg.outputLabel = m.label; saveAudioCfg(); applyOutputSink() }
+  } else { sel.value = '' } // on garde le choix mémorisé (audioCfg.output) même s'il n'est pas listé
 }
 
 // route la lecture vidéo vers le périphérique de sortie choisi (défaut si vide)
@@ -1482,13 +1524,8 @@ async function toggleOutputTest() {
   const AC = window.AudioContext || window.webkitAudioContext
   if (!AC) return
   const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  const getAudio = (c) => navigator.mediaDevices.getUserMedia({ audio: c })
   let stream
-  try {
-    stream = audioCfg.device
-      ? await getAudio({ ...base, deviceId: { exact: audioCfg.device } }).catch(() => getAudio(base))
-      : await getAudio(base)
-  } catch { toast(t('recMicDenied')); return }
+  try { stream = await openMic(base) } catch { toast(t('recMicDenied')); return }
   const ac = makeAcForStream(stream) // même taux que l'entrée (sinon pitch)
   const src = ac.createMediaStreamSource(stream)
   const mono = toDualMono(ac, src) // mono (canal gauche) entendu sur L et R
@@ -1549,11 +1586,10 @@ function modelRow(m, onInstall, onUninstall, canInstall) {
   return row
 }
 
-// ligne « Moteur » (installer/désinstaller sherpa-onnx depuis les Paramètres)
-async function renderTrEngine() {
+// ligne « Moteur » : peinture depuis le cache (modelCache.trEngine)
+function paintTrEngine() {
   const el = $('trEngineRow'); if (!el) return
-  let st = { installed: false, python: null }
-  try { st = await window.api.whisperEngineStatus() } catch {}
+  const st = modelCache.trEngine || { installed: false, python: null }
   el.className = 'model-row' + (st.installed ? ' installed' : '')
   el.innerHTML = ''
   const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = t('engName')
@@ -1564,54 +1600,78 @@ async function renderTrEngine() {
   if (!st.installed && !st.python) { btn.disabled = true; btn.title = t('sepNoPython') }
   btn.addEventListener('click', async () => {
     btn.disabled = true
-    if (st.installed) { await window.api.whisperEngineUninstall(); renderTrEngine() }
-    else { setDl(true, t('engInstalling')); const r = await window.api.whisperEngineInstall(); setDl(false, ''); toast(r && r.ok ? t('engInstalled') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'engInstallFail')); renderTrEngine() }
+    if (st.installed) { await window.api.whisperEngineUninstall(); refreshTrCache() }
+    else { setDl(true, t('engInstalling')); const r = await window.api.whisperEngineInstall(); setDl(false, ''); toast(r && r.ok ? t('engInstalled') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'engInstallFail')); refreshTrCache() }
   })
   el.append(nm, stt, sp, btn)
 }
-
-async function renderTrModels() {
-  await renderTrEngine()
-  const list = $('trModelList'); list.innerHTML = ''
-  let models = [], python = null
-  try { models = await window.api.whisperListModels() } catch {}
-  try { python = (await window.api.whisperEngineStatus()).python } catch {}
+// peinture instantanée de la liste des modèles de transcription (depuis le cache)
+function paintTrModels() {
+  paintTrEngine()
+  const list = $('trModelList'); if (!list) return
+  list.innerHTML = ''
+  const models = modelCache.trModels || []
+  const python = modelCache.python
   for (const m of models) {
     list.appendChild(modelRow(m,
-      async (btn) => { btn.disabled = true; setDl(true, t('trDownloading', 0)); const r = await window.api.whisperInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'trFailed')); renderTrModels() },
-      async () => { await window.api.whisperDeleteModel(m.model); renderTrModels() },
+      async (btn) => { btn.disabled = true; setDl(true, t('trDownloading', 0)); const r = await window.api.whisperInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'trFailed')); refreshTrCache() },
+      async () => { await window.api.whisperDeleteModel(m.model); refreshTrCache() },
       !!python))
   }
   fillActiveDropdown($('trActive'), models, activeWhisper, setActiveWhisper)
 }
+// rafraîchit le cache transcription (IPC + fs) puis repeint si les Paramètres sont ouverts
+async function refreshTrCache() {
+  try { modelCache.trEngine = await window.api.whisperEngineStatus() } catch { modelCache.trEngine = { installed: false, python: null } }
+  modelCache.python = modelCache.trEngine ? modelCache.trEngine.python : null
+  try { modelCache.trModels = await window.api.whisperListModels() } catch { modelCache.trModels = [] }
+  if (setModal && !setModal.classList.contains('hidden')) paintTrModels()
+}
+function renderTrModels() { paintTrModels(); return refreshTrCache() } // instantané (cache) puis MAJ
 
-async function renderSepModels() {
-  const list = $('sepModelList'); list.innerHTML = ''
-  let models = []
-  try { models = await window.api.sepListModels() } catch {}
-  let python = null
-  try { python = (await window.api.detectPython()).python } catch {}
+function paintSepModels() {
+  const list = $('sepModelList'); if (!list) return
+  list.innerHTML = ''
+  const models = modelCache.sepModels || []
+  const python = modelCache.python
   for (const m of models) {
     list.appendChild(modelRow(m,
-      async (btn) => { btn.disabled = true; setDl(true, t('sepInstalling')); const r = await window.api.sepInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'sepInstallFail')); renderSepModels() },
-      async () => { await window.api.sepDeleteModel(m.model); renderSepModels() },
+      async (btn) => { btn.disabled = true; setDl(true, t('sepInstalling')); const r = await window.api.sepInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'sepInstallFail')); refreshSepCache() },
+      async () => { await window.api.sepDeleteModel(m.model); refreshSepCache() },
       !!python))
   }
   fillActiveDropdown($('sepActive'), models, activeSep, setActiveSep)
 }
+async function refreshSepCache() {
+  try { modelCache.sepModels = await window.api.sepListModels() } catch { modelCache.sepModels = [] }
+  if (modelCache.python == null) { try { modelCache.python = (await window.api.detectPython()).python } catch {} }
+  if (setModal && !setModal.classList.contains('hidden')) paintSepModels()
+}
+function renderSepModels() { paintSepModels(); return refreshSepCache() }
 
 function openSettings() {
   setModal.classList.remove('hidden')
   $('capApi').value = audioCfg.api || 'system'
   setDl(false, '')
+  // tout se peint immédiatement depuis les caches préchargés ; rafraîchissement en fond
   fillCaptureDevices(); fillOutputDevices(); renderTrModels(); renderSepModels()
 }
 
-$('capApi').addEventListener('change', () => { audioCfg.api = $('capApi').value; audioCfg.device = null; saveAudioCfg(); resetMic(); fillCaptureDevices() })
-$('capDevice').addEventListener('change', () => { audioCfg.device = $('capDevice').value || null; saveAudioCfg(); resetMic() })
-$('capRefresh').addEventListener('click', fillCaptureDevices)
-$('outDevice').addEventListener('change', () => { audioCfg.output = $('outDevice').value || null; saveAudioCfg(); applyOutputSink() })
-$('outRefresh').addEventListener('click', fillOutputDevices)
+$('capApi').addEventListener('change', () => { audioCfg.api = $('capApi').value; audioCfg.device = null; audioCfg.deviceLabel = null; saveAudioCfg(); resetMic(); fillCaptureDevices() })
+$('capDevice').addEventListener('change', () => {
+  const sel = $('capDevice'); const opt = sel.selectedOptions[0]
+  audioCfg.device = sel.value || null
+  audioCfg.deviceLabel = sel.value && opt ? opt.textContent : null // mémorise aussi le nom (id instable entre sessions)
+  saveAudioCfg(); resetMic()
+})
+$('capRefresh').addEventListener('click', async () => { await refreshDeviceCaches(); fillCaptureDevices() })
+$('outDevice').addEventListener('change', () => {
+  const sel = $('outDevice'); const opt = sel.selectedOptions[0]
+  audioCfg.output = sel.value || null
+  audioCfg.outputLabel = sel.value && opt ? opt.textContent : null
+  saveAudioCfg(); applyOutputSink()
+})
+$('outRefresh').addEventListener('click', async () => { await refreshDeviceCaches(); fillOutputDevices() })
 $('outTest').addEventListener('click', toggleOutputTest)
 $('trActive').addEventListener('change', () => setActiveWhisper($('trActive').value))
 $('sepActive').addEventListener('change', () => setActiveSep($('sepActive').value))
@@ -6201,8 +6261,9 @@ function loop() {
 // principal — qui a déjà construit le menu avec les mêmes valeurs.
 ;(async () => {
   const st = await window.api.getSettings()
-  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.output = ac.output || null } } catch {}
+  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.deviceLabel = ac.deviceLabel || null; audioCfg.output = ac.output || null; audioCfg.outputLabel = ac.outputLabel || null } } catch {}
   applyOutputSink()
+  preloadSettings() // débloque les noms de périphériques + précharge les listes (Paramètres instantanés)
   lang = st.lang === 'en' ? 'en' : 'fr'
   autosaveOn = !!st.autosave
   autofocusText = st.autofocus !== false
