@@ -112,6 +112,35 @@ const TESTS = [
     clearCues()
     return afterRemove === 1 && project.cues.length === 0
   })()`],
+  // --- Tier B: character merge + search ---
+  ['B merge characters reassigns lines', `(() => {
+    if (typeof mergeCharacter !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }],
+      lines: [{ id: 'x', characterId: 'a', track: 0, words: [{ text: 'un', start: 0, end: 1 }] },
+              { id: 'y', characterId: 'b', track: 1, words: [{ text: 'deux', start: 1, end: 2 }] }] }, null)
+    mergeCharacter('b', 'a')
+    return project.characters.length === 1 && project.lines.every(l => l.characterId === 'a')
+  })()`],
+  ['B character search filters list', `(() => {
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }], lines: [] }, null)
+    charFilter = 'bob'; renderChars()
+    const n = document.getElementById('charList').children.length
+    charFilter = ''; renderChars()
+    return n === 1
+  })()`],
+  // --- Tier B: bookmarks ---
+  ['B bookmark toggle + persist', `(() => {
+    if (typeof toggleBookmark !== 'function') return true
+    project.bookmarks = []; scrub.time = 10; toggleBookmark()
+    const added = project.bookmarks.length === 1
+    scrub.time = 10; toggleBookmark()
+    const removed = project.bookmarks.length === 0
+    scrub.time = 10; toggleBookmark()
+    loadProjectData(JSON.parse(JSON.stringify(project)), null)
+    return added && removed && project.bookmarks.length === 1
+  })()`],
 ]
 
 function getJson() {

@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], rtl: false, cues: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], rtl: false, cues: [], bookmarks: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
@@ -373,7 +373,7 @@ let undoStack = []
 let redoStack = []
 let undoCoalesce = false // les pushUndo d'une même opération (même tick) ne comptent qu'une fois
 
-const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, plans: project.plans, audioTracks: project.audioTracks, defaultFont: project.defaultFont, cues: project.cues })
+const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, plans: project.plans, audioTracks: project.audioTracks, defaultFont: project.defaultFont, cues: project.cues, bookmarks: project.bookmarks })
 
 function pushUndo() {
   if (undoCoalesce) return
@@ -403,6 +403,7 @@ function restoreState(snap) {
   project.loops = d.loops || []
   project.plans = d.plans || []
   project.cues = d.cues || []
+  project.bookmarks = d.bookmarks || []
   if (d.audioTracks) project.audioTracks = d.audioTracks
   project.defaultFont = d.defaultFont || null
   waveOffset = (activeAudioTrack()?.offset) || 0 // suit l'offset restauré de la piste active
@@ -516,6 +517,7 @@ function applyLang() {
   // panneau personnages + log des répliques
   $('panelTitle').textContent = t('panelTitle')
   $('btnAddChar').textContent = t('addChar')
+  $('charSearch').placeholder = t('charSearchPh')
   $('linesTitle').textContent = t('linesTitle')
   buildGuide()
 
@@ -655,6 +657,25 @@ function rowIconButton(kind, title, onClick) {
   return b
 }
 
+let charFilter = '' // Tier B : recherche rapide de personnage (filtre le panneau)
+
+// Tier B : fusion de personnages — toutes les répliques du source passent à la
+// cible, puis le source est supprimé (utile après un import où un rôle apparaît
+// en double sous deux noms). Undoable.
+function mergeCharacter(srcId, dstId) {
+  if (!srcId || !dstId || srcId === dstId) { renderChars(); return }
+  if (!getChar(srcId) || !getChar(dstId)) return
+  pushUndo()
+  for (const l of project.lines) if (l.characterId === srcId) l.characterId = dstId
+  project.characters = project.characters.filter((c) => c.id !== srcId)
+  if (selectedCharId === srcId) selectedCharId = dstId
+  renderChars()
+  refreshInspector()
+  renderLinesLog()
+  markDirty()
+  toast(t('charMerged'))
+}
+
 function renderChars() {
   // outline du groupe « + Réplique | + Réaction » à la couleur du personnage sélectionné
   // (vers quelle voix part la prochaine réplique) ; bordure neutre si aucun personnage
@@ -664,7 +685,9 @@ function renderChars() {
 
   const list = $('charList')
   list.innerHTML = ''
+  const needle = charFilter.trim().toLowerCase()
   for (const c of project.characters) {
+    if (needle && !(c.name || '').toLowerCase().includes(needle)) continue
     const row = document.createElement('div')
     row.className = 'char-row' + (c.id === selectedCharId ? ' selected' : '')
     row.dataset.id = c.id
@@ -746,6 +769,32 @@ function renderChars() {
       markDirty()
     })
 
+    // fusionner ce personnage dans un autre (choix par liste déroulante inline)
+    const mg = document.createElement('button')
+    mg.className = 'edit'
+    mg.textContent = '⇢'
+    mg.title = t('charMerge')
+    mg.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const others = project.characters.filter((k) => k.id !== c.id)
+      if (!others.length) { toast(t('charMergeNone')); return }
+      const msel = document.createElement('select')
+      msel.className = 'nm-input'
+      const ph = document.createElement('option')
+      ph.value = ''; ph.textContent = t('charMergeInto')
+      msel.appendChild(ph)
+      for (const o of others) {
+        const op = document.createElement('option')
+        op.value = o.id; op.textContent = o.name
+        msel.appendChild(op)
+      }
+      nm.replaceWith(msel)
+      msel.focus()
+      msel.addEventListener('click', (ev) => ev.stopPropagation())
+      msel.addEventListener('change', () => mergeCharacter(c.id, msel.value))
+      msel.addEventListener('blur', () => setTimeout(() => { if (document.body.contains(msel)) renderChars() }, 150))
+    })
+
     const x = document.createElement('button')
     x.className = 'x'
     x.textContent = '✕'
@@ -760,7 +809,7 @@ function renderChars() {
       markDirty()
     })
 
-    row.append(sw, nm, trk, edit, x)
+    row.append(sw, nm, trk, mg, edit, x)
     row.addEventListener('click', () => {
       selectedCharId = c.id
       renderChars()
@@ -774,6 +823,75 @@ $('btnTogglePanel').addEventListener('click', () => {
   panel.classList.toggle('hidden')
   $('btnTogglePanel').classList.toggle('active', !panel.classList.contains('hidden'))
 })
+
+$('charSearch').addEventListener('input', (e) => { charFilter = e.target.value || ''; renderChars() })
+
+// ============================================================ Tier B — zoom sur l'image
+// Zoom/pan de la vidéo de l'éditeur (transitoire, non enregistré) : Ctrl+molette
+// pour zoomer sur l'image, glisser pour déplacer, double-clic pour réinitialiser.
+// Utile pour inspecter les mouvements de bouche (détection).
+const imgZoom = { scale: 1, x: 0, y: 0 }
+function clampImgPan() {
+  const w = video.clientWidth, h = video.clientHeight
+  const mx = Math.max(0, (w * (imgZoom.scale - 1)) / 2)
+  const my = Math.max(0, (h * (imgZoom.scale - 1)) / 2)
+  imgZoom.x = clamp(imgZoom.x, -mx, mx)
+  imgZoom.y = clamp(imgZoom.y, -my, my)
+}
+function applyImgZoom() {
+  const on = imgZoom.scale > 1.001
+  video.style.transform = on ? `translate(${imgZoom.x}px, ${imgZoom.y}px) scale(${imgZoom.scale})` : ''
+  video.style.cursor = on ? 'grab' : ''
+}
+function resetImgZoom() { imgZoom.scale = 1; imgZoom.x = 0; imgZoom.y = 0; applyImgZoom() }
+
+$('videoWrap').addEventListener('wheel', (e) => {
+  if (!e.ctrlKey || !video.videoWidth) return
+  e.preventDefault()
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+  imgZoom.scale = clamp(imgZoom.scale * factor, 1, 6)
+  clampImgPan()
+  applyImgZoom()
+}, { passive: false })
+
+let imgPan = null
+$('videoWrap').addEventListener('pointerdown', (e) => {
+  if (imgZoom.scale <= 1.001 || !video.videoWidth) return
+  imgPan = { sx: e.clientX, sy: e.clientY, ox: imgZoom.x, oy: imgZoom.y }
+  video.style.cursor = 'grabbing'
+})
+window.addEventListener('pointermove', (e) => {
+  if (!imgPan) return
+  imgZoom.x = imgPan.ox + (e.clientX - imgPan.sx)
+  imgZoom.y = imgPan.oy + (e.clientY - imgPan.sy)
+  clampImgPan()
+  applyImgZoom()
+})
+window.addEventListener('pointerup', () => { if (imgPan) { imgPan = null; applyImgZoom() } })
+$('videoWrap').addEventListener('dblclick', () => { if (imgZoom.scale > 1.001) resetImgZoom() })
+
+// ============================================================ Tier B — signets
+// Repères temporels libres, distincts des scènes/plans : Ctrl+B pose/retire un
+// signet au point de lecture ; Ctrl+, / Ctrl+. sautent au signet préc./suiv.
+// Affichés en chevrons verts sur la barre de progression.
+function toggleBookmark() {
+  if (!project.bookmarks) project.bookmarks = []
+  const now = Math.max(0, effectiveTime())
+  const thr = Math.max(0.2, (seekDur() || 1) * 0.005)
+  const i = project.bookmarks.findIndex((b) => Math.abs(b.time - now) <= thr)
+  pushUndo()
+  if (i >= 0) { project.bookmarks.splice(i, 1); toast(t('bookmarkRemoved')) }
+  else { project.bookmarks.push({ id: uid(), time: now }); toast(t('bookmarkAdded')) }
+  markDirty()
+}
+function gotoBookmark(dir) {
+  const bm = [...(project.bookmarks || [])].sort((a, b) => a.time - b.time)
+  if (!bm.length) { toast(t('bookmarkNone')); return }
+  const now = effectiveTime()
+  let target = dir > 0 ? bm.find((b) => b.time > now + 0.05) : [...bm].reverse().find((b) => b.time < now - 0.05)
+  if (!target) target = dir > 0 ? bm[bm.length - 1] : bm[0]
+  video.pause(); scrubTo(target.time)
+}
 
 $('btnToggleLines').addEventListener('click', () => {
   const panel = $('linesPanel')
@@ -3167,6 +3285,12 @@ function drawSeekBar() {
   // plans : traits verticaux ambre pleine hauteur
   c.fillStyle = 'rgba(230, 162, 60, 0.9)'
   for (const pl of project.plans) c.fillRect(px(pl.time) - 0.5, 0, 1, h)
+  // signets (Tier B) : petits chevrons verts en haut, distincts des scènes/plans
+  c.fillStyle = 'rgba(95, 191, 106, 0.95)'
+  for (const b of (project.bookmarks || [])) {
+    const x = px(b.time)
+    c.beginPath(); c.moveTo(x - 4, 0); c.lineTo(x + 4, 0); c.lineTo(x, 5); c.closePath(); c.fill()
+  }
 }
 
 // tooltip : timecode + scène/plan courants + répliques sous le curseur (max 3)
@@ -3192,6 +3316,8 @@ function seekTipUpdate(e) {
   if (lp) addRow(lp.name)
   const pl = sortedPlans().filter((k) => k.time <= t).pop()
   if (pl) addRow(pl.name)
+  const bm = (project.bookmarks || []).find((k) => Math.abs(k.time - t) < (seekDur() || 1) * 0.01)
+  if (bm) addRow('★ ' + (bm.label || formatTcShort(bm.time)))
   let n = 0
   for (const l of project.lines) {
     if (!l.words.length || t < lineStart(l) || t > lineEnd(l)) continue
@@ -3612,6 +3738,11 @@ document.addEventListener('keydown', (e) => {
     return
   }
 
+  // signets (Tier B) — indépendants de l'onglet : Ctrl+B pose/retire, Ctrl+,/. navigue
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleBookmark(); return }
+  if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); gotoBookmark(-1); return }
+  if ((e.ctrlKey || e.metaKey) && e.key === '.') { e.preventDefault(); gotoBookmark(1); return }
+
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault()
     if (e.shiftKey) redo()
@@ -3747,6 +3878,7 @@ async function setVideo(path, url) {
   videoProxyPath = null
   sourceVideoUrl = url
   showLoading(true, t('loadingVideo'))
+  if (typeof resetImgZoom === 'function') resetImgZoom()
   video.src = url
   $('dropHint').style.display = 'none'
   markDirty()
