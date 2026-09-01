@@ -108,6 +108,9 @@
       <span id="btnDubLabel">Voix par personnage</span>
     </button>
     <div id="dubPop" class="dub-pop hidden"></div>
+    <button id="recBigBtn" class="rec-ctl rec-big" title="Enregistrer"><span class="rec-dot"></span><span id="recBigLabel">Enregistrer</span></button>
+    <div id="recBigMeter" class="rec-ctl rec-big-meter"><div id="recBigMeterBar"></div></div>
+    <label class="rec-ctl rec-charlbl"><span id="recCharLabel">Personnage</span><select id="recCharSel"></select></label>
     <div class="sep"></div>
     <select id="trackCount" class="rythmo-ctl" title="Nombre de pistes affichées"></select>
     <span class="font-sel rythmo-ctl" title="Police par défaut de la bande">
@@ -160,12 +163,8 @@
       <span id="recEmptySub">Crée des répliques dans l'onglet Rythmo</span>
     </div>
     <div id="recMain">
-      <div id="recBar">
-        <button id="recBigBtn" class="rec-big" title="Enregistrer"><span class="rec-dot"></span><span id="recBigLabel">Enregistrer</span></button>
-        <div id="recBigMeter" class="rec-big-meter"><div id="recBigMeterBar"></div></div>
-        <label class="rec-charlbl"><span id="recCharLabel">Personnage</span><select id="recCharSel"></select></label>
-      </div>
       <div id="recBandWrap"><canvas id="recBand"></canvas></div>
+      <canvas id="recClips" title="Prises enregistrées (clic = aller au début)"></canvas>
       <div id="recTracks"></div>
     </div>
   </div>

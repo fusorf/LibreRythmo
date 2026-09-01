@@ -243,6 +243,17 @@ const TESTS = [
     toggleRecMute('a'); const muted = isRecMuted('a'); toggleRecMute('a'); const unmuted = !isRecMuted('a')
     return overlapOk && muted && unmuted
   })()`],
+  ['Enregistrement : bande de clips dessinée sans erreur', `(() => {
+    if (typeof drawRecClips !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#fff' }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 1, dur: 2, active: true }], recMuted: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec')
+    let ok = true; try { drawRecClips() } catch (e) { ok = false }
+    setTab('rythmo'); project.videoPath = null
+    return ok
+  })()`],
   // --- A4 transcription (sherpa-onnx; engine/models may be absent in test env) ---
   ['A4 engine status shape', `(async () => {
     if (!window.api.whisperEngineStatus) return true

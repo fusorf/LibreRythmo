@@ -879,20 +879,24 @@ body.on-rec .rythmo-ctl, body.on-rec .tracks-ctl { display: none; }
 #recEmptySub { font-size: 12px; max-width: 360px; text-align: center; }
 #recMain { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 #recMain.hidden { display: none; }
-#recBar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.rec-big { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; border-radius: 6px; border: 1px solid var(--border); background: var(--inset); color: var(--text); cursor: pointer; }
-.rec-big .rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #e0453a; flex: 0 0 auto; }
+/* contrôles d'enregistrement déplacés dans la barre d'outils : visibles seulement sur l'onglet */
+.rec-ctl { display: none; }
+body.on-rec .rec-ctl { display: inline-flex; }
+.rec-big { align-items: center; gap: 7px; padding: 5px 12px; font-weight: 600; border-radius: 6px; border: 1px solid var(--border); background: var(--inset); color: var(--text); cursor: pointer; }
+.rec-big .rec-dot { width: 11px; height: 11px; border-radius: 50%; background: #e0453a; flex: 0 0 auto; }
 .rec-big:hover { border-color: var(--toggle-border); }
 .rec-big.recording { background: #e0453a; color: #fff; border-color: #e0453a; }
 .rec-big.recording .rec-dot { background: #fff; animation: recPulse 1s ease-in-out infinite; }
 @keyframes recPulse { 50% { opacity: .35; } }
-.rec-big-meter { flex: 0 0 auto; width: 180px; height: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.rec-big-meter { flex: 0 0 auto; width: 120px; height: 10px; align-self: center; background: var(--panel); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
 #recBigMeterBar { height: 100%; width: 0%; background: linear-gradient(90deg, #3fae5a 0%, #d8c53a 70%, #e0533a 100%); transition: width .05s linear; }
-.rec-charlbl { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.rec-charlbl { align-items: center; gap: 6px; }
 .rec-charlbl span { font-size: 12px; color: var(--dim); }
 /* bande rythmo en rendu final (dubbing) */
 #recBandWrap { flex: 1 1 auto; min-height: 0; position: relative; background: var(--band-bg); }
 #recBand { display: block; width: 100%; height: 100%; cursor: ew-resize; touch-action: none; }
+/* bande des prises enregistrées */
+#recClips { flex: 0 0 auto; display: block; width: 100%; height: 30px; cursor: pointer; border-top: 1px solid var(--border); }
 /* pistes d'enregistrement par personnage */
 #recTracks { flex: 0 0 auto; max-height: 34%; overflow-y: auto; border-top: 1px solid var(--border); }
 .rec-trk { display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }

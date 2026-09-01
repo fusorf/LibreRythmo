@@ -1236,12 +1236,66 @@ const recBandEnd = () => { recBandDrag = false; if (!scrub.busy && scrub.pending
 recBandCanvas.addEventListener('pointerup', recBandEnd)
 recBandCanvas.addEventListener('pointercancel', recBandEnd)
 
+// ---- bande des prises enregistrées (même échelle de temps que la bande rythmo) ----
+const recClipsCanvas = $('recClips')
+const recClipsCtx = recClipsCanvas.getContext('2d')
+let rcw = 0, rch = 0
+function resizeRecClips() {
+  const r = recClipsCanvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  rcw = r.width; rch = r.height
+  const pw = Math.round(rcw * dpr), ph = Math.round(rch * dpr)
+  if (recClipsCanvas.width !== pw || recClipsCanvas.height !== ph) {
+    recClipsCanvas.width = pw; recClipsCanvas.height = ph
+    recClipsCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+}
+new ResizeObserver(() => { if (activeTab === 'rec') resizeRecClips() }).observe(recClipsCanvas)
+const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * (rcw / REC_WIN_SEC)
+function drawRecClips() {
+  if (!rcw) { resizeRecClips(); if (!rcw) return }
+  const pal = bandPal()
+  recClipsCtx.fillStyle = pal.rulerBg || pal.bg; recClipsCtx.fillRect(0, 0, rcw, rch)
+  const muted = project.recMuted || []
+  const y = 3, h = rch - 6
+  for (const r of (project.recordings || [])) {
+    const x0 = recClipXAt(r.startTime), x1 = recClipXAt(r.startTime + (r.dur || 0))
+    if (x1 < 0 || x0 > rcw) continue
+    const col = getChar(r.characterId)?.color || '#888'
+    const active = r.active && !muted.includes(r.characterId)
+    const xa = Math.max(0, x0), wpx = Math.max(2, Math.min(rcw, x1) - xa)
+    recClipsCtx.globalAlpha = active ? 0.85 : 0.28
+    recClipsCtx.fillStyle = col
+    recClipsCtx.beginPath(); recClipsCtx.roundRect(xa, y, wpx, h, 3); recClipsCtx.fill()
+    if (!active) { recClipsCtx.globalAlpha = 0.6; recClipsCtx.strokeStyle = col; recClipsCtx.beginPath(); recClipsCtx.roundRect(xa + 0.5, y + 0.5, wpx - 1, h - 1, 3); recClipsCtx.stroke() }
+    recClipsCtx.globalAlpha = 1
+  }
+  // ligne de lecture (alignée sur la bande rythmo au-dessus)
+  const px = rcw * READ_RATIO
+  recClipsCtx.strokeStyle = pal.playhead; recClipsCtx.lineWidth = 1.5
+  recClipsCtx.beginPath(); recClipsCtx.moveTo(px + 0.5, 0); recClipsCtx.lineTo(px + 0.5, rch); recClipsCtx.stroke(); recClipsCtx.lineWidth = 1
+}
+// clic sur une prise = aller à son début (pour l'écouter en lançant la lecture)
+recClipsCanvas.addEventListener('pointerdown', (e) => {
+  const r = recClipsCanvas.getBoundingClientRect()
+  const t = effectiveTime() + ((e.clientX - r.left) - rcw * READ_RATIO) / (rcw / REC_WIN_SEC)
+  // prise la plus proche sous le curseur (par ordre : celle qui contient t, sinon la plus proche)
+  let best = null, bestD = Infinity
+  for (const c of (project.recordings || [])) {
+    if (t >= c.startTime && t < c.startTime + (c.dur || 0)) { best = c; break }
+    const d = Math.min(Math.abs(t - c.startTime), Math.abs(t - (c.startTime + (c.dur || 0))))
+    if (d < bestD) { bestD = d; best = c }
+  }
+  if (best) { video.pause(); scrubTo(best.startTime); playScrubGrain(scrub.time) }
+})
+
 function renderRecTab() {
   const noChars = !project.videoPath || !project.characters.length
   $('recEmpty').classList.toggle('hidden', !noChars)
   $('recMain').classList.toggle('hidden', noChars)
   if (noChars) return
   resizeRecBand()
+  resizeRecClips()
   renderRecCharSel()
   renderRecTracks()
   updateRecUI()
@@ -6509,7 +6563,7 @@ function loop() {
     updatePlayerUI()
   } else {
     if (activeTab === 'tracks') drawTracks()
-    else if (activeTab === 'rec') drawRecBand()
+    else if (activeTab === 'rec') { drawRecBand(); drawRecClips() }
     else draw()
     drawCuesEditor() // overlay des repères ADR sur la vidéo de l'éditeur
   }
