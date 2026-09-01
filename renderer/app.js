@@ -1441,32 +1441,32 @@ let outTestState = null
 function stopOutputTest() {
   if (!outTestState) return
   cancelAnimationFrame(outTestState.raf)
-  clearTimeout(outTestState.timer)
-  try { outTestState.audioEl.pause() } catch {}
+  try { outTestState.audioEl.pause(); outTestState.audioEl.srcObject = null } catch {}
+  try { outTestState.stream.getTracks().forEach((tr) => tr.stop()) } catch {}
   try { outTestState.ac.close() } catch {}
   $('outMeterFill').style.width = '0%'
   $('outTest').textContent = t('outTestBtn')
   outTestState = null
 }
-// test « à la Discord » : joue un petit accord sur la sortie choisie et anime un vumètre
+// monitoring « à la Discord » : capte l'entrée choisie (ex. in 1L MOTU) et la renvoie
+// vers la sortie choisie, avec un vumètre qui suit le niveau du micro en direct
 async function toggleOutputTest() {
   if (outTestState) { stopOutputTest(); return }
   const AC = window.AudioContext || window.webkitAudioContext
   if (!AC) return
+  const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  const getAudio = (c) => navigator.mediaDevices.getUserMedia({ audio: c })
+  let stream
+  try {
+    stream = audioCfg.device
+      ? await getAudio({ ...base, deviceId: { exact: audioCfg.device } }).catch(() => getAudio(base))
+      : await getAudio(base)
+  } catch { toast(t('recMicDenied')); return }
   const ac = new AC()
+  const src = ac.createMediaStreamSource(stream)
   const analyser = ac.createAnalyser(); analyser.fftSize = 512
   const dest = ac.createMediaStreamDestination()
-  const bus = ac.createGain(); bus.gain.value = 0.9
-  bus.connect(analyser); analyser.connect(dest)
-  const t0 = ac.currentTime + 0.02
-  ;[523.25, 659.25, 783.99].forEach((f, i) => { // do–mi–sol
-    const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f
-    const g = ac.createGain(); const s = t0 + i * 0.16
-    g.gain.setValueAtTime(0.0001, s)
-    g.gain.exponentialRampToValueAtTime(0.3, s + 0.02)
-    g.gain.exponentialRampToValueAtTime(0.0001, s + 0.5)
-    o.connect(g); g.connect(bus); o.start(s); o.stop(s + 0.55)
-  })
+  src.connect(analyser); analyser.connect(dest) // on ne connecte PAS ac.destination (évite le doublon sur la sortie par défaut)
   const audioEl = new Audio(); audioEl.srcObject = dest.stream
   try { if (audioEl.setSinkId && audioCfg.output) await audioEl.setSinkId(audioCfg.output) } catch {}
   try { await audioEl.play() } catch {}
@@ -1475,10 +1475,10 @@ async function toggleOutputTest() {
   const tick = () => {
     analyser.getByteTimeDomainData(buf)
     let peak = 0; for (const v of buf) { const d = Math.abs(v - 128); if (d > peak) peak = d }
-    fill.style.width = Math.min(100, (peak / 128) * 160) + '%'
+    fill.style.width = Math.min(100, (peak / 128) * 320) + '%'
     outTestState.raf = requestAnimationFrame(tick)
   }
-  outTestState = { ac, audioEl, raf: requestAnimationFrame(tick), timer: setTimeout(stopOutputTest, 1500) }
+  outTestState = { ac, audioEl, stream, raf: requestAnimationFrame(tick) }
   $('outTest').textContent = t('outTestStop')
 }
 
