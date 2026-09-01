@@ -106,6 +106,17 @@ const TESTS = [
     project.cues = []; selectedCueId = null
     return r
   })()`],
+  ['textOn contrast (white on dark, black on light)', `(() => {
+    if (typeof textOn !== 'function') return true
+    return textOn('#000000') === '#fff' && textOn('#ffffff') === '#000' && textOn('#c0392b') === '#fff'
+  })()`],
+  ['digit key 1-9 selects character', `(() => {
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'c1', name: 'A', color: '#e8443a' }, { id: 'c2', name: 'B', color: '#3a7ae8' }], lines: [] }, null)
+    activeTab = 'rythmo'; selectedCharId = 'c1'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }))
+    return selectedCharId === 'c2'
+  })()`],
   // --- Tier B: character merge + search ---
   ['B merge characters reassigns lines', `(() => {
     if (typeof mergeCharacter !== 'function') return true

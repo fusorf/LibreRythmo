@@ -224,6 +224,14 @@ const BAND_THEMES = {
 let theme = 'dark'
 const bandPal = () => BAND_THEMES[theme]
 
+// couleur de texte lisible sur un fond donné : noir sur couleur claire, blanc sinon
+function textOn(hex) {
+  const h = String(hex || '').replace('#', '')
+  if (h.length < 6) return '#fff'
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#000' : '#fff'
+}
+
 // ---------- polices personnalisées (TTF/OTF) ----------
 // Les polices sont embarquées dans le projet (project.fonts = [{ name, data(base64),
 // ext }]) pour rester portables et rendre à l'identique à l'export. À l'ouverture, on
@@ -3201,13 +3209,22 @@ function renderBand(c, now, W, H, pps, opts) {
     c.lineTo(x1 - 2, baseY)
     c.stroke()
 
-    // nom du personnage — compact, tout en haut de la piste
-    const nameFont = Math.max(8, Math.round(th * 0.17))
+    // badge du personnage à gauche du bloc : fond = couleur du perso, nom en texte
+    // lisible (blanc, ou noir sur couleur claire)
+    const nm = char ? char.name : '?'
+    const nameFont = Math.max(9, Math.round(th * 0.18))
     c.font = `bold ${nameFont}px "Segoe UI", sans-serif`
+    const padX = 5
+    const tagH = nameFont + 5
+    const tagW = c.measureText(nm).width + padX * 2
+    const tagX = Math.max(0, x0)
+    const tagY = y + 2
     c.fillStyle = color
+    c.beginPath(); c.roundRect(tagX, tagY, tagW, tagH, 3); c.fill()
+    c.fillStyle = textOn(color)
     c.textAlign = 'left'
-    c.textBaseline = 'top'
-    c.fillText(char ? char.name : '?', Math.max(2, x0 + 4), y + 2)
+    c.textBaseline = 'middle'
+    c.fillText(nm, tagX + padX, tagY + tagH / 2 + 0.5)
 
     // mots — élongation : chaque mot est étiré sur sa durée réelle
     const fontPx = Math.round(th * 0.52)
@@ -4442,6 +4459,12 @@ document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyLines(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
+  }
+
+  // chiffres 1-9 : sélectionne le Nième personnage (destinataire des nouvelles répliques)
+  if (activeTab === 'rythmo' && !e.ctrlKey && !e.metaKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+    const idx = Number(e.key) - 1
+    if (idx < project.characters.length) { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
   }
 
   // palette de détection ouverte : les touches posent un signe de détection sur la
