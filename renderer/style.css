@@ -995,10 +995,10 @@ body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
   position: fixed;
   z-index: 15;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
   gap: 4px;
   padding: 8px;
-  max-width: 360px;
+  min-width: 250px;
   background: var(--panel2);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1012,10 +1012,11 @@ body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
   background: var(--chip-bg);
   border: 1px solid var(--border);
   border-radius: 5px;
-  padding: 5px 8px;
+  padding: 5px 9px;
   font-size: 12px;
   color: var(--chip-text);
   text-align: left;
+  white-space: nowrap;
 }
 .sym-chip:hover { background: var(--hover); color: var(--icon-h); }
 .sym-chip .g {
