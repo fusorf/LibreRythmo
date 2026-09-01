@@ -542,8 +542,6 @@ function applyLang() {
   $('recEmptySub').textContent = t('recEmptySub')
   if (activeTab === 'rec') renderRecTab()
   $('btnImportAudio').textContent = t('importAudio')
-  $('btnDubLabel').textContent = t('dubBtn')
-  $('btnDub').title = t('dubBtnTitle')
   $('tracksEmptyMain').textContent = t('tracksEmptyMain')
   $('tracksEmptySub').textContent = t('tracksEmptySub')
   if (activeTab === 'tracks') renderTracks()
@@ -2823,7 +2821,6 @@ function renderTracks() {
   const noVideo = !project.videoPath
   $('tracksEmpty').classList.toggle('hidden', !noVideo) // placeholder propre quand pas de vidéo
   $('tracksWrap').classList.toggle('hidden', noVideo)
-  $('btnDub').classList.toggle('hidden', !dubVoicelessTrack()) // « Doublage » visible si piste sans-voix
   renderTrackHeads()
   resizeTracksCanvas()
 }
@@ -2890,44 +2887,10 @@ function deleteTrack(id) {
   if (selectedTrackId === id) selectedTrackId = null
   if (project.voiceTrackId === id) project.voiceTrackId = null
   if (wasActive) { project.activeAudioId = (activeAudioTrack() || {}).id || null; buildWaveform() }
-  if (wasDubRelated) { $('dubPop').classList.add('hidden'); syncPlaybackAudio() }
+  if (wasDubRelated) syncPlaybackAudio()
   renderTracks(); markDirty()
 }
 
-// ---------- monitoring doublage : popover « voix par personnage » ----------
-const isDubMuted = (id) => (project.muteChars || []).includes(id)
-function setDubMuted(id, muted) {
-  project.muteChars = (project.muteChars || []).filter((c) => c !== id)
-  if (muted) project.muteChars.push(id)
-  markDirty(); syncPlaybackAudio() // (re)active ou coupe le mode monitoring
-}
-function buildDubPop() {
-  const pop = $('dubPop'); pop.innerHTML = ''
-  const chars = project.characters || []
-  if (!chars.length) { const e = document.createElement('div'); e.className = 'dub-pop-empty'; e.textContent = t('dubNoChars'); pop.appendChild(e); return }
-  for (const c of chars) {
-    const row = document.createElement('label'); row.className = 'dub-row'
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !isDubMuted(c.id)
-    cb.addEventListener('change', () => setDubMuted(c.id, !cb.checked))
-    const dot = document.createElement('span'); dot.className = 'dub-dot'; dot.style.background = c.color || '#888'
-    const nm = document.createElement('span'); nm.className = 'dub-name'; nm.textContent = c.name || '—'
-    row.append(cb, dot, nm); pop.appendChild(row)
-  }
-}
-function toggleDubPop() {
-  const pop = $('dubPop')
-  if (!pop.classList.contains('hidden')) { pop.classList.add('hidden'); return }
-  buildDubPop()
-  const r = $('btnDub').getBoundingClientRect()
-  pop.style.left = Math.round(r.left) + 'px'
-  pop.style.top = Math.round(r.bottom + 4) + 'px'
-  pop.classList.remove('hidden')
-}
-$('btnDub').addEventListener('click', (e) => { e.stopPropagation(); toggleDubPop() })
-document.addEventListener('click', (e) => {
-  const p = $('dubPop')
-  if (!p.classList.contains('hidden') && !p.contains(e.target) && e.target !== $('btnDub')) p.classList.add('hidden')
-})
 
 // ---------- canvas timeline (même zoom/défilement/curseur que la bande) ----------
 function resizeTracksCanvas() {
