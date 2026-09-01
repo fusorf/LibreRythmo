@@ -241,10 +241,10 @@ const TESTS = [
   })()`],
   ['Sep config roundtrip + no-engine degrade', `(async () => {
     if (!window.api.sepConfigGet) return true
-    await window.api.sepConfigSet({ exe: null, python: null, module: null, model: 'htdemucs_ft' })
+    await window.api.sepConfigSet({ exe: null, python: null, module: null, model: 'UVR-MDX-NET-Inst_HQ_4.onnx' })
     const c = await window.api.sepConfigGet()
-    const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'htdemucs' })
-    return c && c.model === 'htdemucs_ft' && r && r.error === 'no-engine'
+    const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'UVR-MDX-NET-Inst_HQ_3.onnx' })
+    return c && c.model === 'UVR-MDX-NET-Inst_HQ_4.onnx' && r && r.error === 'no-engine'
   })()`],
 ]
 

@@ -1128,8 +1128,8 @@ ipcMain.handle('whisper-clear-exe', () => { try { fs.unlinkSync(whisperCfgPath()
 ipcMain.handle('whisper-reveal-dir', () => { try { shell.openPath(whisperDir()) } catch {} return true })
 
 // ---------- séparation de voix (IA) : retirer les voix d'une piste audio ----------
-// Moteur léger « audio-separator » (modèles MDX-Net ONNX, ~10× plus léger que Demucs :
-// onnxruntime au lieu de PyTorch). Installé à la demande via pip (Python détecté) ;
+// Moteur léger « audio-separator » (modèles MDX-Net ONNX via onnxruntime, sans
+// PyTorch). Installé à la demande via pip (Python détecté) ;
 // rien de bundlé. Le modèle ONNX (~66 Mo) est téléchargé par le moteur au 1er usage.
 // Résultat : l'instrumental (sans voix) devient une nouvelle piste audio du projet.
 let sepProc = null

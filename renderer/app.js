@@ -1387,7 +1387,7 @@ async function runSeparation() {
   }
   sepActive = true
   showLoading(true, t('sepRunning', 0))
-  const r = await window.api.sepRun({ source, aIndex, projectPath, model: cfg.model || 'htdemucs', destBase: t('sepTrackName') })
+  const r = await window.api.sepRun({ source, aIndex, projectPath, model: cfg.model || 'UVR-MDX-NET-Inst_HQ_3.onnx', destBase: t('sepTrackName') })
   sepActive = false
   showLoading(false)
   if (!r || r.error) { toast(t(r && r.error === 'no-engine' ? 'sepNeedEngine' : 'sepFailed')); return }
