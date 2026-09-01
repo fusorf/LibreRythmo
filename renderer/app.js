@@ -1187,7 +1187,7 @@ $('btnMonitor').addEventListener('click', () => {
 })
 
 
-// ============================================================ A4 — transcription assistée (expérimental)
+// ============================================================ transcription automatique
 // Génère le texte depuis l'audio via whisper.cpp (moteur fourni par l'utilisateur,
 // modèle téléchargé à la demande — rien de bundlé). Le résultat SRT est importé par
 // importSubsText (circuit éprouvé). Dégrade proprement si le moteur est absent.
@@ -1345,7 +1345,7 @@ function buildLinesFromSegments(segments) {
 }
 
 
-// ============================================================ Paramètres (capture + modèles IA + séparation)
+// ============================================================ Paramètres (capture + modèles + séparation)
 const setModal = $('settingsModal')
 let sepActive = false
 

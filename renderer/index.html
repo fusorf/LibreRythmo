@@ -103,7 +103,7 @@
       <svg viewBox="0 0 16 16"><path d="M8 1v14M2 8h1.5M12.5 8H14" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
     </button>
     <button id="btnImportAudio" class="tracks-ctl">+ Importer un audio…</button>
-    <button id="btnRemoveVoices" class="tracks-ctl" title="Retirer les voix de la piste audio active (IA)">Retirer les voix (IA)</button>
+    <button id="btnRemoveVoices" class="tracks-ctl" title="Retirer les voix de la piste audio active">Retirer les voix</button>
     <div class="sep"></div>
     <select id="trackCount" class="rythmo-ctl" title="Nombre de pistes affichées"></select>
     <span class="font-sel rythmo-ctl" title="Police par défaut de la bande">
@@ -309,7 +309,7 @@
 
   <div id="transcribeModal" class="hidden">
     <div class="modal-panel">
-      <h2 id="trTitle">Transcription assistée (expérimental)</h2>
+      <h2 id="trTitle">Transcription automatique</h2>
       <p id="trHint" class="modal-hint">Génère le texte depuis l'audio de la vidéo, puis l'importe comme répliques.</p>
       <div id="trNotReady" class="ai-notready hidden">
         <span id="trNotReadyMsg"></span>
@@ -345,7 +345,7 @@
 
   <div id="separateModal" class="hidden">
     <div class="modal-panel">
-      <h2 id="sepModalTitle">Retirer les voix (IA)</h2>
+      <h2 id="sepModalTitle">Retirer les voix</h2>
       <div id="sepNotReady" class="ai-notready hidden">
         <span id="sepNotReadyMsg"></span>
         <button id="sepOpenSettings" class="primary">Ouvrir les Paramètres…</button>
@@ -395,14 +395,14 @@
       </fieldset>
 
       <fieldset class="opt-group set-block">
-        <legend id="setTrLegend">Transcription (IA)</legend>
+        <legend id="setTrLegend">Transcription</legend>
         <div id="trEngineRow" class="model-row"></div>
         <div id="trModelList" class="model-list"></div>
         <label><span id="setTrActiveLabel">Modèle actif</span> <select id="trActive"></select></label>
       </fieldset>
 
       <fieldset class="opt-group set-block">
-        <legend id="setSepLegend">Séparation de voix (IA)</legend>
+        <legend id="setSepLegend">Séparation de voix</legend>
         <div id="sepModelList" class="model-list"></div>
         <label><span id="setSepActiveLabel">Modèle actif</span> <select id="sepActive"></select></label>
       </fieldset>

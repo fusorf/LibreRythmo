@@ -276,7 +276,7 @@ const MENU_STR = {
     workDocs: 'Documents de travail (PDF)',
     docPresence: 'Grille de présence…',
     docTally: 'Relevé de lignes…',
-    transcribe: 'Transcription assistée (expérimental)…',
+    transcribe: 'Transcription automatique…',
     quit: 'Quitter',
     edit: 'Édition',
     undo: 'Annuler',
@@ -292,7 +292,7 @@ const MENU_STR = {
     clearProxies: 'Vider le cache vidéo',
     settings: 'Paramètres…',
     tools: 'Outils',
-    removeVoices: 'Retirer les voix (IA)…',
+    removeVoices: 'Retirer les voix…',
     language: 'Langue',
     fullscreen: 'Plein écran',
     help: 'Aide',
@@ -352,7 +352,7 @@ const MENU_STR = {
     workDocs: 'Work documents (PDF)',
     docPresence: 'Presence grid…',
     docTally: 'Line tally…',
-    transcribe: 'Assisted transcription (experimental)…',
+    transcribe: 'Automatic transcription…',
     quit: 'Quit',
     edit: 'Edit',
     undo: 'Undo',
@@ -368,7 +368,7 @@ const MENU_STR = {
     clearProxies: 'Clear video cache',
     settings: 'Settings…',
     tools: 'Tools',
-    removeVoices: 'Remove voices (AI)…',
+    removeVoices: 'Remove voices…',
     language: 'Language',
     fullscreen: 'Full screen',
     help: 'Help',
@@ -923,7 +923,7 @@ ipcMain.handle('delete-take', (e, projectPath, name) => {
   return true
 })
 
-// ---------- A4 : transcription assistée (sherpa-onnx + Whisper ONNX) ----------
+// ---------- transcription automatique (sherpa-onnx + Whisper ONNX) ----------
 // Moteur léger « sherpa-onnx » (onnxruntime, wheels précompilés — pas de compilation),
 // installable depuis les Paramètres via pip (Python détecté), comme le séparateur.
 // Modèles Whisper ONNX (dont large-v3-turbo, multilingue) téléchargés/gérés par l'app,
@@ -1274,7 +1274,7 @@ ipcMain.handle('capture-stop', () => {
   })
 })
 
-// ---------- séparation de voix (IA) : gestionnaire de modèles MDX-Net ONNX ----------
+// ---------- séparation de voix : gestionnaire de modèles MDX-Net ONNX ----------
 // Moteur « audio-separator » (onnxruntime, sans PyTorch) installé via pip au 1er modèle
 // installé (Python détecté). Les modèles ONNX sont téléchargés/gérés par l'app (dossier
 // dédié) : Installer = (moteur si absent) + télécharger le .onnx ; Désinstaller =

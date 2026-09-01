@@ -26,19 +26,18 @@ logiciel de fandub complet : vidéo → détection → texte → calage → enre
   pour lancer le comédien sans lip-sync (voice-over, audiodescription, localisation).
   Visibles sur la timeline (bande) et **sélectionnables, déplaçables (glisser) et
   supprimables (Suppr)**.
-- **Transcription assistée** (expérimental) : génère le texte depuis l'audio via
-  whisper.cpp — modèle téléchargé à la demande, moteur fourni par l'utilisateur, rien
-  n'est inclus dans l'application.
-- **Séparation de voix (IA)** : retire les voix d'une piste audio (produit un
-  instrumental ajouté comme nouvelle piste). Moteur léger **audio-separator (MDX-Net
-  ONNX)** — bien plus léger que PyTorch — installable en un clic depuis les Paramètres
-  (via pip, Python requis). Bouton « Retirer les voix (IA) » dans l'onglet Pistes et
-  menu Outils. Rien n'est bundlé.
+- **Transcription automatique** : génère le texte depuis l'audio (multi-locuteurs —
+  détecte les voix et crée un personnage par voix) ; moteur et modèles installés à la
+  demande, rien n'est inclus dans l'application.
+- **Séparation de voix** : retire les voix d'une piste audio (produit un instrumental
+  ajouté comme nouvelle piste). Moteur léger **audio-separator (MDX-Net ONNX)**,
+  installable en un clic depuis les Paramètres (via pip, Python requis). Bouton
+  « Retirer les voix » dans l'onglet Pistes et menu Outils. Rien n'est bundlé.
 - **Fenêtre Paramètres** : sélecteur d'**interface et de périphérique de capture**
-  (Système/WASAPI, DirectSound/DirectShow, ASIO), et **gestion des modèles IA**
+  (Système/WASAPI, DirectSound/DirectShow, ASIO), et **gestion des modèles**
   (transcription + séparation) : installation/suppression à la demande depuis l'UI,
   avec **estimation de la taille de téléchargement** pour chaque élément installable
-  et un accès au dossier des modèles. L'IA est entièrement optionnelle et centralisée
+  et un accès au dossier des modèles. Tout est optionnel et centralisé
   ici : les fenêtres de fonctionnalité ne proposent que ce qui est installé et
   renvoient aux Paramètres si rien n'est configuré. Rien n'est bundlé.
 - **Confort** : recherche rapide et **fusion de personnages**, **zoom sur l'image**
