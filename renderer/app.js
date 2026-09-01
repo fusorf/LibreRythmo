@@ -870,6 +870,8 @@ function renderChars() {
     })
     list.appendChild(row)
   }
+  // la sélection est un mécanisme unique : on répercute sur l'onglet Enregistrement
+  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList() }
 }
 
 $('btnTogglePanel').addEventListener('click', () => {
@@ -959,7 +961,6 @@ function gotoBookmark(dir) {
 const recorder = { stream: null, mr: null, chunks: [], active: false, charId: null, mime: 'audio/webm', ext: 'webm', ac: null, analyser: null, raf: 0, level: 0, recStartAt: 0 }
 const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture)
 const recOverlap = (a, b) => a.startTime < b.startTime + (b.dur || 0) && b.startTime < a.startTime + (a.dur || 0)
-let recTargetChar = null // personnage ciblé par l'enregistrement
 
 // config capture (persistée côté main : audio-config.json)
 const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null }
@@ -1018,10 +1019,9 @@ function pickMime() {
   return 'audio/webm'
 }
 
-// personnage ciblé par l'enregistrement (dernier choisi, sinon perso sélectionné, sinon 1er)
+// personnage ciblé par l'enregistrement = personnage sélectionné (mécanisme unique)
 function recTargetId() {
   const has = (id) => project.characters.some((c) => c.id === id)
-  if (recTargetChar && has(recTargetChar)) return recTargetChar
   if (selectedCharId && has(selectedCharId)) return selectedCharId
   return project.characters[0]?.id || null
 }
@@ -1029,7 +1029,6 @@ async function startRecording() {
   if (recorder.active) return
   const chId = recTargetId()
   if (!chId) { toast(t('recNeedChar')); return }
-  recTargetChar = chId
   recorder.charId = chId
   recorder.recStartAt = Math.max(0, effectiveTime()) // enregistrement libre : au playhead courant
   if ((audioCfg.api || 'system') === 'system') return startRecordingWeb()
@@ -1228,7 +1227,15 @@ function toggleRecord() {
 const recBandCanvas = $('recBand')
 const recBandCtx = recBandCanvas.getContext('2d')
 let rbw = 0, rbh = 0
-const REC_WIN_SEC = 3 // secondes visibles (zoom serré, lisible comme la preview)
+let recWinSec = 3 // secondes visibles (réglable à la molette Ctrl, comme la bande rythmo)
+const REC_SEC_MIN = 1.2, REC_SEC_MAX = 12
+// Ctrl+molette = zoom/dézoom (partagé entre la bande et l'affichage des prises)
+function recWheelZoom(e) {
+  if (!e.ctrlKey) return false
+  e.preventDefault()
+  recWinSec = clamp(recWinSec * (e.deltaY < 0 ? 1 / 1.12 : 1.12), REC_SEC_MIN, REC_SEC_MAX)
+  return true
+}
 function resizeRecBand() {
   const wrap = $('recBandWrap'); if (!wrap) return
   const r = wrap.getBoundingClientRect()
@@ -1243,7 +1250,7 @@ function resizeRecBand() {
 new ResizeObserver(() => { if (activeTab === 'rec') resizeRecBand() }).observe($('recBandWrap'))
 function drawRecBand() {
   if (!rbw) { resizeRecBand(); if (!rbw) return }
-  renderBand(recBandCtx, effectiveTime(), rbw, rbh, rbw / REC_WIN_SEC, { ruler: false, wave: false, handles: false, theme: bandPal() })
+  renderBand(recBandCtx, effectiveTime(), rbw, rbh, rbw / recWinSec, { ruler: false, wave: false, handles: false, theme: bandPal() })
 }
 // glisser = déplacer la timeline, comme la bande rythmo (attrape-et-déplace, relatif)
 let recBandDrag = null
@@ -1256,11 +1263,16 @@ recBandCanvas.addEventListener('pointermove', (e) => {
   if (!recBandDrag) return
   const dx = e.clientX - recBandDrag.x0
   if (Math.abs(dx) > 3) recBandDrag.moved = true
-  if (recBandDrag.moved) { scrubTo(recBandDrag.t0 - dx / (rbw / REC_WIN_SEC)); playScrubGrain(scrub.time) }
+  if (recBandDrag.moved) { scrubTo(recBandDrag.t0 - dx / (rbw / recWinSec)); playScrubGrain(scrub.time) }
 })
 const recBandEnd = () => { recBandDrag = null; recBandCanvas.style.cursor = 'grab'; if (!scrub.busy && scrub.pending == null) scrub.time = null }
 recBandCanvas.addEventListener('pointerup', recBandEnd)
 recBandCanvas.addEventListener('pointercancel', recBandEnd)
+recBandCanvas.addEventListener('wheel', (e) => {
+  if (recWheelZoom(e)) return
+  e.preventDefault(); video.pause()
+  scrubTo(effectiveTime() + (e.deltaY || e.deltaX) / (rbw / recWinSec) * 0.8); playScrubGrain(scrub.time)
+}, { passive: false })
 
 // ---- forme d'onde des prises : décodage + peaks, en cache par fichier ----
 const clipWaves = new Map() // file -> {peaks,perSec,duration} | 'pending' | null
@@ -1296,7 +1308,7 @@ function resizeRecClips() {
   }
 }
 new ResizeObserver(() => { if (activeTab === 'rec') resizeRecClips() }).observe(recClipsCanvas)
-const recClipsPps = () => rcw / REC_WIN_SEC
+const recClipsPps = () => rcw / recWinSec
 const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * recClipsPps()
 function drawRecClips() {
   if (!rcw) { resizeRecClips(); if (!rcw) return }
@@ -1351,10 +1363,10 @@ function selectClip(id) {
   if (clip) {
     for (const r of project.recordings) if (r.characterId === clip.characterId && r.id !== id && recOverlap(r, clip)) r.active = false
     clip.active = true
-    recTargetChar = clip.characterId
+    selectedCharId = clip.characterId // sélection unique : sélectionne aussi le perso dans le drawer
     markDirty()
   }
-  renderRecCharList(); updateRecCharBadge()
+  renderChars() // met à jour drawer + badge + liste rec
 }
 let clipDrag = null
 recClipsCanvas.addEventListener('pointerdown', (e) => {
@@ -1387,6 +1399,11 @@ function clipDragEnd() {
 }
 recClipsCanvas.addEventListener('pointerup', clipDragEnd)
 recClipsCanvas.addEventListener('pointercancel', clipDragEnd)
+recClipsCanvas.addEventListener('wheel', (e) => {
+  if (recWheelZoom(e)) return
+  e.preventDefault(); video.pause()
+  scrubTo(effectiveTime() + (e.deltaY || e.deltaX) / (rcw / recWinSec) * 0.8); playScrubGrain(scrub.time)
+}, { passive: false })
 
 function renderRecTab() {
   const noChars = !project.videoPath || !project.characters.length
@@ -1443,7 +1460,7 @@ function renderRecCharList() {
     const clips = (project.recordings || []).filter((r) => r.characterId === c.id).sort((a, b) => a.startTime - b.startTime)
     const row = document.createElement('div')
     row.className = 'rec-ch' + (c.id === target ? ' target' : '') + (isRecMuted(c.id) ? ' muted' : '')
-    row.addEventListener('click', () => { recTargetChar = c.id; renderRecCharList(); updateRecCharBadge() })
+    row.addEventListener('click', () => { selectedCharId = c.id; renderChars() }) // sélection unique (drawer + rec)
     // ligne 1 : pastille + nom + mute
     const head = document.createElement('div'); head.className = 'rec-ch-head'
     const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
@@ -1461,11 +1478,9 @@ function renderRecCharList() {
       dd.value = selc
       dd.addEventListener('click', (e) => e.stopPropagation())
       dd.addEventListener('change', () => selectClip(dd.value))
-      const play = document.createElement('button'); play.className = 'icon-btn'; play.innerHTML = SVG_PLAY; play.title = t('recPlay')
-      play.addEventListener('click', (e) => { e.stopPropagation(); listenClip(dd.value) })
       const del = document.createElement('button'); del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('recDel')
       del.addEventListener('click', (e) => { e.stopPropagation(); deleteClip(dd.value) })
-      ctr.append(dd, play, del)
+      ctr.append(dd, del)
       row.appendChild(ctr)
     } else {
       const meta = document.createElement('div'); meta.className = 'rec-ch-meta'; meta.textContent = t('recNoTakes')
@@ -5109,8 +5124,7 @@ document.addEventListener('keydown', (e) => {
   if (digitCode && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const idx = Number(digitCode[1]) - 1
     if (idx < project.characters.length) {
-      if (activeTab === 'rythmo') { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
-      if (activeTab === 'rec') { e.preventDefault(); recTargetChar = project.characters[idx].id; updateRecCharBadge(); renderRecCharList(); return }
+      if (activeTab === 'rythmo' || activeTab === 'rec') { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
     }
   }
 

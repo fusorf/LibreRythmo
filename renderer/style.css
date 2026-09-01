@@ -895,7 +895,7 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-charlbl { align-items: center; gap: 6px; }
 .rec-charlbl span { font-size: 12px; color: var(--dim); }
 /* liste des personnages (colonne gauche, pleine hauteur) */
-#recCharList { flex: 0 0 224px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border); }
+#recCharList { flex: 0 0 288px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border); }
 .rec-ch { padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .rec-ch:hover { background: var(--row-hover); }
 .rec-ch.target { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--toggle-text); }
