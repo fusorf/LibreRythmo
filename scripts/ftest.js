@@ -141,6 +141,31 @@ const TESTS = [
     loadProjectData(JSON.parse(JSON.stringify(project)), null)
     return added && removed && project.bookmarks.length === 1
   })()`],
+  // --- S1 voice recording (no mic: IPC + data model) ---
+  ['S1 take file IPC roundtrip', `(async () => {
+    if (!window.api.saveTake) return true
+    const buf = new Uint8Array([1, 2, 3, 4, 5]).buffer
+    const r = await window.api.saveTake(null, 'ftest_take.webm', buf)
+    if (!r || r.error) return 'save: ' + (r && r.error)
+    const url = await window.api.takeUrl(null, r.name)
+    const ok = !!url && url.startsWith('file:')
+    await window.api.deleteTake(null, r.name)
+    const gone = await window.api.takeUrl(null, r.name)
+    return ok && !gone
+  })()`],
+  ['S1 take data model + inspector + persist', `(() => {
+    if (typeof refreshRecInspector !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#ffffff' }],
+      lines: [{ id: 'l', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }],
+        takes: [{ id: 't1', file: 'x.webm', startTime: 1, dur: 1.2 }], take: 't1' }] }, null)
+    selectedIds = new Set(['l']); refreshInspector()
+    const sel = document.getElementById('takeSel')
+    const okUI = sel.options.length === 1 && sel.value === 't1' && !document.getElementById('btnPlayTake').disabled
+    loadProjectData(JSON.parse(JSON.stringify(project)), null)
+    const l = project.lines[0]
+    return okUI && l.take === 't1' && l.takes.length === 1
+  })()`],
 ]
 
 function getJson() {

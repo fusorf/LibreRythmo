@@ -877,6 +877,38 @@ ipcMain.handle('extract-audio-play', (e, videoPath, aIndex) => {
   })
 })
 
+// ---------- prises voix (S1) : stockage sidecar à côté du projet ----------
+// Les prises enregistrées vivent dans un dossier « takes » à côté du .rythmo pour
+// rester portables (elles voyagent avec le projet) et ne pas gonfler le JSON. Si le
+// projet n'est pas encore enregistré, repli sur le cache portable de l'app.
+function takesDir(projectPath) {
+  const base = projectPath
+    ? path.join(path.dirname(projectPath), 'takes')
+    : path.join(appBaseDir(), 'cache', 'takes')
+  try { fs.mkdirSync(base, { recursive: true }); return base } catch {}
+  const fb = path.join(app.getPath('temp'), 'librerythmo-takes')
+  try { fs.mkdirSync(fb, { recursive: true }) } catch {}
+  return fb
+}
+ipcMain.handle('save-take', (e, projectPath, name, buf) => {
+  try {
+    const p = path.join(takesDir(projectPath), path.basename(name))
+    fs.writeFileSync(p, Buffer.from(buf))
+    return { ok: true, path: p, name: path.basename(name) }
+  } catch (err) { return { error: String((err && err.message) || err) } }
+})
+ipcMain.handle('take-url', (e, projectPath, name) => {
+  try {
+    const p = path.join(takesDir(projectPath), path.basename(name))
+    if (fs.existsSync(p)) return require('url').pathToFileURL(p).href
+  } catch {}
+  return null
+})
+ipcMain.handle('delete-take', (e, projectPath, name) => {
+  try { fs.unlinkSync(path.join(takesDir(projectPath), path.basename(name))) } catch {}
+  return true
+})
+
 // ---------- proxy vidéo (cache portable basse résolution H.264) ----------
 // Dossier de cache dans le dossier de l'app (portable), repli sur le temp de l'OS si
 // non accessible en écriture (clé USB protégée, emplacement read-only).
@@ -1059,7 +1091,36 @@ ipcMain.handle('export-start', async (e, opts) => {
   ]
   const maps = ['-map', '[out]']
   const sel = (opts.audio || []).filter((a) => a.exported && a.path)
-  if (sel.length) {
+  // prises voix retenues (S1) à mixer par-dessus l'audio : chacune avec son offset
+  // (position sur la timeline d'export, en secondes, déjà relatif à startTime côté
+  // renderer). ⚠️ chemin à vérifier manuellement (mixage ffmpeg d'un vrai export).
+  const takes = (opts.takes || [])
+    .map((tk) => ({ ...tk, path: tk.path || (tk.name ? path.join(takesDir(opts.projectPath), tk.name) : null) }))
+    .filter((tk) => tk.path && fs.existsSync(tk.path))
+  let filterComplex = filter
+  if (takes.length) {
+    // mixage : piste audio de base sélectionnée (le cas échéant) + toutes les prises
+    // → un unique flux [aout] via amix (normalize=0 conserve les niveaux d'origine).
+    const audioFilters = []
+    const labels = []
+    let idx = 2
+    const base = sel[0]
+    if (base) {
+      inputs.push(...seek, '-itsoffset', (Number(base.offset) || 0).toFixed(3), '-i', base.path)
+      audioFilters.push(`[${idx}:a:${base.aIndex || 0}]aresample=async=1[am${idx}]`)
+      labels.push(`[am${idx}]`); idx++
+    }
+    for (const tk of takes) {
+      inputs.push('-itsoffset', (Number(tk.offset) || 0).toFixed(3), '-i', tk.path)
+      audioFilters.push(`[${idx}:a]aresample=async=1[am${idx}]`)
+      labels.push(`[am${idx}]`); idx++
+    }
+    const mix = labels.length > 1
+      ? `${labels.join('')}amix=inputs=${labels.length}:normalize=0[aout]`
+      : `${labels[0]}anull[aout]`
+    filterComplex = filter + ';' + audioFilters.concat([mix]).join(';')
+    maps.push('-map', '[aout]')
+  } else if (sel.length) {
     sel.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)) // piste par défaut en premier
     let idx = 2
     for (const a of sel) {
@@ -1073,7 +1134,7 @@ ipcMain.handle('export-start', async (e, opts) => {
   const args = [
     '-y',
     ...inputs,
-    '-filter_complex', filter,
+    '-filter_complex', filterComplex,
     ...maps,
     ...encoderArgs(enc, W, H, fps),
     '-pix_fmt', 'yuv420p',

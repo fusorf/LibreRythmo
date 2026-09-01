@@ -465,6 +465,10 @@ function applyLang() {
   applyReadingDir()
   $('btnAdr').title = t('adrTitle')
   buildCuePop()
+  updateRecUI()
+  $('btnPlayTake').title = t('recPlay')
+  $('btnDelTake').title = t('recDel')
+  $('btnMonitor').title = t('recMonitor')
   $('btnTogglePanel').textContent = t('panelToggle')
   $('btnTogglePanel').title = t('panelToggleTitle')
   $('btnToggleLines').textContent = t('linesTitle')
@@ -893,6 +897,235 @@ function gotoBookmark(dir) {
   video.pause(); scrubTo(target.time)
 }
 
+
+// ============================================================ S1 — enregistrement voix + prises
+// Enregistre la voix directement sur la bande qui défile. Plusieurs prises par
+// réplique : line.takes = [{ id, file, startTime, dur }], la prise retenue est
+// line.take (id). Les fichiers audio sont des sidecars (dossier « takes » à côté
+// du projet, via window.api.saveTake) — jamais dans le JSON. La prise retenue est
+// mixée à l'export et peut être écoutée en synchro pendant la lecture (monitoring).
+const recorder = { stream: null, mr: null, chunks: [], active: false, lineId: null, mime: 'audio/webm', ext: 'webm', ac: null, analyser: null, raf: 0, level: 0, recStartAt: 0, monitor: false }
+const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture / monitoring)
+const retainedTake = (line) => (line.takes || []).find((k) => k.id === line.take) || null
+
+async function ensureMic() {
+  if (recorder.stream) return recorder.stream
+  try {
+    recorder.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+  } catch (e) { toast(t('recMicDenied')); return null }
+  try {
+    recorder.ac = new (window.AudioContext || window.webkitAudioContext)()
+    const src = recorder.ac.createMediaStreamSource(recorder.stream)
+    recorder.analyser = recorder.ac.createAnalyser()
+    recorder.analyser.fftSize = 512
+    src.connect(recorder.analyser)
+  } catch {}
+  return recorder.stream
+}
+
+function pickMime() {
+  for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m
+  }
+  return 'audio/webm'
+}
+
+function blobDuration(blob) {
+  return new Promise((resolve) => {
+    const a = new Audio()
+    a.preload = 'metadata'
+    a.onloadedmetadata = () => {
+      if (isFinite(a.duration)) { resolve(a.duration); URL.revokeObjectURL(a.src); return }
+      // certains .webm renvoient Infinity : on force le calcul en cherchant la fin
+      a.currentTime = 1e9
+      a.ontimeupdate = () => { a.ontimeupdate = null; resolve(isFinite(a.duration) ? a.duration : 0); URL.revokeObjectURL(a.src) }
+    }
+    a.onerror = () => resolve(0)
+    a.src = URL.createObjectURL(blob)
+  })
+}
+
+async function startRecording() {
+  if (recorder.active) return
+  const line = singleSelected()
+  if (!line) { toast(t('recNeedLine')); return }
+  const stream = await ensureMic()
+  if (!stream) return
+  recorder.mime = pickMime()
+  recorder.ext = recorder.mime.includes('ogg') ? 'ogg' : 'webm'
+  recorder.chunks = []
+  try { recorder.mr = new MediaRecorder(stream, { mimeType: recorder.mime }) }
+  catch { recorder.mr = new MediaRecorder(stream) }
+  recorder.mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) recorder.chunks.push(ev.data) }
+  recorder.mr.onstop = () => finishRecording()
+  recorder.active = true
+  recorder.lineId = line.id
+  // pré-roll : on démarre un peu avant le début de la réplique pour se caler
+  recorder.recStartAt = Math.max(0, lineStart(line) - 1.0)
+  video.pause()
+  video.currentTime = recorder.recStartAt
+  recorder.mr.start()
+  video.play().catch(() => {})
+  updateRecUI()
+  meterLoop()
+}
+
+function stopRecording() {
+  if (!recorder.active || !recorder.mr) return
+  try { recorder.mr.stop() } catch {}
+  video.pause()
+  recorder.active = false
+}
+
+async function finishRecording() {
+  cancelAnimationFrame(recorder.raf)
+  recorder.level = 0
+  updateRecUI()
+  const blob = new Blob(recorder.chunks, { type: recorder.mime })
+  recorder.chunks = []
+  const line = getLine(recorder.lineId)
+  if (!line || !blob.size) return
+  const dur = await blobDuration(blob).catch(() => 0)
+  const buf = await blob.arrayBuffer()
+  const name = `take_${recorder.lineId}_${uid()}.${recorder.ext}`
+  const r = await window.api.saveTake(projectPath, name, buf)
+  if (!r || r.error) { toast(t('recSaveFail')); return }
+  pushUndo()
+  if (!line.takes) line.takes = []
+  const take = { id: uid(), file: r.name, startTime: recorder.recStartAt, dur: dur || 0 }
+  line.takes.push(take)
+  line.take = take.id // la nouvelle prise devient la prise retenue
+  markDirty()
+  refreshInspector()
+  preloadTakeAudios()
+  toast(t('recTakeSaved', line.takes.length))
+}
+
+function getTakeAudio(file, url) {
+  let a = takeAudios.get(file)
+  if (!a) { a = new Audio(url); takeAudios.set(file, a) }
+  return a
+}
+
+async function playRetainedTake() {
+  const line = singleSelected(); if (!line) return
+  const tk = retainedTake(line)
+  if (!tk) { toast(t('recNoTake')); return }
+  const url = await window.api.takeUrl(projectPath, tk.file)
+  if (!url) { toast(t('recNoTake')); return }
+  const a = getTakeAudio(tk.file, url)
+  video.pause()
+  video.currentTime = tk.startTime
+  try { a.currentTime = 0; await a.play() } catch {}
+  video.play().catch(() => {})
+}
+
+async function deleteRetainedTake() {
+  const line = singleSelected(); if (!line) return
+  const idx = (line.takes || []).findIndex((k) => k.id === line.take)
+  if (idx < 0) { toast(t('recNoTake')); return }
+  const tk = line.takes[idx]
+  pushUndo()
+  line.takes.splice(idx, 1)
+  await window.api.deleteTake(projectPath, tk.file)
+  takeAudios.delete(tk.file)
+  line.take = line.takes.length ? line.takes[Math.max(0, idx - 1)].id : null
+  if (!line.takes.length) delete line.takes
+  markDirty()
+  refreshInspector()
+  toast(t('recTakeDeleted'))
+}
+
+function meterLoop() {
+  if (!recorder.active || !recorder.analyser) { updateRecMeter(0); return }
+  const buf = new Uint8Array(recorder.analyser.fftSize)
+  recorder.analyser.getByteTimeDomainData(buf)
+  let peak = 0
+  for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > peak) peak = v }
+  recorder.level = peak
+  updateRecMeter(peak)
+  recorder.raf = requestAnimationFrame(meterLoop)
+}
+function updateRecMeter(level) {
+  const bar = $('recMeterBar'); if (bar) bar.style.width = Math.min(100, Math.round(level * 140)) + '%'
+}
+function updateRecUI() {
+  const b = $('btnRec'); if (b) { b.classList.toggle('recording', recorder.active); b.title = t(recorder.active ? 'recStop' : 'recStart') }
+  const m = $('recMeter'); if (m) m.hidden = !recorder.active
+}
+
+// précharge les <audio> des prises retenues (lecture/monitoring sans latence) et
+// purge celles qui ne sont plus référencées
+async function preloadTakeAudios() {
+  const wanted = new Set()
+  for (const line of project.lines) {
+    const tk = retainedTake(line)
+    if (!tk) continue
+    wanted.add(tk.file)
+    if (!takeAudios.has(tk.file)) {
+      const url = await window.api.takeUrl(projectPath, tk.file)
+      if (url) takeAudios.set(tk.file, new Audio(url))
+    }
+  }
+  for (const f of [...takeAudios.keys()]) if (!wanted.has(f)) takeAudios.delete(f)
+}
+
+function stopAllTakeAudio() { for (const a of takeAudios.values()) if (!a.paused) a.pause() }
+
+// monitoring : pendant la lecture normale, joue les prises retenues calées sur leur
+// position timeline (on entend sa voix par-dessus la vidéo). Best-effort.
+function syncTakesMonitor() {
+  if (!recorder.monitor || recorder.active || video.paused) { stopAllTakeAudio(); return }
+  const now = effectiveTime()
+  for (const line of project.lines) {
+    const tk = retainedTake(line)
+    if (!tk || !tk.dur) continue
+    const a = takeAudios.get(tk.file)
+    if (!a) continue
+    const within = now >= tk.startTime && now < tk.startTime + tk.dur
+    if (within) {
+      const target = now - tk.startTime
+      if (a.paused) { a.currentTime = target; a.play().catch(() => {}) }
+      else if (Math.abs(a.currentTime - target) > 0.3) a.currentTime = target
+    } else if (!a.paused) a.pause()
+  }
+}
+
+function refreshRecInspector(line) {
+  const sel = $('takeSel')
+  if (!sel) return
+  sel.innerHTML = ''
+  const takes = line.takes || []
+  if (!takes.length) {
+    const o = document.createElement('option'); o.value = ''; o.textContent = t('recNoTakes'); sel.appendChild(o)
+    sel.disabled = true
+  } else {
+    sel.disabled = false
+    takes.forEach((tk, i) => {
+      const o = document.createElement('option')
+      o.value = tk.id
+      o.textContent = t('recTakeN', i + 1) + (tk.dur ? ` · ${tk.dur.toFixed(1)}s` : '')
+      sel.appendChild(o)
+    })
+    sel.value = line.take || takes[takes.length - 1].id
+  }
+  $('btnPlayTake').disabled = !takes.length
+  $('btnDelTake').disabled = !takes.length
+}
+
+$('btnRec').addEventListener('click', () => { recorder.active ? stopRecording() : startRecording() })
+$('btnPlayTake').addEventListener('click', playRetainedTake)
+$('btnDelTake').addEventListener('click', deleteRetainedTake)
+$('takeSel').addEventListener('change', () => {
+  const l = singleSelected(); if (!l) return
+  pushUndo(); l.take = $('takeSel').value || null; markDirty(); preloadTakeAudios()
+})
+$('btnMonitor').addEventListener('click', () => {
+  recorder.monitor = !recorder.monitor
+  $('btnMonitor').classList.toggle('active', recorder.monitor)
+  if (!recorder.monitor) stopAllTakeAudio()
+})
+
 $('btnToggleLines').addEventListener('click', () => {
   const panel = $('linesPanel')
   panel.classList.toggle('hidden')
@@ -1149,6 +1382,7 @@ function refreshInspector() {
   if (changed || document.activeElement !== ins.text) ins.text.value = line.words.map((w) => w.text).join(' ')
   if (changed || document.activeElement !== ins.start) ins.start.value = formatTc(lineStart(line), project.fps)
   if (changed || document.activeElement !== ins.end) ins.end.value = formatTc(lineEnd(line), project.fps)
+  refreshRecInspector(line)
 }
 
 ins.char.addEventListener('change', () => {
@@ -3959,6 +4193,7 @@ async function loadProjectData(data, path) {
   renderLoopsPanel()
   renderPlansPanel()
   applyReadingDir()
+  preloadTakeAudios()
   setClean()
   updateDiscordActivity()
   usingProxy = false
@@ -5062,9 +5297,17 @@ async function runExport(outPathOverride) {
     exported: true,
     isDefault: true,
   }] : []
+  // prises voix retenues (S1) à mixer, calées sur la fenêtre d'export
+  const takes = []
+  for (const line of project.lines) {
+    const tk = (line.takes || []).find((k) => k.id === line.take)
+    if (!tk) continue
+    if (tk.startTime + (tk.dur || 0) <= startT) continue // entièrement avant la fenêtre
+    takes.push({ name: tk.file, offset: Math.max(0, tk.startTime - startT) })
+  }
   const r = await window.api.exportStart({
     fps, W, H, duration: dur, startTime: startT, layout: L, bandW: bw, bandH: bh,
-    videoPath: project.videoPath, outPath, audio,
+    videoPath: project.videoPath, outPath, audio, takes, projectPath,
     encoder: $('expEnc').value === 'cpu' ? 'cpu' : 'gpu',
   })
   if (r.error) {
@@ -5292,6 +5535,7 @@ function loop() {
   $('timecode').textContent = formatTc(effectiveTime(), project.fps)
   btnPlay.classList.toggle('playing', !video.paused)
   drawSeekBar()
+  syncTakesMonitor()
   if (player.open) {
     // boucle de scène : revenir au début quand on atteint la fin de la scène courante
     if (player.loopScene && !video.paused) {

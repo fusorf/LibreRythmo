@@ -332,6 +332,28 @@ button.active {
 .icon-btn.active svg { fill: var(--toggle-text); }
 /* bouton supprimer la réplique : icône poubelle, rouge au survol (action destructive) */
 #insDel:hover svg { fill: var(--bad, #e8584a); }
+
+/* ---------- enregistrement voix (S1) ---------- */
+.ins-rec { display: inline-flex; align-items: center; gap: 4px; }
+.rec-btn svg { fill: var(--accent); }
+.rec-btn.recording { background: var(--accent); border-color: var(--accent); animation: recpulse 1s ease-in-out infinite; }
+.rec-btn.recording svg { fill: #fff; }
+@keyframes recpulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+#takeSel { max-width: 150px; }
+.rec-meter {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  width: 120px;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
+  z-index: 6;
+}
+.rec-meter[hidden] { display: none; }
+#recMeterBar { height: 100%; width: 0; background: linear-gradient(90deg, #5fbf6a, #e8c84a, #e8443a); }
 .log-row .ltc {
   flex: 0 0 auto;
   min-width: 32px;
