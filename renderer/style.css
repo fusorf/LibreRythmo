@@ -986,6 +986,8 @@ body.on-rec .rythmo-ctl, body.on-rec .tracks-ctl { display: none; }
 .dub-dot { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; }
 .dub-name { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dub-pop-empty { padding: 6px 4px; font-size: 12px; color: var(--dim); }
+#btnDub { display: inline-flex; align-items: center; gap: 6px; }
+#btnDub .dub-ico { width: 16px; height: 16px; display: block; flex: 0 0 auto; }
 /* fond sombre = couleur de la timeline : l'espace sous la dernière piste reste cohérent */
 #tracksCanvasWrap { position: relative; flex: 1 1 auto; min-width: 0; background: var(--band-bg); }
 #tracksCanvas { display: block; width: 100%; cursor: default; }
