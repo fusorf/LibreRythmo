@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0 }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
@@ -540,6 +540,8 @@ function applyLang() {
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
   $('btnImportAudio').textContent = t('importAudio')
+  $('btnDub').textContent = t('dubBtn')
+  $('btnDub').title = t('dubBtnTitle')
   $('tracksEmptyMain').textContent = t('tracksEmptyMain')
   $('tracksEmptySub').textContent = t('tracksEmptySub')
   if (activeTab === 'tracks') renderTracks()
@@ -1764,7 +1766,7 @@ async function doSeparate() {
     return
   }
   $('sepBar').style.width = '100%'; $('sepStatus').textContent = t('sepDone')
-  await addExternalAudio(r.path, destBase)
+  await addExternalAudio(r.path, destBase, { voiceless: true }) // marque la piste générée « sans voix »
   toast(t('sepDone'))
   setTimeout(() => { if (!sepBusy) sepModal.classList.add('hidden') }, 700)
 }
@@ -2676,6 +2678,8 @@ const TRK_LANE_H = 56
 const SPK_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a4 4 0 0 1 0 7"/><path d="M18.7 6a7 7 0 0 1 0 12"/></svg>'
 const SPK_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9.5l4.5 5M21.5 9.5l-4.5 5"/></svg>'
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></svg>'
+// icône micro = marqueur « piste voix par défaut » (monitoring doublage)
+const VOICE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>'
 const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
 const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + ' ch' : '')
 
@@ -2765,6 +2769,7 @@ function renderTracks() {
   const noVideo = !project.videoPath
   $('tracksEmpty').classList.toggle('hidden', !noVideo) // placeholder propre quand pas de vidéo
   $('tracksWrap').classList.toggle('hidden', noVideo)
+  $('btnDub').classList.toggle('hidden', !dubVoicelessTrack()) // « Doublage » visible si piste sans-voix
   renderTrackHeads()
   resizeTracksCanvas()
 }
@@ -2795,9 +2800,20 @@ function renderTrackHeads() {
       spk.addEventListener('click', (e) => { e.stopPropagation(); setActiveAudio(tr.id) })
       const nm = document.createElement('span'); nm.className = 'trk-hname'; nm.textContent = tr.label || baseName(tr.path)
       const meta = document.createElement('span'); meta.className = 'trk-hmeta'
-      meta.textContent = tr.type === 'file' ? t('trackExternal') : `${tr.codec || ''} ${trackChannels(tr.channels)}`.trim()
+      const base = tr.type === 'file' ? t('trackExternal') : `${tr.codec || ''} ${trackChannels(tr.channels)}`.trim()
+      meta.textContent = base + (tr.voiceless ? ' · ' + t('dubVoiceless') : '')
       const txt = document.createElement('span'); txt.className = 'trk-htxt'; txt.append(nm, meta)
-      row.append(spk, txt)
+      row.append(spk)
+      // marqueur « piste voix » : visible seulement s'il existe une piste sans-voix, et pas sur elle
+      if (dubVoicelessTrack() && !tr.voiceless) {
+        const vb = document.createElement('button')
+        const isVoice = (dubVoiceTrack() || {}).id === tr.id
+        vb.className = 'trk-voice' + (isVoice ? ' on' : '')
+        vb.innerHTML = VOICE_SVG; vb.title = t('dubVoiceMark')
+        vb.addEventListener('click', (e) => { e.stopPropagation(); project.voiceTrackId = tr.id; markDirty(); renderTrackHeads(); syncPlaybackAudio() })
+        row.append(vb)
+      }
+      row.append(txt)
       if (tr.type === 'file') {
         const del = document.createElement('button')
         del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('trackDelete')
@@ -2815,11 +2831,51 @@ function deleteTrack(id) {
   if (!tr || tr.type !== 'file') return // seules les pistes importées se suppriment
   pushUndo()
   const wasActive = project.activeAudioId === id
+  const wasDubRelated = tr.voiceless || project.voiceTrackId === id
   project.audioTracks = project.audioTracks.filter((k) => k.id !== id)
   if (selectedTrackId === id) selectedTrackId = null
+  if (project.voiceTrackId === id) project.voiceTrackId = null
   if (wasActive) { project.activeAudioId = (activeAudioTrack() || {}).id || null; buildWaveform() }
+  if (wasDubRelated) { $('dubPop').classList.add('hidden'); syncPlaybackAudio() }
   renderTracks(); markDirty()
 }
+
+// ---------- monitoring doublage : popover « voix par personnage » ----------
+const isDubMuted = (id) => (project.muteChars || []).includes(id)
+function setDubMuted(id, muted) {
+  project.muteChars = (project.muteChars || []).filter((c) => c !== id)
+  if (muted) project.muteChars.push(id)
+  markDirty(); syncPlaybackAudio() // (re)active ou coupe le mode monitoring
+}
+function buildDubPop() {
+  const pop = $('dubPop'); pop.innerHTML = ''
+  const title = document.createElement('div'); title.className = 'dub-pop-title'; title.textContent = t('dubPopTitle'); pop.appendChild(title)
+  const chars = project.characters || []
+  if (!chars.length) { const e = document.createElement('div'); e.className = 'dub-pop-empty'; e.textContent = t('dubNoChars'); pop.appendChild(e); return }
+  for (const c of chars) {
+    const row = document.createElement('label'); row.className = 'dub-row'
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !isDubMuted(c.id)
+    cb.addEventListener('change', () => setDubMuted(c.id, !cb.checked))
+    const dot = document.createElement('span'); dot.className = 'dub-dot'; dot.style.background = c.color || '#888'
+    const nm = document.createElement('span'); nm.className = 'dub-name'; nm.textContent = c.name || '—'
+    row.append(cb, dot, nm); pop.appendChild(row)
+  }
+  const hint = document.createElement('div'); hint.className = 'dub-pop-hint'; hint.textContent = t('dubHint'); pop.appendChild(hint)
+}
+function toggleDubPop() {
+  const pop = $('dubPop')
+  if (!pop.classList.contains('hidden')) { pop.classList.add('hidden'); return }
+  buildDubPop()
+  const r = $('btnDub').getBoundingClientRect()
+  pop.style.left = Math.round(r.left) + 'px'
+  pop.style.top = Math.round(r.bottom + 4) + 'px'
+  pop.classList.remove('hidden')
+}
+$('btnDub').addEventListener('click', (e) => { e.stopPropagation(); toggleDubPop() })
+document.addEventListener('click', (e) => {
+  const p = $('dubPop')
+  if (!p.classList.contains('hidden') && !p.contains(e.target) && e.target !== $('btnDub')) p.classList.add('hidden')
+})
 
 // ---------- canvas timeline (même zoom/défilement/curseur que la bande) ----------
 function resizeTracksCanvas() {
@@ -3008,11 +3064,11 @@ tcanvas.addEventListener('wheel', (e) => {
 }, { passive: false })
 
 // ---------- import d'un fichier audio externe ----------
-async function addExternalAudio(p, label) {
+async function addExternalAudio(p, label, flags) {
   if (!project.videoPath) { toast(t('loadVideoFirst')); return }
   if (!p) return
   pushUndo()
-  const tr = { id: uid(), type: 'file', path: p, label: label || baseName(p), offset: 0, channels: 0 }
+  const tr = { id: uid(), type: 'file', path: p, label: label || baseName(p), offset: 0, channels: 0, ...(flags || {}) }
   project.audioTracks.push(tr)
   if (activeTab !== 'tracks') setTab('tracks')
   else renderTracks()
@@ -3217,6 +3273,11 @@ let playAOffset = 0 // décalage (s) de la piste active, appliqué à la positio
 
 function applyVolume() {
   const vol = Number($('volume').value)
+  if (dub.on) { // monitoring doublage : le son passe par le mix WebAudio
+    video.volume = 0
+    if (dub.master) dub.master.gain.value = video.muted ? 0 : vol
+    return
+  }
   video.volume = playAActive ? 0 : vol
   if (playA) { playA.volume = vol; playA.muted = video.muted }
 }
@@ -3239,6 +3300,14 @@ function syncPlayAPosition(hard) {
 // choisit la source de playA selon la piste active (mêmes règles que buildWaveform)
 async function syncPlaybackAudio() {
   const token = ++playAToken
+  // mode monitoring doublage : mix V / sans-voix (prioritaire sur le chemin mono-piste)
+  if (dubEnabled()) {
+    playAActive = false
+    if (playA) { try { playA.pause() } catch {} }
+    await dubBuild()
+    return
+  }
+  dubTeardown() // hors mode doublage : coupe le mix et annule tout build en vol (token++)
   const a = (typeof activeAudioTrack === 'function' && activeAudioTrack()) || null
   playAOffset = (a && a.offset) || 0
   // piste par défaut de la vidéo sans décalage → l'audio natif de la vidéo suffit
@@ -3265,12 +3334,92 @@ async function syncPlaybackAudio() {
   syncPlayAPosition(true)
 }
 
-video.addEventListener('play', () => syncPlayAPosition(true))
-video.addEventListener('pause', () => { if (playA && !playA.paused) playA.pause() })
-video.addEventListener('seeked', () => syncPlayAPosition(true))
-video.addEventListener('ratechange', () => { if (playA) playA.playbackRate = video.playbackRate })
-video.addEventListener('timeupdate', () => syncPlayAPosition(false))
+video.addEventListener('play', () => { syncPlayAPosition(true); if (dub.on) dubSync(true) })
+video.addEventListener('pause', () => { if (playA && !playA.paused) playA.pause(); if (dub.on) dubSync(true) })
+video.addEventListener('seeked', () => { syncPlayAPosition(true); if (dub.on) dubSync(true) })
+video.addEventListener('ratechange', () => { if (playA) playA.playbackRate = video.playbackRate; if (dub.on) dubSync(true) })
+video.addEventListener('timeupdate', () => { syncPlayAPosition(false); if (dub.on) dubSync(false) })
 video.addEventListener('volumechange', applyVolume)
+
+// ============================================================ monitoring doublage
+// Quand une piste « sans voix » existe et qu'au moins un personnage est décoché, la lecture
+// mixe deux sources synchronisées : la piste VOIX (V) et la piste SANS-VOIX (VL), via WebAudio.
+// Pendant une réplique d'un perso décoché → fondu ~30 ms vers VL (voix retirée) ; sinon → V.
+// Le fond sonore étant commun aux deux pistes, le fondu ne crée aucune perte de volume.
+const dub = { ctx: null, v: null, vl: null, srcV: null, srcVL: null, gV: null, gVL: null, master: null, on: false, vUrl: null, vlUrl: null, vOff: 0, vlOff: 0, token: 0 }
+const dubVoicelessTrack = () => (project.audioTracks || []).find((a) => a.voiceless) || null
+function dubVoiceTrack() {
+  const tagged = audioById(project.voiceTrackId)
+  if (tagged && !tagged.voiceless) return tagged
+  const act = audioById(project.activeAudioId)
+  if (act && !act.voiceless) return act
+  const cand = (project.audioTracks || []).filter((a) => !a.voiceless)
+  return cand.find((a) => a.type === 'embedded') || cand[0] || null
+}
+const dubEnabled = () => !!project.videoPath && !!dubVoicelessTrack() && (project.muteChars || []).length > 0 && !!dubVoiceTrack()
+
+async function dubTrackUrl(tr) {
+  if (!tr) return null
+  const src = tr.type === 'file' ? tr.path : await window.api.extractAudioPlay(project.videoPath, tr.index)
+  return src ? await window.api.fileUrl(src) : null
+}
+async function dubBuild() {
+  const token = ++dub.token
+  const V = dubVoiceTrack(), VL = dubVoicelessTrack()
+  const [vUrl, vlUrl] = await Promise.all([dubTrackUrl(V), dubTrackUrl(VL)])
+  if (token !== dub.token) return
+  if (!vUrl || !vlUrl) { dubTeardown(); applyVolume(); return }
+  const AC = window.AudioContext || window.webkitAudioContext
+  dub.ctx ||= new AC()
+  dub.v ||= new Audio(); dub.vl ||= new Audio()
+  dub.v.preload = 'auto'; dub.vl.preload = 'auto'
+  if (dub.vUrl !== vUrl) { dub.vUrl = vUrl; dub.v.src = vUrl }
+  if (dub.vlUrl !== vlUrl) { dub.vlUrl = vlUrl; dub.vl.src = vlUrl }
+  dub.vOff = (V && V.offset) || 0
+  dub.vlOff = (VL && VL.offset) || 0
+  if (!dub.srcV) { dub.srcV = dub.ctx.createMediaElementSource(dub.v); dub.gV = dub.ctx.createGain(); dub.srcV.connect(dub.gV) }
+  if (!dub.srcVL) { dub.srcVL = dub.ctx.createMediaElementSource(dub.vl); dub.gVL = dub.ctx.createGain(); dub.srcVL.connect(dub.gVL) }
+  if (!dub.master) { dub.master = dub.ctx.createGain(); dub.gV.connect(dub.master); dub.gVL.connect(dub.master); dub.master.connect(dub.ctx.destination) }
+  dub.gV.gain.value = 1; dub.gVL.gain.value = 0
+  dub.on = true
+  applyVolume()
+  dubSync(true)
+}
+function dubTeardown() {
+  dub.token++
+  dub.on = false
+  try { if (dub.v) dub.v.pause() } catch {}
+  try { if (dub.vl) dub.vl.pause() } catch {}
+  if (dub.master) dub.master.gain.value = 0
+}
+// une réplique d'un perso décoché est-elle active à l'instant t ?
+function dubWantVL(tt) {
+  const mset = project.muteChars || []
+  if (!mset.length) return false
+  for (const l of project.lines) {
+    if (!l.words || !l.words.length || !mset.includes(l.characterId)) continue
+    if (tt >= lineStart(l) && tt < lineEnd(l)) return true
+  }
+  return false
+}
+function dubSyncPos(el, off, hard) {
+  const tt = video.currentTime - off
+  const inRange = tt >= 0 && tt < (el.duration || Infinity)
+  if (video.paused || !inRange) { if (!el.paused) el.pause(); if (hard && inRange) { try { el.currentTime = tt } catch {} } return }
+  if (Math.abs(el.currentTime - tt) > (hard ? 0.05 : 0.3)) { try { el.currentTime = tt } catch {} }
+  el.playbackRate = video.playbackRate
+  if (el.paused) el.play().catch(() => {})
+}
+function dubSync(hard) {
+  if (!dub.on || !dub.ctx) return
+  if (dub.ctx.state === 'suspended') dub.ctx.resume().catch(() => {})
+  dubSyncPos(dub.v, dub.vOff, hard)
+  dubSyncPos(dub.vl, dub.vlOff, hard)
+  const wantVL = dubWantVL(video.currentTime)
+  const now = dub.ctx.currentTime
+  dub.gV.gain.setTargetAtTime(wantVL ? 0 : 1, now, 0.012) // fondu ~30 ms
+  dub.gVL.gain.setTargetAtTime(wantVL ? 1 : 0, now, 0.012)
+}
 
 // ============================================================ canvas rendering
 let cw = 0, ch = 0 // CSS pixels
@@ -6296,6 +6445,7 @@ function loop() {
   btnPlay.classList.toggle('playing', !video.paused)
   drawSeekBar()
   syncTakesMonitor()
+  if (dub.on) dubSync(false) // fondu voix/sans-voix suivi finement (bornes de répliques)
   if (player.open) {
     // boucle de scène : revenir au début quand on atteint la fin de la scène courante
     if (player.loopScene && !video.paused) {

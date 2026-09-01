@@ -158,6 +158,42 @@ const TESTS = [
     ensureActiveAudio()
     return project.activeAudioId === 'new-b' && project.activeAudioKey === 'emb:1'
   })()`],
+  ['Doublage : dubWantVL vrai pendant la réplique d\'un perso coupé', `(() => {
+    if (typeof dubWantVL !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [],
+      characters: [{ id: 'a', name: 'A', color: '#e00' }, { id: 'b', name: 'B', color: '#00e' }],
+      audioTracks: [{ id: 'vo', type: 'embedded', index: 0, offset: 0 }, { id: 'nv', type: 'file', path: 'nv.wav', offset: 0, voiceless: true }],
+      lines: [{ id: 'l1', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }] }, { id: 'l2', characterId: 'b', track: 0, words: [{ text: 'y', start: 3, end: 4 }] }],
+      muteChars: ['a'] }, null)
+    return dubWantVL(1.5) === true && dubWantVL(3.5) === false && dubWantVL(0.5) === false
+  })()`],
+  ['Doublage : piste voix par défaut ≠ sans-voix + dubEnabled', `(() => {
+    if (typeof dubVoiceTrack !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], characters: [{ id: 'a', name: 'A', color: '#e00' }],
+      audioTracks: [{ id: 'vo', type: 'embedded', index: 0, offset: 0 }, { id: 'nv', type: 'file', path: 'nv.wav', offset: 0, voiceless: true }],
+      lines: [{ id: 'l1', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }] }], muteChars: ['a'] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    const v = dubVoiceTrack()
+    const ok = !!v && v.voiceless !== true && dubEnabled() === true && !!dubVoicelessTrack()
+    project.videoPath = null
+    return ok
+  })()`],
+  ['Doublage : bouton visible si piste sans-voix + popover coche/décoche', `(() => {
+    if (typeof setDubMuted !== 'function' || typeof buildDubPop !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], characters: [{ id: 'a', name: 'A', color: '#e00' }, { id: 'b', name: 'B', color: '#00e' }],
+      audioTracks: [{ id: 'vo', type: 'embedded', index: 0, offset: 0 }, { id: 'nv', type: 'file', path: 'nv.wav', offset: 0, voiceless: true }],
+      lines: [], muteChars: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    renderTracks()
+    const btnShown = !document.getElementById('btnDub').classList.contains('hidden')
+    buildDubPop()
+    const n = document.querySelectorAll('#dubPop .dub-row input').length
+    setDubMuted('a', true)
+    const muted = project.muteChars.includes('a')
+    setDubMuted('a', false)
+    project.videoPath = null
+    return btnShown && n === 2 && muted && !project.muteChars.includes('a')
+  })()`],
   // --- Tier B: bookmarks ---
   ['B bookmark toggle + persist', `(() => {
     if (typeof toggleBookmark !== 'function') return true
