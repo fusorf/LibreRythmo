@@ -721,6 +721,15 @@ function renderChars() {
   const sel = getChar(selectedCharId)
   const addGroup = $('btnAddLine').closest('.seg-group')
   if (addGroup) addGroup.style.borderColor = sel ? sel.color : ''
+  // badge « personnage sélectionné » (premier segment du groupe) : fond = couleur du
+  // perso, nom en texte lisible ; taille fixe + ellipsis (ne décale pas l'interface)
+  const badge = $('curCharBadge')
+  if (badge) {
+    badge.textContent = sel ? sel.name : '—'
+    badge.style.background = sel ? sel.color : 'transparent'
+    badge.style.color = sel ? textOn(sel.color) : 'var(--dim)'
+    badge.title = sel ? sel.name : ''
+  }
 
   const list = $('charList')
   list.innerHTML = ''

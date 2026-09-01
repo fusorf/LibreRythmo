@@ -317,6 +317,21 @@ button.active {
   border-radius: 0;
 }
 .seg-group > button + button { border-left: 1px solid var(--border); }
+/* premier segment du groupe : nom du personnage sélectionné, taille fixe + ellipsis
+   (fond = couleur du perso, l'outline vient de la bordure du groupe colorée par renderChars) */
+#curCharBadge {
+  flex: 0 0 auto;
+  width: 104px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 12px "Segoe UI", sans-serif;
+  line-height: calc(var(--ctl-h) - 2px);
+  border-right: 1px solid var(--border);
+  color: var(--dim);
+}
 
 /* boutons-icônes du transport (aimant…) */
 .icon-btn {

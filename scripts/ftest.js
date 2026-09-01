@@ -117,6 +117,10 @@ const TESTS = [
     document.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }))
     return selectedCharId === 'c2'
   })()`],
+  ['Transport character badge reflects selection', `(() => {
+    const b = document.getElementById('curCharBadge')
+    return !!b && b.textContent === getChar(selectedCharId).name
+  })()`],
   // --- Tier B: character merge + search ---
   ['B merge characters reassigns lines', `(() => {
     if (typeof mergeCharacter !== 'function') return true
