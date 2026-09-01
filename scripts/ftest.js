@@ -90,6 +90,22 @@ const TESTS = [
     clearCues()
     return afterRemove === 1 && project.cues.length === 0
   })()`],
+  ['A6 cue selected on add + deletable', `(() => {
+    if (typeof addCue !== 'function' || typeof deleteSelectedCue !== 'function') return true
+    project.cues = []; scrub.time = 5
+    addCue('punch')
+    const okSel = !!selectedCueId && project.cues.length === 1 && project.cues[0].id === selectedCueId
+    deleteSelectedCue()
+    return okSel && project.cues.length === 0 && selectedCueId === null
+  })()`],
+  ['A6 timeline render + draw no throw', `(() => {
+    if (typeof drawCuesTimeline !== 'function') return true
+    project.cues = [{ id: 'c1', type: 'streamer', time: 4, lead: 3 }, { id: 'c2', type: 'punch', time: 8 }]
+    selectedCueId = 'c1'
+    let r; try { drawCuesTimeline(); draw(); r = true } catch (e) { r = 'ERR: ' + e.message }
+    project.cues = []; selectedCueId = null
+    return r
+  })()`],
   // --- Tier B: character merge + search ---
   ['B merge characters reassigns lines', `(() => {
     if (typeof mergeCharacter !== 'function') return true

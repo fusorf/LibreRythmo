@@ -3149,6 +3149,7 @@ function draw() {
   renderBand(ctx, effectiveTime(), cw, ch, pxPerSec, { ruler: true, wave: showWave, handles: true, blocks: true, theme: bandPal() })
   drawLoops()
   drawPlans()
+  drawCuesTimeline()
   drawHoverCursor()
   drawDragGuide()
   updateSubOverlay()
@@ -3423,6 +3424,7 @@ canvas.addEventListener('pointerdown', (e) => {
   const y = e.clientY - r.top
   const hit = hitTest(x, y)
   hoverEdge = null // pas de surbrillance de poignée pendant un drag
+  selectedCueId = null // toute sélection de réplique/scrub désélectionne un repère ADR
   canvas.setPointerCapture(e.pointerId)
 
   if (hit.kind === 'edge') {
@@ -3478,12 +3480,24 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     canvas.style.cursor = 'grabbing'
   } else {
-    selectedIds.clear()
-    refreshInspector()
-    video.pause()
-    scrub.active = true
-    drag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: timeAtX(x, effectiveTime()), fromRuler: y <= RULER_H, moved: false }
-    canvas.style.cursor = 'grabbing'
+    // bande / règle vide : d'abord un repère ADR sous le curseur (sélection + drag),
+    // sinon scrub / clic-règle
+    const cid = hitCueX(x)
+    if (cid) {
+      selectedCueId = cid
+      selectedIds.clear()
+      refreshInspector()
+      const q = (project.cues || []).find((c) => c.id === cid)
+      drag = { kind: 'cue', id: cid, x0: x, t0: q ? q.time : 0, moved: false }
+      canvas.style.cursor = 'grabbing'
+    } else {
+      selectedIds.clear()
+      refreshInspector()
+      video.pause()
+      scrub.active = true
+      drag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: timeAtX(x, effectiveTime()), fromRuler: y <= RULER_H, moved: false }
+      canvas.style.cursor = 'grabbing'
+    }
   }
 })
 
@@ -3498,6 +3512,7 @@ canvas.addEventListener('pointermove', (e) => {
       : null
     let cur = hit.kind === 'edge' ? 'ew-resize' : hit.kind === 'line' ? 'move' : 'grab'
     if (hover.y <= RULER_H) cur = 'pointer' // règle : clic = aller à cet endroit
+    if (hit.kind !== 'edge' && hit.kind !== 'line' && hitCueX(hover.x)) cur = 'ew-resize' // repère ADR déplaçable
     if (hit.kind === 'edge' && !(e.ctrlKey || e.metaKey)) {
       const isFirst = hit.type === 'start' && hit.wi === 0
       const isLast = hit.type === 'end' && hit.wi === hit.line.words.length - 1
@@ -3516,6 +3531,13 @@ canvas.addEventListener('pointermove', (e) => {
     if (drag.moved) {
       scrubTo(drag.t0 - dt)
       playScrubGrain(scrub.time)
+    }
+  } else if (drag.kind === 'cue') {
+    if (Math.abs(dx) > 2) drag.moved = true
+    if (drag.moved) {
+      if (!drag.pushed) { pushUndo(); drag.pushed = true }
+      const q = (project.cues || []).find((c) => c.id === drag.id)
+      if (q) { q.time = clamp(drag.t0 + dt, 0, videoDur()); markDirty() }
     }
   } else if (drag.kind === 'line') {
     if (Math.abs(dx) > 3) drag.moved = true
@@ -3983,6 +4005,66 @@ document.addEventListener('click', (e) => {
 // un flash circulaire au top. project.cues = [{ id, type, time, lead? }].
 const STREAMER_LEAD = 3 // s : durée du balayage du streamer avant le top
 const cuePop = $('cuePop')
+let selectedCueId = null // repère ADR sélectionné sur la bande (déplaçable / supprimable)
+const CUE_COL = '#5cc8f0' // cyan, distinct des plans (ambre) et du playhead (rouge)
+
+// rendu des repères sur la bande (timeline) : ligne guide verticale + marqueur dans la
+// règle (cercle = punch, fanion = streamer, + barre de lead). Le repère sélectionné
+// est mis en valeur. Sélection/déplacement/suppression gérés dans les handlers pointeur.
+function drawCuesTimeline() {
+  const cues = project.cues || []
+  if (!cues.length) return
+  const now = effectiveTime()
+  const cy = 14
+  ctx.save()
+  for (const q of cues) {
+    const x = xAtTime(q.time, now)
+    const sel = q.id === selectedCueId
+    if (q.type === 'streamer') { // barre de lead (de time-lead à time)
+      const x0 = xAtTime(q.time - (q.lead || STREAMER_LEAD), now)
+      ctx.strokeStyle = CUE_COL
+      ctx.globalAlpha = sel ? 0.9 : 0.5
+      ctx.lineWidth = sel ? 3 : 2
+      ctx.beginPath(); ctx.moveTo(Math.max(0, x0), RULER_H - 4.5); ctx.lineTo(Math.min(cw, x), RULER_H - 4.5); ctx.stroke()
+    }
+    if (x < -14 || x > cw + 14) continue
+    ctx.strokeStyle = CUE_COL // ligne guide verticale
+    ctx.globalAlpha = sel ? 0.85 : 0.32
+    ctx.lineWidth = sel ? 2 : 1
+    ctx.beginPath(); ctx.moveTo(x + 0.5, RULER_H); ctx.lineTo(x + 0.5, ch); ctx.stroke()
+    ctx.globalAlpha = 1 // marqueur dans la règle
+    ctx.fillStyle = CUE_COL
+    ctx.strokeStyle = sel ? '#ffffff' : CUE_COL
+    ctx.lineWidth = 1.5
+    if (q.type === 'punch') {
+      ctx.beginPath(); ctx.arc(x, cy, sel ? 6 : 5, 0, Math.PI * 2); ctx.fill()
+      if (sel) ctx.stroke()
+    } else {
+      const s = sel ? 6 : 5
+      ctx.beginPath(); ctx.moveTo(x - s, cy - s); ctx.lineTo(x + s, cy); ctx.lineTo(x - s, cy + s); ctx.closePath(); ctx.fill()
+      if (sel) ctx.stroke()
+    }
+  }
+  ctx.restore()
+}
+
+// id du repère dont le marqueur (ou la ligne guide) est à moins de ~7 px de x, sinon null
+function hitCueX(x) {
+  const cues = project.cues || []
+  if (!cues.length) return null
+  const now = effectiveTime()
+  let best = null, bd = 7
+  for (const q of cues) { const d = Math.abs(xAtTime(q.time, now) - x); if (d <= bd) { bd = d; best = q.id } }
+  return best
+}
+
+function deleteSelectedCue() {
+  if (!selectedCueId) return
+  const cues = project.cues || []
+  const i = cues.findIndex((c) => c.id === selectedCueId)
+  if (i < 0) { selectedCueId = null; return }
+  pushUndo(); cues.splice(i, 1); selectedCueId = null; markDirty(); toast(t('cueRemoved'))
+}
 
 function drawPunchRing(c, r) {
   const cx = r.x + r.w / 2, cy = r.y + r.h / 2
@@ -4051,6 +4133,7 @@ function addCue(type) {
   const cue = { id: uid(), type, time }
   if (type === 'streamer') cue.lead = STREAMER_LEAD
   project.cues.push(cue)
+  selectedCueId = cue.id // le nouveau repère est sélectionné (déplaçable / supprimable de suite)
   markDirty()
   toast(t(type === 'streamer' ? 'cueStreamerAdded' : 'cuePunchAdded'))
 }
@@ -4061,12 +4144,12 @@ function removeNearestCue() {
   const now = effectiveTime()
   let bi = -1, bd = Infinity
   for (let i = 0; i < cues.length; i++) { const d = Math.abs(cues[i].time - now); if (d < bd) { bd = d; bi = i } }
-  if (bi >= 0) { pushUndo(); cues.splice(bi, 1); markDirty(); toast(t('cueRemoved')) }
+  if (bi >= 0) { pushUndo(); const [rm] = cues.splice(bi, 1); if (rm && rm.id === selectedCueId) selectedCueId = null; markDirty(); toast(t('cueRemoved')) }
 }
 
 function clearCues() {
   if (!(project.cues || []).length) { toast(t('cueNone')); return }
-  pushUndo(); project.cues = []; markDirty(); toast(t('cuesCleared'))
+  pushUndo(); project.cues = []; selectedCueId = null; markDirty(); toast(t('cuesCleared'))
 }
 
 function buildCuePop() {
@@ -4218,7 +4301,7 @@ document.addEventListener('keydown', (e) => {
       break
     case 'Delete':
     case 'Backspace':
-      if (activeTab === 'rythmo') deleteSelected()
+      if (activeTab === 'rythmo') { if (selectedCueId) deleteSelectedCue(); else deleteSelected() }
       break
     case 'Escape':
       if (!$('guideModal').classList.contains('hidden')) {
@@ -4376,6 +4459,7 @@ async function loadProjectData(data, path) {
   projectPath = path || null
   selectedCharId = project.characters[0]?.id || null
   selectedIds = new Set()
+  selectedCueId = null
   undoStack = []
   redoStack = []
   syncUndoMenu()
