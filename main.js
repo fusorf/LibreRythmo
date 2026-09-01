@@ -923,144 +923,200 @@ ipcMain.handle('delete-take', (e, projectPath, name) => {
   return true
 })
 
-// ---------- A4 (expérimental) : transcription assistée via whisper.cpp ----------
-// Rien n'est bundlé (cohérence/poids) : le modèle est téléchargé à la demande et le
-// moteur whisper.cpp doit être fourni par l'utilisateur (exécutable choisi une fois).
-// Le résultat est produit en SRT puis importé par le circuit d'import sous-titres
-// existant (déjà éprouvé). Modèles ggml : HuggingFace ggerganov/whisper.cpp.
+// ---------- A4 : transcription assistée (sherpa-onnx + Whisper ONNX) ----------
+// Moteur léger « sherpa-onnx » (onnxruntime, wheels précompilés — pas de compilation),
+// installable depuis les Paramètres via pip (Python détecté), comme le séparateur.
+// Modèles Whisper ONNX (dont large-v3-turbo, multilingue) téléchargés/gérés par l'app,
+// + VAD Silero pour le découpage. Résultat produit en SRT (VAD + Whisper) puis importé
+// par le circuit d'import sous-titres existant.
 let whisperProc = null
 let whisperAbort = null
-function whisperDir() {
-  const d = path.join(app.getPath('userData'), 'whisper-models')
-  try { fs.mkdirSync(d, { recursive: true }) } catch {}
-  return d
+function whisperDir() { const d = path.join(app.getPath('userData'), 'whisper-models'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
+const WHISPER_MODELS = [
+  { name: 'turbo', asset: 'sherpa-onnx-whisper-turbo.tar.bz2', estMB: 538, label: 'Whisper turbo (multilingue)' },
+  { name: 'small', asset: 'sherpa-onnx-whisper-small.tar.bz2', estMB: 484, label: 'Whisper small (multilingue)' },
+  { name: 'base', asset: 'sherpa-onnx-whisper-base.tar.bz2', estMB: 160, label: 'Whisper base (multilingue)' },
+  { name: 'tiny', asset: 'sherpa-onnx-whisper-tiny.tar.bz2', estMB: 105, label: 'Whisper tiny (multilingue)' },
+]
+const SHERPA_ASR_URL = (a) => `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${a}`
+const whisperModelDir = (name) => path.join(whisperDir(), String(name).replace(/[^a-z0-9.\-]/gi, ''))
+const vadModelPath = () => path.join(whisperDir(), 'silero_vad.onnx')
+function dirSizeBytes(dir) { let n = 0; try { for (const f of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, f.name); if (f.isDirectory()) n += dirSizeBytes(p); else { try { n += fs.statSync(p).size } catch {} } } } catch {}; return n }
+function whisperModelFiles(name) {
+  const dir = whisperModelDir(name)
+  const enc = findFileRec(dir, /encoder\.int8\.onnx$/i) || findFileRec(dir, /encoder\.onnx$/i)
+  const dec = findFileRec(dir, /decoder\.int8\.onnx$/i) || findFileRec(dir, /decoder\.onnx$/i)
+  const tok = findFileRec(dir, /tokens\.txt$/i)
+  return { enc, dec, tok }
 }
-const whisperCfgPath = () => path.join(app.getPath('userData'), 'whisper.json')
-function whisperExeSaved() {
-  try { return JSON.parse(fs.readFileSync(whisperCfgPath(), 'utf8')).exe || null } catch { return null }
+function whisperModelPresent(name) { const f = whisperModelFiles(name); return !!(f.enc && f.dec && f.tok) }
+
+// vérifie qu'un module Python est importable / lance pip en streamant les lignes
+function pyImportable(py, mod) {
+  return new Promise((res) => { const inv = pythonInvoke(py); let p; try { p = spawn(inv[0], [...inv.slice(1), '-c', 'import ' + mod], { stdio: 'ignore' }) } catch { return res(false) } p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
 }
-function whisperModelPath(model) {
-  return path.join(whisperDir(), `ggml-${String(model).replace(/[^a-z0-9.\-]/gi, '')}.bin`)
-}
-// détection automatique du moteur whisper.cpp : override enregistré, sinon binaire sur
-// le PATH (noms usuels). Rien à choisir manuellement.
-let whisperEngineCache
-function whisperDetect() {
+function pipRun(py, args, phase) {
+  const inv = pythonInvoke(py)
   return new Promise((resolve) => {
-    const saved = whisperExeSaved()
-    if (saved && fs.existsSync(saved)) return resolve(saved)
-    if (whisperEngineCache !== undefined) return resolve(whisperEngineCache)
-    const cands = process.platform === 'win32'
-      ? ['whisper-cli.exe', 'whisper-cli', 'whisper.exe', 'whisper', 'main.exe']
-      : ['whisper-cli', 'whisper', 'main']
-    let i = 0
-    const tryNext = () => {
-      if (i >= cands.length) { whisperEngineCache = null; return resolve(null) }
-      const c = cands[i++]
-      let p
-      try { p = spawn(c, ['--help'], { stdio: 'ignore' }) } catch { return tryNext() }
-      p.on('error', tryNext)
-      p.on('close', () => { whisperEngineCache = c; resolve(c) }) // s'est lancé → présent
-    }
-    tryNext()
+    let tail = ''
+    try { whisperProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', ...args], { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch { whisperProc = null; return resolve(false) }
+    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const line = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop(); if (line && win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase, text: line.slice(0, 120) }) }
+    whisperProc.stdout.on('data', on); whisperProc.stderr.on('data', on)
+    whisperProc.on('close', (c) => { whisperProc = null; resolve(c === 0) })
+    whisperProc.on('error', () => { whisperProc = null; resolve(false) })
   })
 }
-
-ipcMain.handle('whisper-status', async (e, model) => {
-  const mp = whisperModelPath(model)
-  let modelOk = false
-  try { modelOk = fs.existsSync(mp) && fs.statSync(mp).size > 1e6 } catch {}
-  const engine = await whisperDetect()
-  return { model: modelOk, modelPath: mp, engine, exe: engine }
+ipcMain.handle('whisper-engine-status', async () => {
+  const py = await detectPython()
+  const installed = py ? await pyImportable(py, 'sherpa_onnx') : false
+  return { installed, python: py }
+})
+ipcMain.handle('whisper-engine-install', async () => {
+  if (whisperProc) return { error: 'busy' }
+  const py = await detectPython(); if (!py) return { error: 'no-python' }
+  const ok = await pipRun(py, ['install', '--user', '-U', 'sherpa-onnx'], 'install')
+  return ok ? { ok: true } : { error: 'install-failed' }
+})
+ipcMain.handle('whisper-engine-uninstall', async () => {
+  const py = await detectPython(); if (!py) return { error: 'no-python' }
+  await pipRun(py, ['uninstall', '-y', 'sherpa-onnx'], 'install')
+  return { ok: true }
 })
 
-ipcMain.handle('whisper-pick-exe', async () => {
-  const r = await dialog.showOpenDialog(win, { title: 'whisper.cpp', properties: ['openFile'] })
-  if (r.canceled || !r.filePaths.length) return null
-  const exe = r.filePaths[0]
-  try { fs.writeFileSync(whisperCfgPath(), JSON.stringify({ exe }), 'utf8') } catch {}
-  return exe
-})
+ipcMain.handle('whisper-list-models', () => WHISPER_MODELS.map((m) => {
+  const present = whisperModelPresent(m.name)
+  return { model: m.name, label: m.label, present, sizeMB: present ? Math.round(dirSizeBytes(whisperModelDir(m.name)) / 1e6) : 0, estMB: m.estMB }
+}))
+ipcMain.handle('whisper-delete-model', (e, name) => { try { fs.rmSync(whisperModelDir(name), { recursive: true, force: true }) } catch {} return true })
 
-ipcMain.handle('whisper-download-model', async (e, model) => {
-  const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${model}.bin`
-  const out = whisperModelPath(model)
-  if (fs.existsSync(out) && fs.statSync(out).size > 1e6) return { ok: true, path: out, cached: true }
+async function downloadTo(url, out, phase) {
   const tmp = out + '.part'
   whisperAbort = new AbortController()
+  const res = await fetch(url, { signal: whisperAbort.signal, headers: { 'User-Agent': 'LibreRythmo' } })
+  if (!res.ok || !res.body) { whisperAbort = null; throw new Error('HTTP ' + res.status) }
+  const total = Number(res.headers.get('content-length')) || 0
+  const ws = fs.createWriteStream(tmp); const reader = res.body.getReader(); let got = 0
+  for (;;) { const { done, value } = await reader.read(); if (done) break; ws.write(Buffer.from(value)); got += value.length; if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: phase || 'download', pct: total ? Math.round((got / total) * 100) : 0 }) }
+  await new Promise((r2, rj) => { ws.end(() => r2()); ws.on('error', rj) })
+  fs.renameSync(tmp, out); whisperAbort = null
+}
+ipcMain.handle('whisper-install-model', async (e, name) => {
+  if (whisperProc || whisperAbort) return { error: 'busy' }
+  const spec = WHISPER_MODELS.find((m) => m.name === name); if (!spec) return { error: 'unknown-model' }
+  const py = await detectPython(); if (!py) return { error: 'no-python' } // requis pour extraire le .tar.bz2
   try {
-    const res = await fetch(url, { signal: whisperAbort.signal, headers: { 'User-Agent': 'LibreRythmo' } })
-    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status)
-    const total = Number(res.headers.get('content-length')) || 0
-    const ws = fs.createWriteStream(tmp)
-    const reader = res.body.getReader()
-    let got = 0
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      ws.write(Buffer.from(value))
-      got += value.length
-      if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'download', pct: total ? Math.round((got / total) * 100) : 0 })
-    }
-    await new Promise((r2, rj) => { ws.end(() => r2()); ws.on('error', rj) })
-    fs.renameSync(tmp, out)
-    whisperAbort = null
-    return { ok: true, path: out }
-  } catch (err) {
-    whisperAbort = null
-    try { fs.unlinkSync(tmp) } catch {}
-    return { error: String((err && err.message) || err) }
-  }
+    const tarball = path.join(whisperDir(), spec.asset)
+    await downloadTo(SHERPA_ASR_URL(spec.asset), tarball, 'download')
+    const dir = whisperModelDir(name)
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch {}
+    fs.mkdirSync(dir, { recursive: true })
+    if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'extract' })
+    const inv = pythonInvoke(py)
+    const okx = await new Promise((res) => { const p = spawn(inv[0], [...inv.slice(1), '-c', 'import sys,tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])', tarball, dir], { stdio: 'ignore' }); p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
+    try { fs.unlinkSync(tarball) } catch {}
+    if (!okx || !whisperModelPresent(name)) return { error: 'extract-failed' }
+    if (!fs.existsSync(vadModelPath())) { try { await downloadTo(SHERPA_ASR_URL('silero_vad.onnx'), vadModelPath(), 'download') } catch {} }
+    return { ok: true }
+  } catch (err) { whisperAbort = null; return { error: String((err && err.message) || err) } }
 })
+ipcMain.handle('whisper-cancel', () => { try { if (whisperAbort) whisperAbort.abort() } catch {} try { if (whisperProc) whisperProc.kill() } catch {} whisperAbort = null; whisperProc = null; return true })
 
-ipcMain.handle('whisper-cancel', () => {
-  try { if (whisperAbort) whisperAbort.abort() } catch {}
-  try { if (whisperProc) whisperProc.kill() } catch {}
-  whisperAbort = null; whisperProc = null
-  return true
-})
+// script Python : VAD (Silero) découpe l'audio, Whisper transcrit chaque segment → SRT
+const WHISPER_PY = `import sys, wave
+import numpy as np
+import sherpa_onnx
+
+wav_path, enc, dec, tok, vad_model, lang, out_srt = sys.argv[1:8]
+
+recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
+    encoder=enc, decoder=dec, tokens=tok,
+    language=("" if lang == "auto" else lang),
+    task="transcribe", num_threads=2,
+)
+
+config = sherpa_onnx.VadModelConfig()
+config.silero_vad.model = vad_model
+config.silero_vad.threshold = 0.5
+config.silero_vad.min_silence_duration = 0.25
+config.silero_vad.min_speech_duration = 0.25
+config.silero_vad.max_speech_duration = 20
+config.sample_rate = 16000
+vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=180)
+
+with wave.open(wav_path, "rb") as f:
+    sr = f.getframerate()
+    total = f.getnframes()
+    raw = f.readframes(total)
+samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+dur = (total / float(sr)) if sr else 1.0
+
+def ts(t):
+    if t < 0: t = 0
+    h = int(t // 3600); m = int((t % 3600) // 60); s = t % 60
+    return "%02d:%02d:%06.3f" % (h, m, s)
+
+segs = []
+
+def drain():
+    while not vad.empty():
+        seg = vad.front
+        start = seg.start / 16000.0
+        st = recognizer.create_stream()
+        st.accept_waveform(16000, seg.samples)
+        recognizer.decode_stream(st)
+        text = st.result.text.strip()
+        end = start + len(seg.samples) / 16000.0
+        if text:
+            segs.append((start, end, text))
+            print("PROGRESS %d" % int(min(100, end / dur * 100)), flush=True)
+        vad.pop()
+
+window = 512
+i = 0
+while i < len(samples):
+    vad.accept_waveform(samples[i:i + window])
+    i += window
+    drain()
+vad.flush()
+drain()
+
+with open(out_srt, "w", encoding="utf-8") as fo:
+    for idx, (a, b, txt) in enumerate(segs, 1):
+        fo.write("%d\\n%s --> %s\\n%s\\n\\n" % (idx, ts(a).replace(".", ","), ts(b).replace(".", ","), txt))
+print("DONE %d" % len(segs), flush=True)
+`
 
 ipcMain.handle('whisper-transcribe', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
   if (whisperProc) return { error: 'busy' }
-  const exe = await whisperDetect()
-  if (!exe) return { error: 'no-engine' }
-  const model = whisperModelPath(opts.model)
-  if (!fs.existsSync(model)) return { error: 'no-model' }
-  const src = opts.source
-  if (!src || !fs.existsSync(src)) return { error: 'no-source' }
-  // 1) extraction audio 16 kHz mono WAV (format attendu par whisper.cpp)
+  const py = await detectPython(); if (!py) return { error: 'no-engine' }
+  if (!(await pyImportable(py, 'sherpa_onnx'))) return { error: 'no-engine' }
+  const f = whisperModelFiles(opts.model || 'turbo')
+  if (!f.enc || !f.dec || !f.tok || !fs.existsSync(vadModelPath())) return { error: 'no-model' }
+  const src = opts.source; if (!src || !fs.existsSync(src)) return { error: 'no-source' }
+  // 1) extraction audio 16 kHz mono WAV
   const wav = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.wav`)
-  const ok = await new Promise((resolve) => {
-    const p = spawn(ffmpegPath, ['-y', '-i', src, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { stdio: 'ignore' })
-    p.on('close', (c) => resolve(c === 0))
-    p.on('error', () => resolve(false))
-  })
-  if (!ok) return { error: 'extract-failed' }
-  // 2) exécution du moteur → SRT
-  const outBase = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}`)
+  if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'extract' })
+  const okx = await new Promise((resolve) => { const p = spawn(ffmpegPath, ['-y', '-i', src, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { stdio: 'ignore' }); p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false)) })
+  if (!okx) return { error: 'extract-failed' }
+  // 2) VAD + Whisper → SRT (script Python)
+  const scriptPath = path.join(app.getPath('temp'), 'lr-whisper.py')
+  try { fs.writeFileSync(scriptPath, WHISPER_PY, 'utf8') } catch {}
+  const outSrt = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.srt`)
   const lang = opts.language || 'auto'
-  const args = ['-m', model, '-f', wav, '-l', lang, '-osrt', '-of', outBase]
+  const inv = pythonInvoke(py)
+  const args = [...inv.slice(1), scriptPath, wav, f.enc, f.dec, f.tok, vadModelPath(), lang, outSrt]
   return await new Promise((resolve) => {
     let tail = ''
-    whisperProc = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-    const onData = (d) => {
-      const s = String(d); tail = (tail + s).slice(-4000)
-      const m = s.match(/(\d+)%/)
-      if (m && win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'transcribe', pct: Number(m[1]) })
-    }
-    whisperProc.stdout.on('data', onData)
-    whisperProc.stderr.on('data', onData)
+    try { whisperProc = spawn(inv[0], args, { stdio: ['ignore', 'pipe', 'pipe'] }) } catch { return resolve({ error: 'engine-spawn-failed' }) }
+    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/PROGRESS (\d+)/); if (m && win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'transcribe', pct: Number(m[1]) }) }
+    whisperProc.stdout.on('data', on); whisperProc.stderr.on('data', on)
     whisperProc.on('close', (code) => {
       whisperProc = null
       try { fs.unlinkSync(wav) } catch {}
-      const srtPath = outBase + '.srt'
-      if (code === 0 && fs.existsSync(srtPath)) {
-        let srt = ''
-        try { srt = fs.readFileSync(srtPath, 'utf8') } catch {}
-        try { fs.unlinkSync(srtPath) } catch {}
-        resolve({ ok: true, srt })
-      } else resolve({ error: tail.slice(-300) || 'transcribe-failed' })
+      if (code === 0 && fs.existsSync(outSrt)) { let srt = ''; try { srt = fs.readFileSync(outSrt, 'utf8') } catch {}; try { fs.unlinkSync(outSrt) } catch {}; resolve({ ok: true, srt }) }
+      else resolve({ error: tail.slice(-300) || 'transcribe-failed' })
     })
     whisperProc.on('error', () => { whisperProc = null; resolve({ error: 'engine-spawn-failed' }) })
   })
@@ -1141,21 +1197,6 @@ ipcMain.handle('capture-stop', () => {
     setTimeout(() => { try { if (captureProc) captureProc.kill('SIGINT') } catch {} }, 600)
   })
 })
-
-// ---------- gestion des modèles whisper (installation optionnelle depuis l'UI) ----------
-const WHISPER_MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3']
-// tailles de téléchargement approximatives (Mo) des modèles ggml, pour afficher une
-// estimation AVANT installation
-const WHISPER_EST_MB = { tiny: 75, base: 142, small: 466, medium: 1500, 'large-v3': 3100 }
-ipcMain.handle('whisper-list-models', () => WHISPER_MODELS.map((m) => {
-  const p = whisperModelPath(m)
-  let sizeMB = 0, present = false
-  try { const st = fs.statSync(p); if (st.size > 1e6) { present = true; sizeMB = Math.round(st.size / 1e6) } } catch {}
-  return { model: m, present, sizeMB, estMB: WHISPER_EST_MB[m] || 0 }
-}))
-ipcMain.handle('whisper-delete-model', (e, m) => { try { fs.unlinkSync(whisperModelPath(m)) } catch {} return true })
-ipcMain.handle('whisper-clear-exe', () => { try { fs.unlinkSync(whisperCfgPath()) } catch {} return true })
-ipcMain.handle('whisper-reveal-dir', () => { try { shell.openPath(whisperDir()) } catch {} return true })
 
 // ---------- séparation de voix (IA) : gestionnaire de modèles MDX-Net ONNX ----------
 // Moteur « audio-separator » (onnxruntime, sans PyTorch) installé via pip au 1er modèle

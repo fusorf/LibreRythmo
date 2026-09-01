@@ -160,15 +160,20 @@ const TESTS = [
     const l = project.lines[0]
     return okUI && l.take === 't1' && l.takes.length === 1
   })()`],
-  // --- A4 whisper transcription (experimental; engine not present in test env) ---
-  ['A4 whisper status shape', `(async () => {
-    if (!window.api.whisperStatus) return true
-    const st = await window.api.whisperStatus('base')
-    return st && typeof st === 'object' && ('model' in st) && ('exe' in st)
+  // --- A4 transcription (sherpa-onnx; engine/models may be absent in test env) ---
+  ['A4 engine status shape', `(async () => {
+    if (!window.api.whisperEngineStatus) return true
+    const st = await window.api.whisperEngineStatus()
+    return st && typeof st === 'object' && ('installed' in st) && ('python' in st)
   })()`],
-  ['A4 transcribe degrades without engine', `(async () => {
+  ['A4 whisper models list shape', `(async () => {
+    if (!window.api.whisperListModels) return true
+    const m = await window.api.whisperListModels()
+    return Array.isArray(m) && m.length >= 1 && ('present' in m[0]) && ('model' in m[0]) && ('estMB' in m[0]) && m.some(x => x.model === 'turbo')
+  })()`],
+  ['A4 transcribe degrades without engine/model', `(async () => {
     if (!window.api.whisperTranscribe) return true
-    const r = await window.api.whisperTranscribe({ source: 'C:/nope.mp4', model: 'base', language: 'auto' })
+    const r = await window.api.whisperTranscribe({ source: 'C:/nope.mp4', model: 'turbo', language: 'auto' })
     return r && typeof r.error === 'string'
   })()`],
   ['A4 dialog opens with a video', `(() => {

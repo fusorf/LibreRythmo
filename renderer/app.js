@@ -1195,11 +1195,11 @@ let trBusy = false
 // prêt à transcrire = moteur configuré ET au moins un modèle installé (tout se
 // configure dans les Paramètres ; la modale ne fait qu'utiliser ce qui est installé)
 async function transcribeReadiness() {
-  let st = { exe: null }
-  try { st = await window.api.whisperStatus('base') } catch {}
+  let engine = false
+  try { engine = (await window.api.whisperEngineStatus()).installed } catch {}
   let models = []
   try { models = (await window.api.whisperListModels()).filter((m) => m.present) } catch {}
-  return { engine: !!(st && st.exe), models }
+  return { engine, models }
 }
 
 async function openTranscribeDialog() {
@@ -1229,9 +1229,9 @@ $('trClose').addEventListener('click', () => {
 })
 $('trGo').addEventListener('click', runTranscribe)
 window.api.onWhisperProgress((p) => {
-  if (!p || p.phase !== 'transcribe') return // les téléchargements se font dans les Paramètres
-  $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'
-  $('trStatus').textContent = t('trTranscribing', p.pct || 0)
+  if (!p || !trBusy) return // n'affiche que pendant un run de transcription
+  if (p.phase === 'extract') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseExtract') }
+  else if (p.phase === 'transcribe') { $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'; $('trStatus').textContent = t('trTranscribing', p.pct || 0) }
 })
 
 async function runTranscribe() {
@@ -1330,14 +1330,38 @@ function modelRow(m, onInstall, onUninstall, canInstall) {
   return row
 }
 
+// ligne « Moteur » (installer/désinstaller sherpa-onnx depuis les Paramètres)
+async function renderTrEngine() {
+  const el = $('trEngineRow'); if (!el) return
+  let st = { installed: false, python: null }
+  try { st = await window.api.whisperEngineStatus() } catch {}
+  el.className = 'model-row' + (st.installed ? ' installed' : '')
+  el.innerHTML = ''
+  const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = t('engName')
+  const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = st.installed ? t('engInstalled') : (st.python ? t('engNotInstalled') : t('sepNoPython'))
+  const sp = document.createElement('div'); sp.className = 'spacer'
+  const btn = document.createElement('button')
+  btn.textContent = st.installed ? t('mdlUninstall') : t('mdlInstall')
+  if (!st.installed && !st.python) { btn.disabled = true; btn.title = t('sepNoPython') }
+  btn.addEventListener('click', async () => {
+    btn.disabled = true
+    if (st.installed) { await window.api.whisperEngineUninstall(); renderTrEngine() }
+    else { setDl(true, t('engInstalling')); const r = await window.api.whisperEngineInstall(); setDl(false, ''); toast(r && r.ok ? t('engInstalled') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'engInstallFail')); renderTrEngine() }
+  })
+  el.append(nm, stt, sp, btn)
+}
+
 async function renderTrModels() {
+  await renderTrEngine()
   const list = $('trModelList'); list.innerHTML = ''
-  let models = []
+  let models = [], python = null
   try { models = await window.api.whisperListModels() } catch {}
+  try { python = (await window.api.whisperEngineStatus()).python } catch {}
   for (const m of models) {
     list.appendChild(modelRow(m,
-      async (btn) => { btn.disabled = true; setDl(true, t('trDownloading', 0)); const r = await window.api.whisperDownloadModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t('trFailed')); renderTrModels() },
-      async () => { await window.api.whisperDeleteModel(m.model); renderTrModels() }))
+      async (btn) => { btn.disabled = true; setDl(true, t('trDownloading', 0)); const r = await window.api.whisperInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'trFailed')); renderTrModels() },
+      async () => { await window.api.whisperDeleteModel(m.model); renderTrModels() },
+      !!python))
   }
   fillActiveDropdown($('trActive'), models, activeWhisper, setActiveWhisper)
 }
@@ -1372,9 +1396,10 @@ $('trActive').addEventListener('change', () => setActiveWhisper($('trActive').va
 $('sepActive').addEventListener('change', () => setActiveSep($('sepActive').value))
 $('setClose').addEventListener('click', () => setModal.classList.add('hidden'))
 window.api.onWhisperProgress((p) => {
-  if (!p || p.phase !== 'download' || $('setProgress').classList.contains('hidden')) return
-  const pct = Math.max(0, Math.min(100, p.pct || 0))
-  $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct)
+  if (!p || $('setProgress').classList.contains('hidden')) return
+  if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
+  else if (p.phase === 'extract') { $('setStatus').textContent = t('trPhaseExtract') }
+  else if (p.phase === 'install') { $('setStatus').textContent = p.text || t('engInstalling') }
 })
 window.api.onSepProgress((p) => {
   if (!p) return
