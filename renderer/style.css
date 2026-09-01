@@ -967,6 +967,58 @@ body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
   padding: 0 3px;
 }
 
+/* ---------- palette des signes de détection ---------- */
+#symbolPop {
+  position: fixed;
+  z-index: 15;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  padding: 8px;
+  max-width: 360px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+#symbolPop.hidden { display: none; }
+.sym-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--chip-text);
+  text-align: left;
+}
+.sym-chip:hover { background: var(--hover); color: var(--icon-h); }
+.sym-chip .g {
+  flex: 0 0 auto;
+  font-size: 15px;
+  line-height: 1;
+  color: #e0a83a;
+  width: 16px;
+  text-align: center;
+}
+.sym-chip .nm { flex: 1 1 auto; }
+.sym-chip .k {
+  flex: 0 0 auto;
+  font-size: 10px;
+  opacity: 0.55;
+  font-family: 'Consolas', monospace;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.sym-chip.sym-clear {
+  grid-column: 1 / -1;
+  justify-content: center;
+  color: var(--dim);
+}
+
 /* ---------- export modal ---------- */
 #exportModal {
   position: fixed;

@@ -91,6 +91,7 @@
     <div class="seg-group rythmo-ctl">
       <button id="btnAddLine" title="Nouvelle réplique au point de lecture (Entrée)"><span id="addLineLabel">+ Réplique</span></button>
       <button id="btnOnoma" title="Insérer une réaction standard au point de lecture">+ Réaction</button>
+      <button id="btnSymbols" title="Poser un signe de détection sur la réplique sélectionnée">Détection</button>
     </div>
     <button id="btnMagnet" class="icon-btn rythmo-ctl" title="Mode aimant">
       <svg viewBox="0 0 16 16"><path d="M3 1h4v7a1 1 0 002 0V1h4v7A5 5 0 013 8V1zm1.2 1.2v1.6h1.6V2.2H4.2zm6 0v1.6h1.6V2.2h-1.6z" fill-rule="evenodd"/></svg>
@@ -281,6 +282,7 @@
   </div>
 
   <div id="onomaPop" class="hidden"></div>
+  <div id="symbolPop" class="hidden"></div>
 
   <div id="playerMode" class="hidden">
     <canvas id="playerCanvas"></canvas>
@@ -340,6 +342,7 @@
 
   <script src="i18n.js"></script>
   <script src="reacs.js"></script>
+  <script src="detection.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

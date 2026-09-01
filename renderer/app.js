@@ -210,6 +210,7 @@ const BAND_THEMES = {
     handle: '#ffffff', handleAccent: '#7aa2ff', selStroke: '#ffffffcc',
     markIn: '#5fbf6a', markOut: '#e8584a', // flèches d'entrée (vert) / sortie (rouge)
     planMark: '#e8a13a', // marqueur de changement de plan (flèche vers le bas)
+    symbol: '#ffd24a', // signes de détection posés sur le texte
   },
   light: {
     bg: '#f6f2e9', lane: '#ece6d8', grid: '#d8d1c0',
@@ -218,6 +219,7 @@ const BAND_THEMES = {
     handle: '#2b2a25', handleAccent: '#3c5d96', selStroke: '#2b2a25cc',
     markIn: '#2f9e44', markOut: '#d23a30',
     planMark: '#c47d1a',
+    symbol: '#a05a00',
   },
 }
 let theme = 'dark'
@@ -454,6 +456,9 @@ function applyLang() {
   $('btnOnoma').title = t('onomaTitle')
   $('btnMagnet').title = t('magnetTitle')
   buildOnomaPop()
+  $('btnSymbols').textContent = t('symbolsBtn')
+  $('btnSymbols').title = t('symbolsTitle')
+  buildSymbolPop()
   $('btnTogglePanel').textContent = t('panelToggle')
   $('btnTogglePanel').title = t('panelToggleTitle')
   $('btnToggleLines').textContent = t('linesTitle')
@@ -2402,7 +2407,8 @@ function renderBand(c, now, W, H, pps, opts) {
     const fontPx = Math.round(th * 0.52)
     c.font = `bold ${fontPx}px ${bandFontFamily(line)}`
     c.textBaseline = 'alphabetic'
-    for (const w of line.words) {
+    for (let wi = 0; wi < line.words.length; wi++) {
+      const w = line.words[wi]
       const wx = xAt(w.start)
       const ww = (w.end - w.start) * pps
       if (wx + ww < 0 || wx > W) continue
@@ -2425,6 +2431,26 @@ function renderBand(c, now, W, H, pps, opts) {
       c.moveTo(wx + 0.5, y + th * 0.36)
       c.lineTo(wx + 0.5, y + th - 4)
       c.stroke()
+
+      // signe de détection posé sur ce mot (articulation à respecter). Contenu
+      // de la bande → dessiné aussi à l'export et en mode lecture plein écran.
+      if (line.symbols && line.symbols[wi] != null && typeof DET_BY_KEY !== 'undefined') {
+        const sym = DET_BY_KEY.get(line.symbols[wi])
+        if (sym) {
+          c.save()
+          c.font = `${Math.max(9, Math.round(th * 0.26))}px "Segoe UI", sans-serif`
+          c.textAlign = 'center'
+          c.textBaseline = 'middle'
+          const sx = wx + Math.max(5, ww / 2)
+          const sy = y + th * 0.27
+          c.lineWidth = Math.max(2, th * 0.03)
+          c.strokeStyle = pal.bg
+          c.strokeText(sym.glyph, sx, sy)
+          c.fillStyle = pal.symbol || '#ffd24a'
+          c.fillText(sym.glyph, sx, sy)
+          c.restore()
+        }
+      }
     }
 
     // voix off (bouche non visible à l'écran) : texte souligné sur toute la réplique
@@ -3267,6 +3293,91 @@ document.addEventListener('click', (e) => {
 })
 
 
+// ============================================================ signes de détection
+// On pose un signe (voir detection.js) sur un mot de la réplique sélectionnée :
+// celui sous le point de lecture, sinon le plus proche. Un signe déjà posé est
+// retiré si on repose le même (bascule). Persisté dans line.symbols = { [i]: key }
+// et donc dans le .rythmo + l'undo (snapshot des lignes). Rendu dans renderBand.
+const symbolPop = $('symbolPop')
+
+// mot ciblé dans une réplique pour l'instant donné (contient l'instant, sinon proche)
+function symbolTargetWord(line, at) {
+  let best = 0, bestD = Infinity
+  for (let i = 0; i < line.words.length; i++) {
+    const w = line.words[i]
+    if (at >= w.start && at < w.end) return i
+    const cc = (w.start + w.end) / 2
+    const d = Math.abs(cc - at)
+    if (d < bestD) { bestD = d; best = i }
+  }
+  return best
+}
+
+function insertSymbol(sym) {
+  if (selectedIds.size !== 1) { toast(t('symNeedLine')); return }
+  const line = getLine([...selectedIds][0])
+  if (!line || !line.words || !line.words.length) return
+  pushUndo()
+  const wi = symbolTargetWord(line, effectiveTime())
+  if (!line.symbols) line.symbols = {}
+  if (line.symbols[wi] === sym.key) delete line.symbols[wi] // bascule : retire
+  else line.symbols[wi] = sym.key
+  if (!Object.keys(line.symbols).length) delete line.symbols
+  markDirty()
+}
+
+function clearLineSymbols() {
+  if (selectedIds.size !== 1) { toast(t('symNeedLine')); return }
+  const line = getLine([...selectedIds][0])
+  if (!line || !line.symbols) return
+  pushUndo()
+  delete line.symbols
+  markDirty()
+}
+
+function buildSymbolPop() {
+  symbolPop.innerHTML = ''
+  for (const s of DET_SYMBOLS) {
+    const b = document.createElement('button')
+    b.className = 'sym-chip'
+    b.title = t('symChipTitle', lang === 'en' ? s.en : s.fr, s.hint, s.key)
+    const g = document.createElement('span')
+    g.className = 'g'
+    g.textContent = s.glyph
+    const nm = document.createElement('span')
+    nm.className = 'nm'
+    nm.textContent = lang === 'en' ? s.en : s.fr
+    const k = document.createElement('span')
+    k.className = 'k'
+    k.textContent = s.key
+    b.append(g, nm, k)
+    b.addEventListener('click', () => insertSymbol(s))
+    symbolPop.appendChild(b)
+  }
+  const clr = document.createElement('button')
+  clr.className = 'sym-chip sym-clear'
+  clr.title = t('symClearTitle')
+  clr.textContent = '⌫ ' + t('symClear')
+  clr.addEventListener('click', () => clearLineSymbols())
+  symbolPop.appendChild(clr)
+}
+buildSymbolPop()
+
+$('btnSymbols').addEventListener('click', (e) => {
+  e.stopPropagation()
+  if (!symbolPop.classList.contains('hidden')) { symbolPop.classList.add('hidden'); return }
+  const r = e.currentTarget.getBoundingClientRect()
+  symbolPop.style.left = `${r.left}px`
+  symbolPop.style.bottom = `${window.innerHeight - r.top + 6}px`
+  symbolPop.classList.remove('hidden')
+})
+document.addEventListener('click', (e) => {
+  if (!symbolPop.classList.contains('hidden') && !symbolPop.contains(e.target) && e.target !== $('btnSymbols')) {
+    symbolPop.classList.add('hidden')
+  }
+})
+
+
 // ============================================================ keyboard
 document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase()
@@ -3310,6 +3421,14 @@ document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyLines(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
+  }
+
+  // palette de détection ouverte : les touches posent un signe de détection sur la
+  // réplique sélectionnée (et court-circuitent le lexique des réacs)
+  if (activeTab === 'rythmo' && !symbolPop.classList.contains('hidden') &&
+      !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+    const sym = DET_BY_KEY.get(e.key)
+    if (sym) { e.preventDefault(); insertSymbol(sym); return }
   }
 
   // touche du lexique = insertion directe d'une réac au point de lecture (onglet Rythmo)
