@@ -1077,8 +1077,10 @@ ipcMain.handle('pick-executable', async () => {
   const r = await dialog.showOpenDialog(win, { properties: ['openFile'] })
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
 })
-ipcMain.handle('pick-directory', async () => {
-  const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })
+ipcMain.handle('pick-directory', async (e, defaultPath) => {
+  const opts = { properties: ['openDirectory', 'createDirectory'] }
+  if (defaultPath) opts.defaultPath = defaultPath
+  const r = await dialog.showOpenDialog(win, opts)
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
 })
 ipcMain.handle('audio-config-get', () => readAudioCfg())

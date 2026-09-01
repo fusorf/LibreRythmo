@@ -1205,13 +1205,17 @@ button.primary:disabled { opacity: .45; cursor: default; }
 /* ---------- modale « retirer les voix » ---------- */
 #separateModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 20; }
 #separateModal.hidden { display: none; }
-.settings-panel, #separateModal .modal-panel { min-width: 420px; }
-#separateModal .detect-row > label { min-width: 110px; color: var(--dim); }
-#sepInTrack, #sepRunModel, #sepOutName, #sepOutDir { flex: 1 1 auto; min-width: 0; }
+#separateModal .modal-panel { width: 480px; max-width: 92vw; }
+.sep-form { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: center; margin: 2px 0 4px; }
+.sep-form > label { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.sep-form select, .sep-form input[type="text"] { width: 100%; min-width: 0; }
+.sep-dir { display: flex; gap: 6px; min-width: 0; }
+.sep-dir input { flex: 1 1 auto; }
+.sep-dir button { flex: 0 0 auto; }
 #sepReadyBody.hidden, #sepNotReady.hidden, #sepGo.hidden { display: none; }
-#sepProg { width: 220px; height: 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+#sepProg { width: 180px; height: 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
 #sepBar { height: 100%; width: 0%; background: #4a7ac8; transition: width .15s; }
-#sepStatus { font-size: 12px; color: var(--dim); min-width: 160px; }
+#sepStatus { font-size: 12px; color: var(--dim); white-space: nowrap; }
 
 /* ---------- fenêtre Paramètres ---------- */
 #settingsModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 20; }

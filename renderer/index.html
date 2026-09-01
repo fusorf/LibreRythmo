@@ -346,21 +346,15 @@
         <span id="sepNotReadyMsg"></span>
         <button id="sepOpenSettings" class="primary">Ouvrir les Paramètres…</button>
       </div>
-      <div id="sepReadyBody">
-        <div class="detect-row">
-          <label id="sepInLabel" for="sepInTrack">Piste source</label>
-          <select id="sepInTrack"></select>
-        </div>
-        <div class="detect-row">
-          <label id="sepRunModelLabel" for="sepRunModel">Modèle</label>
-          <select id="sepRunModel"></select>
-        </div>
-        <div class="detect-row">
-          <label id="sepOutNameLabel" for="sepOutName">Nom de la piste</label>
-          <input id="sepOutName" type="text" spellcheck="false">
-        </div>
-        <div class="detect-row">
-          <label id="sepOutDirLabel" for="sepOutDir">Dossier</label>
+      <div id="sepReadyBody" class="sep-form">
+        <label id="sepInLabel" for="sepInTrack">Piste source</label>
+        <select id="sepInTrack"></select>
+        <label id="sepRunModelLabel" for="sepRunModel">Modèle</label>
+        <select id="sepRunModel"></select>
+        <label id="sepOutNameLabel" for="sepOutName">Nom de la piste</label>
+        <input id="sepOutName" type="text" spellcheck="false">
+        <label id="sepOutDirLabel" for="sepOutDir">Dossier</label>
+        <div class="sep-dir">
           <input id="sepOutDir" type="text" spellcheck="false" readonly>
           <button id="sepOutBrowse">Parcourir…</button>
         </div>

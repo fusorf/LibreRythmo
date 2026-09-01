@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld('api', {
   whisperTranscribe: (opts) => ipcRenderer.invoke('whisper-transcribe', opts),
   onWhisperProgress: (cb) => ipcRenderer.on('whisper-progress', (e, p) => cb(p)),
   pickExecutable: () => ipcRenderer.invoke('pick-executable'),
-  pickDirectory: () => ipcRenderer.invoke('pick-directory'),
+  pickDirectory: (defaultPath) => ipcRenderer.invoke('pick-directory', defaultPath),
   sepDefaultDir: (projectPath) => ipcRenderer.invoke('sep-default-dir', projectPath),
   audioConfigGet: () => ipcRenderer.invoke('audio-config-get'),
   audioConfigSet: (cfg) => ipcRenderer.invoke('audio-config-set', cfg),

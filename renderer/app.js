@@ -1388,14 +1388,17 @@ const sepModal = $('separateModal')
 let sepBusy = false
 let sepTracks = []
 
-// pistes source possibles : audio de la vidéo + pistes importées / embarquées
+// pistes source possibles = les pistes audio du projet (les pistes embarquées
+// incluent déjà l'audio de la vidéo — pas de doublon). Repli sur l'audio vidéo si
+// aucune piste n'a encore été sondée.
 function sepTrackOptions() {
-  const opts = [{ label: t('sepTrackVideo'), source: project.videoPath, aIndex: 0 }]
-  for (const a of (project.audioTracks || [])) {
-    if (a.type === 'file' && a.path) opts.push({ label: a.label || a.name || 'audio', source: a.path, aIndex: 0 })
-    else opts.push({ label: a.label || a.name || t('track', (a.index || 0) + 1), source: project.videoPath, aIndex: a.index || 0 })
-  }
-  return opts
+  const tracks = project.audioTracks || []
+  if (!tracks.length) return [{ label: t('sepTrackVideo'), source: project.videoPath, aIndex: 0 }]
+  return tracks.map((a) => ({
+    label: (a.label || baseName(a.path || '')) + (a.type === 'file' ? ` (${t('trackExternal')})` : ''),
+    source: a.type === 'file' && a.path ? a.path : project.videoPath,
+    aIndex: a.type === 'file' ? 0 : (a.index || 0),
+  }))
 }
 
 async function openSeparateDialog() {
@@ -1421,7 +1424,7 @@ async function openSeparateDialog() {
 }
 
 $('sepOpenSettings').addEventListener('click', () => { sepModal.classList.add('hidden'); openSettings() })
-$('sepOutBrowse').addEventListener('click', async () => { const d = await window.api.pickDirectory(); if (d) $('sepOutDir').value = d })
+$('sepOutBrowse').addEventListener('click', async () => { const d = await window.api.pickDirectory($('sepOutDir').value || ''); if (d) $('sepOutDir').value = d })
 $('sepCloseBtn').addEventListener('click', () => {
   if (sepBusy) { window.api.sepCancel(); sepBusy = false; sepActive = false; $('sepStatus').textContent = t('sepCancelled'); $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close') }
   else if (!sepBusy) sepModal.classList.add('hidden')
