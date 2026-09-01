@@ -503,7 +503,6 @@ function applyLang() {
   $('setCapLegend').textContent = t('setCapLegend')
   $('setCapApiLabel').textContent = t('setCapApiLabel')
   $('setCapDevLabel').textContent = t('setCapDevLabel')
-  $('setOutLegend').textContent = t('setOutLegend')
   $('setOutDevLabel').textContent = t('setOutDevLabel')
   $('outTest').textContent = t(outTestState ? 'outTestStop' : 'outTestBtn')
   $('capAsioFfmpeg').textContent = t('capAsioBtn')

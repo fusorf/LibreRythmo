@@ -379,7 +379,7 @@
       <h2 id="setTitle">Paramètres</h2>
 
       <fieldset class="opt-group set-block">
-        <legend id="setCapLegend">Entrée audio</legend>
+        <legend id="setCapLegend">Périphériques audio</legend>
         <label><span id="setCapApiLabel">Interface</span>
           <select id="capApi">
             <option value="system">Système (WASAPI)</option>
@@ -387,17 +387,13 @@
             <option value="asio">ASIO</option>
           </select>
         </label>
-        <label class="cap-dev-wrap"><span id="setCapDevLabel">Périphérique</span>
+        <label class="cap-dev-wrap"><span id="setCapDevLabel">Entrée</span>
           <select id="capDevice"></select>
           <button id="capRefresh" class="cap-refresh" title="Rafraîchir la liste">↻</button>
         </label>
         <span id="capAsioFfmpegWrap" hidden><button id="capAsioFfmpeg">ffmpeg ASIO…</button></span>
         <div class="set-note"><span id="capNote" class="dim-val"></span></div>
-      </fieldset>
-
-      <fieldset class="opt-group set-block">
-        <legend id="setOutLegend">Sortie audio</legend>
-        <label class="cap-dev-wrap"><span id="setOutDevLabel">Périphérique</span>
+        <label class="cap-dev-wrap"><span id="setOutDevLabel">Sortie</span>
           <select id="outDevice"></select>
           <button id="outRefresh" class="cap-refresh" title="Rafraîchir la liste">↻</button>
         </label>
