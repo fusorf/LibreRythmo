@@ -106,9 +106,11 @@ const TESTS = [
     project.cues = []; selectedCueId = null
     return r
   })()`],
-  ['textOn contrast (white on dark, black on light)', `(() => {
+  ['textOn contrast (black on light/mid, white on dark)', `(() => {
     if (typeof textOn !== 'function') return true
-    return textOn('#000000') === '#fff' && textOn('#ffffff') === '#000' && textOn('#c0392b') === '#fff'
+    return textOn('#000000') === '#fff' && textOn('#2e6da4') === '#fff'
+      && textOn('#ffffff') === '#000' && textOn('#e0e0e0') === '#000'
+      && textOn('#c2790f') === '#000' && textOn('#f1c40f') === '#000'
   })()`],
   ['digit key 1-9 selects character', `(() => {
     loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],

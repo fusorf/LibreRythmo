@@ -224,12 +224,19 @@ const BAND_THEMES = {
 let theme = 'dark'
 const bandPal = () => BAND_THEMES[theme]
 
-// couleur de texte lisible sur un fond donné : noir sur couleur claire, blanc sinon
+// couleur de texte lisible sur un fond donné : on prend noir ou blanc selon le
+// meilleur contraste réel (WCAG) — noir dès que le fond est clair, blanc sinon.
 function textOn(hex) {
   const h = String(hex || '').replace('#', '')
   if (h.length < 6) return '#fff'
-  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#000' : '#fff'
+  const lin = [0, 2, 4].map((i) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+  })
+  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+  const contrastBlack = (L + 0.05) / 0.05
+  const contrastWhite = 1.05 / (L + 0.05)
+  return contrastBlack >= contrastWhite ? '#000' : '#fff'
 }
 
 // ---------- polices personnalisées (TTF/OTF) ----------
