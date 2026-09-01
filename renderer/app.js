@@ -4978,6 +4978,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'export-presence') exportWorkDoc('presence')
   else if (action === 'export-tally') exportWorkDoc('tally')
   else if (action === 'transcribe') openTranscribeDialog()
+  else if (action === 'remove-voices') runSeparation()
   else if (action === 'open-settings') openSettings()
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
