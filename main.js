@@ -628,12 +628,12 @@ ipcMain.handle('open-project-path', (e, p) => {
   }
 })
 
-ipcMain.handle('save-project', async (e, json, existingPath) => {
+ipcMain.handle('save-project', async (e, json, existingPath, suggested) => {
   let p = existingPath
   if (!p) {
     const r = await dialog.showSaveDialog(win, {
       title: S().dlgSave,
-      defaultPath: 'projet.rythmo',
+      defaultPath: (suggested && String(suggested).trim()) || 'projet.rythmo',
       filters: [{ name: S().dlgProjectFilter, extensions: ['rythmo'] }],
     })
     if (r.canceled || !r.filePath) return null

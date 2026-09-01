@@ -4556,9 +4556,14 @@ function projectJson() {
   return JSON.stringify(project, null, 2)
 }
 
+// nom proposé au 1er enregistrement : nom du fichier vidéo (sans extension) + .rythmo
+function suggestedProjectName() {
+  return project.videoPath ? baseName(project.videoPath).replace(/\.[^.]+$/, '') + '.rythmo' : ''
+}
+
 async function saveProject() {
   const json = projectJson()
-  const p = await window.api.saveProject(json, projectPath)
+  const p = await window.api.saveProject(json, projectPath, suggestedProjectName())
   if (p) {
     projectPath = p
     setClean()

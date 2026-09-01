@@ -213,6 +213,13 @@ const TESTS = [
     loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [], characters: [], lines: [], playhead: 8.5 }, null)
     return project.playhead === 8.5
   })()`],
+  ['Suggested project name from video', `(() => {
+    if (typeof suggestedProjectName !== 'function') return true
+    project.videoPath = 'G:\\\\Anime\\\\Steins;Gate\\\\ep 01.mkv'
+    const n = suggestedProjectName()
+    project.videoPath = null
+    return n === 'ep 01.rythmo'
+  })()`],
   // --- Capture device selector + settings ---
   ['Cap audio-config roundtrip', `(async () => {
     if (!window.api.audioConfigSet) return true
