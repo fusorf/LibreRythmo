@@ -1095,19 +1095,28 @@ async function finishRecordingWeb() {
   recorder.chunks = []
   if (!blob.size) return
   const buf = await blob.arrayBuffer()
+  // durée fiable : le WebM de MediaRecorder n'a pas de durée dans son en-tête
+  // (a.duration = Infinity) → on décode le blob pour obtenir la vraie durée
+  let durHint = 0
+  try { const ac = new (window.AudioContext || window.webkitAudioContext)(); const ab = await ac.decodeAudioData(buf.slice(0)); durHint = ab.duration; ac.close() } catch {}
   const name = `rec_${recorder.charId}_${uid()}.${recorder.ext}`
   const r = await window.api.saveTake(projectPath, name, buf)
   if (!r || r.error) { toast(t('recSaveFail')); return }
-  await addRecording(recorder.charId, r.name, recorder.recStartAt)
+  await addRecording(recorder.charId, r.name, recorder.recStartAt, durHint)
+}
+
+// durée d'un fichier son : métadonnées rapides, sinon décodage complet (WebM sans en-tête)
+async function probeClipDuration(url) {
+  try { const d = await new Promise((res) => { const a = new Audio(); a.onloadedmetadata = () => res(a.duration); a.onerror = () => res(0); a.src = url }); if (isFinite(d) && d > 0) return d } catch {}
+  try { const resp = await fetch(url); const ab = await resp.arrayBuffer(); const ac = new (window.AudioContext || window.webkitAudioContext)(); const b = await ac.decodeAudioData(ab); ac.close(); return b.duration } catch {}
+  return 0
 }
 
 // ajoute un clip enregistré à la piste du personnage (quel que soit le backend)
-async function addRecording(charId, fileName, startTime) {
+async function addRecording(charId, fileName, startTime, durHint) {
   const url = await window.api.takeUrl(projectPath, fileName)
-  let dur = 0
-  if (url) {
-    try { dur = await new Promise((res) => { const a = new Audio(); a.onloadedmetadata = () => res(isFinite(a.duration) ? a.duration : 0); a.onerror = () => res(0); a.src = url }) } catch {}
-  }
+  let dur = (isFinite(durHint) && durHint > 0) ? durHint : 0
+  if (!dur && url) dur = await probeClipDuration(url)
   pushUndo()
   project.recordings ||= []
   const clip = { id: uid(), characterId: charId, file: fileName, startTime, dur: dur || 0, active: true }
@@ -1167,12 +1176,21 @@ function updateRecUI() {
 // purge celles qui ne sont plus référencées
 async function preloadTakeAudios() {
   const wanted = new Set()
+  let fixed = false
   for (const r of (project.recordings || [])) {
     wanted.add(r.file)
-    if (!takeAudios.has(r.file)) {
-      const url = await window.api.takeUrl(projectPath, r.file)
-      if (url) takeAudios.set(r.file, new Audio(url))
+    let url = null
+    if (!takeAudios.has(r.file)) { url = await window.api.takeUrl(projectPath, r.file); if (url) takeAudios.set(r.file, new Audio(url)) }
+    // auto-réparation : anciens enregistrements sans durée (WebM sans en-tête) → on la calcule
+    if (!(r.dur > 0)) {
+      url = url || await window.api.takeUrl(projectPath, r.file)
+      if (url) { const d = await probeClipDuration(url); if (d > 0) { r.dur = d; fixed = true } }
     }
+  }
+  if (fixed) { // durées connues → (re)calcule chevauchement->prises (la plus récente active)
+    for (const a of project.recordings) a.active = true
+    for (let i = 0; i < project.recordings.length; i++) for (let k = i + 1; k < project.recordings.length; k++) { const a = project.recordings[i], b = project.recordings[k]; if (a.characterId === b.characterId && recOverlap(a, b)) a.active = false }
+    markDirty(); if (activeTab === 'rec') renderRecTab()
   }
   for (const f of [...takeAudios.keys()]) if (!wanted.has(f)) takeAudios.delete(f)
 }
@@ -1227,12 +1245,20 @@ function drawRecBand() {
   if (!rbw) { resizeRecBand(); if (!rbw) return }
   renderBand(recBandCtx, effectiveTime(), rbw, rbh, rbw / REC_WIN_SEC, { ruler: false, wave: false, handles: false, theme: bandPal() })
 }
-// scrub sur la bande rythmo de l'onglet (clic/glisser = déplacer le playhead)
-let recBandDrag = false
-const recBandTimeAt = (clientX) => { const r = recBandCanvas.getBoundingClientRect(); return effectiveTime() + ((clientX - r.left) - r.width * READ_RATIO) / (rbw / REC_WIN_SEC) }
-recBandCanvas.addEventListener('pointerdown', (e) => { recBandCanvas.setPointerCapture(e.pointerId); recBandDrag = true; video.pause(); scrubTo(recBandTimeAt(e.clientX)); playScrubGrain(scrub.time) })
-recBandCanvas.addEventListener('pointermove', (e) => { if (!recBandDrag) return; scrubTo(recBandTimeAt(e.clientX)); playScrubGrain(scrub.time) })
-const recBandEnd = () => { recBandDrag = false; if (!scrub.busy && scrub.pending == null) scrub.time = null }
+// glisser = déplacer la timeline, comme la bande rythmo (attrape-et-déplace, relatif)
+let recBandDrag = null
+recBandCanvas.addEventListener('pointerdown', (e) => {
+  recBandCanvas.setPointerCapture(e.pointerId); video.pause()
+  recBandDrag = { x0: e.clientX, t0: effectiveTime(), moved: false }
+  recBandCanvas.style.cursor = 'grabbing'
+})
+recBandCanvas.addEventListener('pointermove', (e) => {
+  if (!recBandDrag) return
+  const dx = e.clientX - recBandDrag.x0
+  if (Math.abs(dx) > 3) recBandDrag.moved = true
+  if (recBandDrag.moved) { scrubTo(recBandDrag.t0 - dx / (rbw / REC_WIN_SEC)); playScrubGrain(scrub.time) }
+})
+const recBandEnd = () => { recBandDrag = null; recBandCanvas.style.cursor = 'grab'; if (!scrub.busy && scrub.pending == null) scrub.time = null }
 recBandCanvas.addEventListener('pointerup', recBandEnd)
 recBandCanvas.addEventListener('pointercancel', recBandEnd)
 
