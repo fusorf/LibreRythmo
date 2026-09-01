@@ -2702,9 +2702,26 @@ function activeAudioTrack() {
   const list = project.audioTracks || []
   return audioById(project.activeAudioId) || list.find((a) => a.type === 'embedded') || list[0] || null
 }
+// clé stable d'une piste, indépendante de l'id (régénéré au re-sondage) : index de flux
+// pour l'embarqué, chemin pour un fichier importé — sert à restaurer la piste active
+function audioTrackKey(tr) {
+  if (!tr) return null
+  return tr.type === 'embedded' ? `emb:${tr.index}` : `file:${tr.path || tr.label || ''}`
+}
+// s'assure qu'une piste active valide est choisie ; si l'id a disparu (régénéré au
+// re-sondage), on restaure par clé stable (index embarqué / chemin), sinon 1re piste
+function ensureActiveAudio() {
+  if (!audioById(project.activeAudioId)) {
+    const all = project.audioTracks || []
+    const byKey = project.activeAudioKey ? all.find((a) => audioTrackKey(a) === project.activeAudioKey) : null
+    project.activeAudioId = (byKey || all.find((a) => a.type === 'embedded') || all[0] || {}).id || null
+  }
+  project.activeAudioKey = audioTrackKey(audioById(project.activeAudioId))
+}
 function setActiveAudio(id) {
   if (project.activeAudioId === id) return
   project.activeAudioId = id
+  project.activeAudioKey = audioTrackKey(audioById(id)) // clé stable pour la réouverture
   renderTrackHeads()
   markDirty()
   buildWaveform() // la bande rythmo affiche la forme d'onde de la piste active
@@ -2730,7 +2747,7 @@ async function probeAndSyncAudio() {
     }
   })
   project.audioTracks = [...embedded, ...externals]
-  if (!audioById(project.activeAudioId)) project.activeAudioId = (embedded[0] || externals[0] || {}).id || null
+  ensureActiveAudio()
   if (activeTab === 'tracks') renderTracks()
   // (re)construit la forme d'onde MAINTENANT que les pistes sont connues : buildWaveform()
   // est appelé au chargement AVANT ce sondage (audioTracks encore vide), ce qui le faisait
@@ -4840,6 +4857,7 @@ async function openVideoDialog() {
 // au même timecode à la réouverture du projet
 function projectJson() {
   project.playhead = Math.max(0, effectiveTime() || 0)
+  project.activeAudioKey = audioTrackKey(activeAudioTrack()) // clé stable de la piste active
   return JSON.stringify(project, null, 2)
 }
 

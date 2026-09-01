@@ -135,6 +135,18 @@ const TESTS = [
     mergeCharacter('b', 'a')
     return project.characters.length === 1 && project.lines.every(l => l.characterId === 'a')
   })()`],
+  ['Piste audio active restaurée par clé stable (id régénéré)', `(() => {
+    if (typeof ensureActiveAudio !== 'function') return true
+    // simule une réouverture : les id embarqués ont changé, mais la clé « emb:1 » persiste
+    project.audioTracks = [
+      { id: 'new-a', type: 'embedded', index: 0, offset: 0, label: 'A' },
+      { id: 'new-b', type: 'embedded', index: 1, offset: 0, label: 'B' },
+    ]
+    project.activeAudioId = 'old-b-gone'   // id périmé
+    project.activeAudioKey = 'emb:1'       // clé stable de l'ancienne piste active
+    ensureActiveAudio()
+    return project.activeAudioId === 'new-b' && project.activeAudioKey === 'emb:1'
+  })()`],
   // --- Tier B: bookmarks ---
   ['B bookmark toggle + persist', `(() => {
     if (typeof toggleBookmark !== 'function') return true
