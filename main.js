@@ -273,7 +273,6 @@ const MENU_STR = {
     saveProjectAs: 'Enregistrer sous…',
     autosave: 'Enregistrement automatique',
     exportVideo: 'Exporter la vidéo…',
-    exportPdf: 'Exporter le script (PDF)…',
     workDocs: 'Documents de travail (PDF)',
     docPresence: 'Grille de présence…',
     docTally: 'Relevé de lignes…',
@@ -324,7 +323,7 @@ const MENU_STR = {
     dlgDetx: 'Importer un DETX',
     dlgDetxSave: 'Exporter en DETX',
     dlgDetxFilter: 'Bande rythmo DETX',
-    dlgPdf: 'Exporter le script PDF',
+    dlgPdf: 'Exporter le PDF',
     dlgPdfFilter: 'Document PDF',
     dlgExport: 'Exporter la vidéo',
     dlgExportFilter: 'Vidéo MP4',
@@ -348,7 +347,6 @@ const MENU_STR = {
     saveProjectAs: 'Save As…',
     autosave: 'Autosave',
     exportVideo: 'Export video…',
-    exportPdf: 'Export script (PDF)…',
     workDocs: 'Work documents (PDF)',
     docPresence: 'Presence grid…',
     docTally: 'Line tally…',
@@ -399,7 +397,7 @@ const MENU_STR = {
     dlgDetx: 'Import DETX',
     dlgDetxSave: 'Export DETX',
     dlgDetxFilter: 'DETX rythmo band',
-    dlgPdf: 'Export script PDF',
+    dlgPdf: 'Export PDF',
     dlgPdfFilter: 'PDF document',
     dlgExport: 'Export video',
     dlgExportFilter: 'MP4 video',
@@ -458,7 +456,6 @@ function buildMenu() {
         { label: s.autosave, type: 'checkbox', checked: settings.autosave, click: (item) => send('toggle-autosave', item.checked) },
         { type: 'separator' },
         { label: s.exportVideo, accelerator: 'CmdOrCtrl+E', click: () => send('export-video') },
-        { label: s.exportPdf, click: () => send('export-pdf') },
         {
           label: s.workDocs,
           submenu: [
@@ -740,7 +737,7 @@ ipcMain.handle('export-detx', async (e, content, suggested) => {
   return r.filePath
 })
 
-// PDF : on rend le HTML du script dans une fenêtre hors écran puis printToPDF
+// PDF : on rend le HTML du document dans une fenêtre hors écran puis printToPDF
 ipcMain.handle('export-pdf', async (e, html, suggested) => {
   const r = await dialog.showSaveDialog(win, {
     title: S().dlgPdf,

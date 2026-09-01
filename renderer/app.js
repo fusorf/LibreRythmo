@@ -4749,57 +4749,11 @@ async function exportDetxDialog() {
   if (p) toast(t('detxExported', p.replace(/^.*[\\/]/, '')))
 }
 
-// ============================================================ export PDF (script)
-// Script de doublage façon conducteur cinéma : chronologique, timecode + personnage
-// (capitales, pastille couleur) puis dialogue indenté, police machine à écrire.
+// ============================================================ documents PDF — titre commun
+// Titre des documents PDF (grille de présence, relevé de lignes) : nom du projet ou
+// de la vidéo.
 function scriptTitle() {
   return (projectPath || project.videoPath || 'Script').replace(/^.*[\\/]/, '').replace(/\.\w+$/, '') || 'Script'
-}
-
-function buildScriptHtml() {
-  const lines = [...project.lines].filter((l) => l.words.length).sort((a, b) => lineStart(a) - lineStart(b))
-  const title = scriptTitle()
-  let date = ''
-  try { date = new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) } catch {}
-  const rows = lines.map((l) => {
-    const c = getChar(l.characterId)
-    const name = (c ? c.name : '?').toUpperCase()
-    const color = c ? c.color : '#888888'
-    const tc = formatTc(lineStart(l), project.fps)
-    const text = l.words.map((w) => w.text).filter((w) => w !== '_').join(' ')
-    return `<div class="e"><div class="h"><span class="tc">${xmlEsc(tc)}</span>` +
-      `<span class="dot" style="background:${xmlEsc(color)}"></span>` +
-      `<span class="nm">${xmlEsc(name)}</span></div><div class="d">${xmlEsc(text)}</div></div>`
-  }).join('')
-  return `<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><style>
-    * { box-sizing: border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: 11pt; color: #111; margin: 0; }
-    .title { font-size: 17pt; font-weight: bold; margin: 0 0 3pt; }
-    .meta { color: #777; font-size: 9pt; margin-bottom: 14pt; text-transform: uppercase; letter-spacing: .5pt; }
-    .rule { border-bottom: 1.5px solid #111; margin-bottom: 16pt; }
-    .e { margin-bottom: 13pt; page-break-inside: avoid; }
-    .h { display: flex; align-items: baseline; gap: 9pt; }
-    .tc { color: #555; font-size: 9.5pt; min-width: 86pt; }
-    .dot { width: 8pt; height: 8pt; border-radius: 50%; display: inline-block; transform: translateY(1pt); }
-    .nm { font-weight: bold; letter-spacing: 1pt; }
-    .d { margin: 3pt 0 0 95pt; white-space: pre-wrap; line-height: 1.45; }
-  </style></head><body>
-    <div class="title">${xmlEsc(title)}</div>
-    <div class="meta">${xmlEsc(t('pdfSubtitle'))}${date ? ' · ' + xmlEsc(date) : ''} · ${lines.length} ${xmlEsc(t('pdfLines'))}</div>
-    <div class="rule"></div>
-    ${rows}
-  </body></html>`
-}
-
-async function exportPdfDialog() {
-  if (!project.lines.length) {
-    toast(t('noLinesToExport'))
-    return
-  }
-  const base = (projectPath || project.videoPath || 'script').replace(/\.rythmo(\.json)?$/i, '').replace(/\.\w+$/, '')
-  const r = await window.api.exportPdf(buildScriptHtml(), base + '.pdf')
-  if (r && r.error) { toast(t('pdfFailed')); console.error('pdf:', r.error); return }
-  if (r) toast(t('pdfExported', r.replace(/^.*[\\/]/, '')))
 }
 
 // ============================================================ A5 — documents de travail
@@ -4910,7 +4864,6 @@ window.api.onMenu((action, arg) => {
   else if (action === 'import-detx') importDetxDialog()
   else if (action === 'import-detx-roles') importDetxRolesDialog()
   else if (action === 'export-detx') exportDetxDialog()
-  else if (action === 'export-pdf') exportPdfDialog()
   else if (action === 'export-presence') exportWorkDoc('presence')
   else if (action === 'export-tally') exportWorkDoc('tally')
   else if (action === 'transcribe') openTranscribeDialog()
