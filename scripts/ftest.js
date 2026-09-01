@@ -327,6 +327,14 @@ const TESTS = [
     // au minimum l'option « périphérique par défaut »
     return !!sel && sel.options.length >= 1 && sel.options[0].value === '' && sel.options[0].textContent.length > 0
   })()`],
+  ['Réglages audio persistés (set/get roundtrip)', `(async () => {
+    if (!window.api.audioConfigSet || !window.api.audioConfigGet) return true
+    const prev = await window.api.audioConfigGet()
+    await window.api.audioConfigSet({ api: 'system', device: 'dev-XYZ', output: 'out-XYZ', asioFfmpeg: null })
+    const got = await window.api.audioConfigGet()
+    await window.api.audioConfigSet(prev || {}) // restaure l'état d'origine
+    return got && got.device === 'dev-XYZ' && got.output === 'out-XYZ' && got.api === 'system'
+  })()`],
   ['Export « Aucune » : pas de bande, vidéo plein cadre', `(() => {
     if (typeof layoutExport !== 'function') return true
     const prev = exp.bandPos

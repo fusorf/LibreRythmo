@@ -1429,8 +1429,14 @@ async function fillCaptureDevices() {
     if (!r || !r.available) $('capNote').textContent = api === 'asio' ? t('capAsioMissing') : t('capNoBackend')
     for (const name of devs) { const o = document.createElement('option'); o.value = name; o.textContent = name; devSel.appendChild(o) }
     if (!devs.length) { const o = document.createElement('option'); o.value = ''; o.textContent = t('capNoDevices'); devSel.appendChild(o) }
-    devSel.value = devs.includes(audioCfg.device) ? audioCfg.device : (devs[0] || '')
-    audioCfg.device = devSel.value || null
+    if (devs.length) {
+      // backend dispo : on garde le périphérique mémorisé s'il existe, sinon le 1er
+      devSel.value = devs.includes(audioCfg.device) ? audioCfg.device : devs[0]
+      audioCfg.device = devSel.value || null
+    } else {
+      // backend momentanément indisponible : ne pas écraser le choix mémorisé
+      devSel.value = ''
+    }
   }
 }
 
@@ -1443,8 +1449,9 @@ async function fillOutputDevices() {
   $('outNote').textContent = devs.some((d) => d.label) ? '' : t('capGrantMic')
   const def = document.createElement('option'); def.value = ''; def.textContent = t('capDefault'); sel.appendChild(def)
   for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); sel.appendChild(o) }
+  // on garde le choix mémorisé même s'il n'est pas encore dans la liste (avant
+  // l'autorisation micro, les deviceId sont masqués) — surtout ne pas l'effacer
   sel.value = devs.some((d) => d.deviceId === audioCfg.output) ? audioCfg.output : ''
-  if (!sel.value) audioCfg.output = null
 }
 
 // route la lecture vidéo vers le périphérique de sortie choisi (défaut si vide)
