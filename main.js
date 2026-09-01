@@ -1077,6 +1077,10 @@ ipcMain.handle('pick-executable', async () => {
   const r = await dialog.showOpenDialog(win, { properties: ['openFile'] })
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
 })
+ipcMain.handle('pick-directory', async () => {
+  const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })
+  return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
+})
 ipcMain.handle('audio-config-get', () => readAudioCfg())
 ipcMain.handle('audio-config-set', (e, cfg) => { try { fs.writeFileSync(audioCfgPath(), JSON.stringify(cfg || {}), 'utf8') } catch {} return true })
 
@@ -1162,6 +1166,7 @@ function sepCfgPath() { return path.join(app.getPath('userData'), 'sep-config.js
 function readSepCfg() { try { return JSON.parse(fs.readFileSync(sepCfgPath(), 'utf8')) } catch { return {} } }
 ipcMain.handle('sep-config-get', () => readSepCfg())
 ipcMain.handle('sep-config-set', (e, cfg) => { try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg || {}), 'utf8') } catch {} return true })
+ipcMain.handle('sep-default-dir', (e, projectPath) => sepDir(projectPath))
 // détection d'un interpréteur Python (pour installer/lancer le moteur via pip)
 function pythonInvoke(py) { return py === 'py' ? ['py', '-3'] : [py] }
 function detectPython() {
@@ -1282,7 +1287,9 @@ ipcMain.handle('sep-run', async (e, opts) => {
   if (!src || !fs.existsSync(src)) return { error: 'no-source' }
   const base = `lr-sep-${Date.now()}`
   const wav = path.join(app.getPath('temp'), base + '.wav')
+  const emit = (o) => { if (win && !win.isDestroyed()) win.webContents.send('sep-progress', o) }
   // 1) extraction de la piste audio ciblée en WAV stéréo qualité
+  emit({ phase: 'extract' })
   const extract = ['-y', '-i', src]
   if (opts.aIndex != null) extract.push('-map', `0:a:${opts.aIndex}`)
   extract.push('-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', wav)
@@ -1293,11 +1300,12 @@ ipcMain.handle('sep-run', async (e, opts) => {
   try { fs.mkdirSync(outDir, { recursive: true }) } catch {}
   const inv = pythonInvoke(py)
   const cmd = inv[0], args = [...inv.slice(1), '-c', SEP_PY, wav, outDir, mdir, model]
+  emit({ phase: 'separate', pct: 0 })
   return await new Promise((resolve) => {
     let tail = ''
     try { sepProc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }) }
     catch { return resolve({ error: 'engine-spawn-failed' }) }
-    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/(\d+)%/); if (m && win && !win.isDestroyed()) win.webContents.send('sep-progress', { pct: Number(m[1]) }) }
+    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/(\d+)%/); if (m) emit({ phase: 'separate', pct: Number(m[1]) }) }
     sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
     sepProc.on('close', (code) => {
       sepProc = null
@@ -1305,7 +1313,9 @@ ipcMain.handle('sep-run', async (e, opts) => {
       const found = findFileRec(outDir, /(instrumental|no_vocals)\S*\.(wav|mp3|flac|m4a)$/i)
       if (code === 0 && found) {
         const destName = (opts.destBase || 'sans-voix') + '-' + Date.now() + path.extname(found)
-        const dest = path.join(sepDir(opts.projectPath), destName)
+        let destBaseDir = opts.destDir && String(opts.destDir).trim() ? opts.destDir : sepDir(opts.projectPath)
+        try { fs.mkdirSync(destBaseDir, { recursive: true }) } catch { destBaseDir = sepDir(opts.projectPath) }
+        const dest = path.join(destBaseDir, destName)
         try { fs.copyFileSync(found, dest) } catch { try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}; return resolve({ error: 'copy-failed' }) }
         try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}
         resolve({ ok: true, path: dest, name: destName })

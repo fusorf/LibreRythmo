@@ -339,6 +339,42 @@
     </div>
   </div>
 
+  <div id="separateModal" class="hidden">
+    <div class="modal-panel">
+      <h2 id="sepModalTitle">Retirer les voix (IA)</h2>
+      <div id="sepNotReady" class="ai-notready hidden">
+        <span id="sepNotReadyMsg"></span>
+        <button id="sepOpenSettings" class="primary">Ouvrir les Paramètres…</button>
+      </div>
+      <div id="sepReadyBody">
+        <div class="detect-row">
+          <label id="sepInLabel" for="sepInTrack">Piste source</label>
+          <select id="sepInTrack"></select>
+        </div>
+        <div class="detect-row">
+          <label id="sepRunModelLabel" for="sepRunModel">Modèle</label>
+          <select id="sepRunModel"></select>
+        </div>
+        <div class="detect-row">
+          <label id="sepOutNameLabel" for="sepOutName">Nom de la piste</label>
+          <input id="sepOutName" type="text" spellcheck="false">
+        </div>
+        <div class="detect-row">
+          <label id="sepOutDirLabel" for="sepOutDir">Dossier</label>
+          <input id="sepOutDir" type="text" spellcheck="false" readonly>
+          <button id="sepOutBrowse">Parcourir…</button>
+        </div>
+      </div>
+      <div class="export-row">
+        <div id="sepProg"><div id="sepBar"></div></div>
+        <span id="sepStatus"></span>
+        <div class="spacer"></div>
+        <button id="sepCloseBtn">Fermer</button>
+        <button id="sepGo" class="primary">Lancer</button>
+      </div>
+    </div>
+  </div>
+
   <div id="settingsModal" class="hidden">
     <div class="modal-panel settings-panel">
       <h2 id="setTitle">Paramètres</h2>

@@ -256,6 +256,16 @@ const TESTS = [
     const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'UVR-MDX-NET-Inst_HQ_3.onnx' })
     return r && r.error === 'no-model'
   })()`],
+  ['Sep modal opens with coherent state', `(async () => {
+    if (typeof openSeparateDialog !== 'function') return true
+    project.videoPath = 'X:/fake.mp4'
+    await openSeparateDialog()
+    const nr = !document.getElementById('sepNotReady').classList.contains('hidden')
+    const rb = !document.getElementById('sepReadyBody').classList.contains('hidden')
+    document.getElementById('separateModal').classList.add('hidden')
+    project.videoPath = null
+    return nr !== rb
+  })()`],
 ]
 
 function getJson() {

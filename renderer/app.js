@@ -474,6 +474,15 @@ function applyLang() {
   $('trGo').textContent = t('trGoBtn')
   $('btnRemoveVoices').textContent = t('removeVoicesBtn')
   $('btnRemoveVoices').title = t('removeVoicesTitle')
+  $('sepModalTitle').textContent = t('sepModalTitle')
+  $('sepInLabel').textContent = t('sepInLabel')
+  $('sepRunModelLabel').textContent = t('sepRunModelLabel')
+  $('sepOutNameLabel').textContent = t('sepOutNameLabel')
+  $('sepOutDirLabel').textContent = t('sepOutDirLabel')
+  $('sepOutBrowse').textContent = t('sepOutBrowse')
+  $('sepOpenSettings').textContent = t('aiOpenSettings')
+  $('sepCloseBtn').textContent = t('close')
+  $('sepGo').textContent = t('sepGoBtn')
   $('setTitle').textContent = t('setTitle')
   $('setCapLegend').textContent = t('setCapLegend')
   $('setCapApiLabel').textContent = t('setCapApiLabel')
@@ -1363,35 +1372,88 @@ window.api.onWhisperProgress((p) => {
 })
 window.api.onSepProgress((p) => {
   if (!p) return
-  if (sepActive) { showLoading(true, t('sepRunning', p.pct || 0)); return }
-  if ($('setProgress').classList.contains('hidden')) return
+  if (sepActive) { // modale « retirer les voix » en cours : statut par phase
+    if (p.phase === 'extract') { $('sepBar').style.width = '0%'; $('sepStatus').textContent = t('sepPhaseExtract') }
+    else if (p.phase === 'install') { $('sepStatus').textContent = t('sepPhaseEngine') }
+    else if (p.phase === 'separate') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('sepBar').style.width = pct + '%'; $('sepStatus').textContent = t('sepPhaseSeparate', pct) }
+    return
+  }
+  if ($('setProgress').classList.contains('hidden')) return // sinon = install/download depuis les Paramètres
   if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
   else $('setStatus').textContent = p.text || t('sepInstalling')
 })
 
-// ---------- retrait des voix (séparation IA) : produit une piste « sans voix » ----------
-async function runSeparation() {
+// ---------- retrait des voix (séparation IA) : modale dédiée ----------
+const sepModal = $('separateModal')
+let sepBusy = false
+let sepTracks = []
+
+// pistes source possibles : audio de la vidéo + pistes importées / embarquées
+function sepTrackOptions() {
+  const opts = [{ label: t('sepTrackVideo'), source: project.videoPath, aIndex: 0 }]
+  for (const a of (project.audioTracks || [])) {
+    if (a.type === 'file' && a.path) opts.push({ label: a.label || a.name || 'audio', source: a.path, aIndex: 0 })
+    else opts.push({ label: a.label || a.name || t('track', (a.index || 0) + 1), source: project.videoPath, aIndex: a.index || 0 })
+  }
+  return opts
+}
+
+async function openSeparateDialog() {
   if (!project.videoPath) { toast(t('loadVideoFirst')); return }
-  const model = activeSep()
-  if (!model) { toast(t('sepNeedModel')); openSettings(); return }
-  const at = activeAudioTrack()
-  let source = project.videoPath, aIndex = 0
-  if (at) { if (at.type === 'file' && at.path) { source = at.path; aIndex = 0 } else { source = project.videoPath; aIndex = at.index || 0 } }
-  sepActive = true
-  showLoading(true, t('sepRunning', 0))
-  const r = await window.api.sepRun({ source, aIndex, projectPath, model, destBase: t('sepTrackName') })
-  sepActive = false
-  showLoading(false)
+  sepModal.classList.remove('hidden')
+  $('sepBar').style.width = '0%'; $('sepStatus').textContent = ''
+  $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close')
+  let models = []
+  try { models = (await window.api.sepListModels()).filter((m) => m.present) } catch {}
+  const ready = models.length > 0
+  $('sepNotReady').classList.toggle('hidden', ready)
+  $('sepReadyBody').classList.toggle('hidden', !ready)
+  $('sepGo').classList.toggle('hidden', !ready)
+  if (!ready) { $('sepNotReadyMsg').textContent = t('sepNeedModel'); return }
+  const msel = $('sepRunModel'); msel.innerHTML = ''
+  for (const m of models) { const o = document.createElement('option'); o.value = m.model; o.textContent = m.label || m.model; msel.appendChild(o) }
+  msel.value = models.some((m) => m.model === activeSep()) ? activeSep() : models[0].model
+  sepTracks = sepTrackOptions()
+  const tsel = $('sepInTrack'); tsel.innerHTML = ''
+  sepTracks.forEach((o, i) => { const op = document.createElement('option'); op.value = String(i); op.textContent = o.label; tsel.appendChild(op) })
+  $('sepOutName').value = t('sepTrackName')
+  try { $('sepOutDir').value = await window.api.sepDefaultDir(projectPath) } catch { $('sepOutDir').value = '' }
+}
+
+$('sepOpenSettings').addEventListener('click', () => { sepModal.classList.add('hidden'); openSettings() })
+$('sepOutBrowse').addEventListener('click', async () => { const d = await window.api.pickDirectory(); if (d) $('sepOutDir').value = d })
+$('sepCloseBtn').addEventListener('click', () => {
+  if (sepBusy) { window.api.sepCancel(); sepBusy = false; sepActive = false; $('sepStatus').textContent = t('sepCancelled'); $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close') }
+  else if (!sepBusy) sepModal.classList.add('hidden')
+})
+$('sepGo').addEventListener('click', doSeparate)
+
+async function doSeparate() {
+  if (sepBusy) return
+  const model = $('sepRunModel').value
+  if (!model) { toast(t('sepNeedModel')); return }
+  setActiveSep(model)
+  const tr = sepTracks[Number($('sepInTrack').value) || 0] || sepTracks[0]
+  const destBase = (($('sepOutName').value || '').trim()) || t('sepTrackName')
+  const destDir = $('sepOutDir').value || ''
+  sepBusy = true; sepActive = true
+  $('sepGo').disabled = true; $('sepCloseBtn').textContent = t('cancel')
+  $('sepBar').style.width = '0%'; $('sepStatus').textContent = t('sepPhaseStart')
+  const r = await window.api.sepRun({ source: tr.source, aIndex: tr.aIndex, projectPath, model, destBase, destDir })
+  sepBusy = false; sepActive = false
+  $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close')
   if (!r || r.error) {
-    const map = { 'no-model': 'sepNeedModel', 'no-engine': 'sepNeedModel', 'no-python': 'sepNoPython' }
-    toast(t(map[r && r.error] || 'sepFailed'))
-    if (r && (r.error === 'no-model' || r.error === 'no-engine')) openSettings()
+    const map = { 'no-model': 'sepNeedModel', 'no-engine': 'sepNeedModel', 'no-python': 'sepNoPython', 'no-source': 'sepNoSource', 'extract-failed': 'sepExtractFail' }
+    const known = map[r && r.error]
+    $('sepStatus').textContent = known ? t(known) : t('sepFailed') + (r && r.error ? ' — ' + String(r.error).slice(0, 140) : '')
     return
   }
-  await addExternalAudio(r.path)
+  $('sepBar').style.width = '100%'; $('sepStatus').textContent = t('sepDone')
+  await addExternalAudio(r.path, destBase)
   toast(t('sepDone'))
+  setTimeout(() => { if (!sepBusy) sepModal.classList.add('hidden') }, 700)
 }
-$('btnRemoveVoices').addEventListener('click', runSeparation)
+$('btnRemoveVoices').addEventListener('click', openSeparateDialog)
 
 $('btnToggleLines').addEventListener('click', () => {
   const panel = $('linesPanel')
@@ -2577,11 +2639,11 @@ tcanvas.addEventListener('wheel', (e) => {
 }, { passive: false })
 
 // ---------- import d'un fichier audio externe ----------
-async function addExternalAudio(p) {
+async function addExternalAudio(p, label) {
   if (!project.videoPath) { toast(t('loadVideoFirst')); return }
   if (!p) return
   pushUndo()
-  const tr = { id: uid(), type: 'file', path: p, label: baseName(p), offset: 0, channels: 0 }
+  const tr = { id: uid(), type: 'file', path: p, label: label || baseName(p), offset: 0, channels: 0 }
   project.audioTracks.push(tr)
   if (activeTab !== 'tracks') setTab('tracks')
   else renderTracks()
@@ -5000,7 +5062,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'export-presence') exportWorkDoc('presence')
   else if (action === 'export-tally') exportWorkDoc('tally')
   else if (action === 'transcribe') openTranscribeDialog()
-  else if (action === 'remove-voices') runSeparation()
+  else if (action === 'remove-voices') openSeparateDialog()
   else if (action === 'open-settings') openSettings()
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
