@@ -1198,8 +1198,8 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
 
 // ---------- capture audio : périphérique + backend (WASAPI / DirectShow / ASIO) ----------
 // « Système » = capture navigateur (getUserMedia, WASAPI) côté renderer. « DirectSound »
-// = capture DirectShow via ffmpeg (atteint les interfaces pro). « ASIO » utilise le
-// ffmpeg empaqueté avec l'appli (build + DLL ASIO fournis dans le paquet).
+// = capture DirectShow via ffmpeg (atteint les interfaces pro). (ASIO retiré : le ffmpeg
+// empaqueté ne l'a pas et le SDK Steinberg est incompatible avec la distribution GPL.)
 function audioCfgPath() { return path.join(app.getPath('userData'), 'audio-config.json') }
 function readAudioCfg() { try { return JSON.parse(fs.readFileSync(audioCfgPath(), 'utf8')) } catch { return {} } }
 ipcMain.handle('pick-directory', async (e, defaultPath) => {
@@ -1218,14 +1218,13 @@ function parseDshowDevices(txt) {
   while ((m = re.exec(txt))) out.push(m[1])
   return out
 }
-ipcMain.handle('list-capture-devices', async (e, api) => {
+ipcMain.handle('list-capture-devices', async () => {
   const ff = ffmpegPath
   if (!ff) return { devices: [], available: false, error: 'no-ffmpeg' }
-  const fmt = api === 'asio' ? 'asio' : 'dshow'
   return await new Promise((resolve) => {
     let buf = ''
     let p
-    try { p = spawn(ff, ['-hide_banner', '-f', fmt, '-list_devices', 'true', '-i', 'dummy'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    try { p = spawn(ff, ['-hide_banner', '-f', 'dshow', '-list_devices', 'true', '-i', 'dummy'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
     catch { return resolve({ devices: [], available: false, error: 'spawn' }) }
     const on = (d) => (buf += String(d))
     p.stdout.on('data', on); p.stderr.on('data', on)
@@ -1242,15 +1241,12 @@ let captureProc = null
 let captureDone = null
 ipcMain.handle('capture-start', (e, opts) => {
   if (captureProc) return { error: 'busy' }
-  const api = opts.api
   const ff = ffmpegPath
   if (!ff) return { error: 'no-ffmpeg' }
   if (!opts.device) return { error: 'no-device' }
   const name = path.basename(opts.name || `take_${Date.now()}.wav`)
   const out = path.join(takesDir(opts.projectPath), name)
-  const fmt = api === 'asio' ? 'asio' : 'dshow'
-  const input = api === 'asio' ? opts.device : `audio=${opts.device}`
-  const args = ['-y', '-f', fmt, '-i', input, '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', out]
+  const args = ['-y', '-f', 'dshow', '-i', `audio=${opts.device}`, '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', out]
   try { captureProc = spawn(ff, args, { stdio: ['pipe', 'ignore', 'pipe'] }) }
   catch (err) { captureProc = null; return { error: String((err && err.message) || err) } }
   captureProc.on('close', () => { if (captureDone) { const d = captureDone; captureDone = null; d({ ok: true, name, path: out }) } captureProc = null })

@@ -1419,7 +1419,7 @@ async function fillCaptureDevices() {
   } else {
     const r = await window.api.listCaptureDevices(api)
     const devs = (r && r.devices) || []
-    if (!r || !r.available) $('capNote').textContent = api === 'asio' ? t('capAsioMissing') : t('capNoBackend')
+    if (!r || !r.available) $('capNote').textContent = t('capNoBackend')
     for (const name of devs) { const o = document.createElement('option'); o.value = name; o.textContent = name; devSel.appendChild(o) }
     if (!devs.length) { const o = document.createElement('option'); o.value = ''; o.textContent = t('capNoDevices'); devSel.appendChild(o) }
     if (devs.length) {

@@ -257,11 +257,6 @@ const TESTS = [
     const r = await window.api.listCaptureDevices('dshow')
     return r && Array.isArray(r.devices)
   })()`],
-  ['Cap asio degrades (no bundled backend)', `(async () => {
-    if (!window.api.listCaptureDevices) return true
-    const r = await window.api.listCaptureDevices('asio')
-    return r && r.available === false
-  })()`],
   ['Settings modal opens', `(() => {
     if (typeof openSettings !== 'function') return true
     openSettings()
