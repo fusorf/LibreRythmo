@@ -1043,12 +1043,40 @@ ipcMain.handle('whisper-install-model', async (e, name) => {
 })
 ipcMain.handle('whisper-cancel', () => { try { if (whisperAbort) whisperAbort.abort() } catch {} try { if (whisperProc) whisperProc.kill() } catch {} whisperAbort = null; whisperProc = null; return true })
 
-// script Python : VAD (Silero) découpe l'audio, Whisper transcrit chaque segment → SRT
-const WHISPER_PY = `import sys, wave
+// ---------- diarisation (locuteurs) : modèles ONNX auto-téléchargés (best-effort) ----------
+const DIAR_SEG_ASSET = 'sherpa-onnx-pyannote-segmentation-3-0.tar.bz2'
+const DIAR_SEG_URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/${DIAR_SEG_ASSET}`
+const DIAR_EMB_ASSET = '3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx'
+const DIAR_EMB_URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/${DIAR_EMB_ASSET}`
+const diarSegDir = () => path.join(whisperDir(), 'diar-seg')
+const diarEmbPath = () => path.join(whisperDir(), 'diar-emb.onnx')
+const diarSegModel = () => findFileRec(diarSegDir(), /\.onnx$/i)
+async function ensureDiarModels(py) {
+  let seg = diarSegModel()
+  if (!seg) {
+    try {
+      const tarball = path.join(whisperDir(), DIAR_SEG_ASSET)
+      await downloadTo(DIAR_SEG_URL, tarball, 'download')
+      try { fs.mkdirSync(diarSegDir(), { recursive: true }) } catch {}
+      const inv = pythonInvoke(py)
+      await new Promise((res) => { const p = spawn(inv[0], [...inv.slice(1), '-c', 'import sys,tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])', tarball, diarSegDir()], { stdio: 'ignore' }); p.on('close', res); p.on('error', res) })
+      try { fs.unlinkSync(tarball) } catch {}
+      seg = diarSegModel()
+    } catch {}
+  }
+  let emb = fs.existsSync(diarEmbPath()) ? diarEmbPath() : null
+  if (!emb) { try { await downloadTo(DIAR_EMB_URL, diarEmbPath(), 'download'); emb = diarEmbPath() } catch {} }
+  return { seg, emb }
+}
+
+// script Python : diarisation (locuteurs) + VAD (Silero) + Whisper → JSON de segments
+// [{start,end,text,speaker}]. La diarisation est ignorée proprement si ses modèles
+// manquent (tout retombe sur un seul locuteur).
+const WHISPER_PY = `import sys, json, wave
 import numpy as np
 import sherpa_onnx
 
-wav_path, enc, dec, tok, vad_model, lang, out_srt = sys.argv[1:8]
+wav_path, enc, dec, tok, vad_model, seg_model, emb_model, lang, out_json = sys.argv[1:10]
 
 recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
     encoder=enc, decoder=dec, tokens=tok,
@@ -1056,29 +1084,51 @@ recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
     task="transcribe", num_threads=2,
 )
 
+with wave.open(wav_path, "rb") as f:
+    total = f.getnframes()
+    raw = f.readframes(total)
+samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+dur = (total / 16000.0) if total else 1.0
+
+turns = []
+if seg_model and emb_model:
+    try:
+        dcfg = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+            segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+                pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=seg_model)),
+            embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=emb_model),
+            clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=0.5),
+            min_duration_on=0.3, min_duration_off=0.5,
+        )
+        sd = sherpa_onnx.OfflineSpeakerDiarization(dcfg)
+        def cb(a, b):
+            print("PROGRESS %d" % int(a / max(1, b) * 50), flush=True)
+            return 0
+        dres = sd.process(samples, callback=cb).sort_by_start_time()
+        turns = [(s.start, s.end, s.speaker) for s in dres]
+    except Exception as ex:
+        print("DIARERR %s" % ex, flush=True)
+
+def speaker_of(a, b):
+    best = -1
+    bov = 0.0
+    for (s, e, sp) in turns:
+        ov = min(b, e) - max(a, s)
+        if ov > bov:
+            bov = ov
+            best = sp
+    return best if best >= 0 else 0
+
 config = sherpa_onnx.VadModelConfig()
 config.silero_vad.model = vad_model
 config.silero_vad.threshold = 0.5
 config.silero_vad.min_silence_duration = 0.25
-config.silero_vad.min_speech_duration = 0.25
-config.silero_vad.max_speech_duration = 20
+config.silero_vad.min_speech_duration = 0.2
+config.silero_vad.max_speech_duration = 15
 config.sample_rate = 16000
 vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=180)
 
-with wave.open(wav_path, "rb") as f:
-    sr = f.getframerate()
-    total = f.getnframes()
-    raw = f.readframes(total)
-samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-dur = (total / float(sr)) if sr else 1.0
-
-def ts(t):
-    if t < 0: t = 0
-    h = int(t // 3600); m = int((t % 3600) // 60); s = t % 60
-    return "%02d:%02d:%06.3f" % (h, m, s)
-
 segs = []
-
 def drain():
     while not vad.empty():
         seg = vad.front
@@ -1089,8 +1139,8 @@ def drain():
         text = st.result.text.strip()
         end = start + len(seg.samples) / 16000.0
         if text:
-            segs.append((start, end, text))
-            print("PROGRESS %d" % int(min(100, end / dur * 100)), flush=True)
+            segs.append({"start": start, "end": end, "text": text, "speaker": speaker_of(start, end)})
+            print("PROGRESS %d" % (50 + int(min(50, end / dur * 50))), flush=True)
         vad.pop()
 
 window = 512
@@ -1102,9 +1152,8 @@ while i < len(samples):
 vad.flush()
 drain()
 
-with open(out_srt, "w", encoding="utf-8") as fo:
-    for idx, (a, b, txt) in enumerate(segs, 1):
-        fo.write("%d\\n%s --> %s\\n%s\\n\\n" % (idx, ts(a).replace(".", ","), ts(b).replace(".", ","), txt))
+with open(out_json, "w", encoding="utf-8") as fo:
+    json.dump(segs, fo, ensure_ascii=False)
 print("DONE %d" % len(segs), flush=True)
 `
 
@@ -1124,13 +1173,15 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
   exArgs.push('-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav)
   const okx = await new Promise((resolve) => { const p = spawn(ffmpegPath, exArgs, { stdio: 'ignore' }); p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false)) })
   if (!okx) return { error: 'extract-failed' }
-  // 2) VAD + Whisper → SRT (script Python)
+  // 2) modèles de diarisation (best-effort — sinon un seul locuteur)
+  const diar = await ensureDiarModels(py)
+  // 3) diarisation + VAD + Whisper → segments JSON
   const scriptPath = path.join(app.getPath('temp'), 'lr-whisper.py')
   try { fs.writeFileSync(scriptPath, WHISPER_PY, 'utf8') } catch {}
-  const outSrt = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.srt`)
+  const outJson = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.json`)
   const lang = opts.language || 'auto'
   const inv = pythonInvoke(py)
-  const args = [...inv.slice(1), scriptPath, wav, f.enc, f.dec, f.tok, vadModelPath(), lang, outSrt]
+  const args = [...inv.slice(1), scriptPath, wav, f.enc, f.dec, f.tok, vadModelPath(), diar.seg || '', diar.emb || '', lang, outJson]
   return await new Promise((resolve) => {
     let tail = ''
     try { whisperProc = spawn(inv[0], args, { stdio: ['ignore', 'pipe', 'pipe'] }) } catch { return resolve({ error: 'engine-spawn-failed' }) }
@@ -1139,7 +1190,7 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
     whisperProc.on('close', (code) => {
       whisperProc = null
       try { fs.unlinkSync(wav) } catch {}
-      if (code === 0 && fs.existsSync(outSrt)) { let srt = ''; try { srt = fs.readFileSync(outSrt, 'utf8') } catch {}; try { fs.unlinkSync(outSrt) } catch {}; resolve({ ok: true, srt }) }
+      if (code === 0 && fs.existsSync(outJson)) { let segments = []; try { segments = JSON.parse(fs.readFileSync(outJson, 'utf8')) } catch {}; try { fs.unlinkSync(outJson) } catch {}; resolve({ ok: true, segments }) }
       else resolve({ error: tail.slice(-300) || 'transcribe-failed' })
     })
     whisperProc.on('error', () => { whisperProc = null; resolve({ error: 'engine-spawn-failed' }) })

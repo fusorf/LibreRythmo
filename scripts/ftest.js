@@ -176,6 +176,19 @@ const TESTS = [
     const r = await window.api.whisperTranscribe({ source: 'C:/nope.mp4', model: 'turbo', language: 'auto' })
     return r && typeof r.error === 'string'
   })()`],
+  ['A4 buildLinesFromSegments: speakers→chars, laughs→reacs, split', `(() => {
+    if (typeof buildLinesFromSegments !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [], characters: [], lines: [] }, null)
+    const n = buildLinesFromSegments([
+      { start: 1, end: 3, text: 'Bonjour toi. Ça va ?', speaker: 0 },
+      { start: 3, end: 4, text: '(Rires)', speaker: 1 },
+      { start: 4, end: 6, text: 'Oui merci', speaker: 1 },
+    ])
+    const chars = project.characters.length
+    const reac = project.lines.some((l) => l.kind === 'reac')
+    const speakers = new Set(project.lines.map((l) => l.characterId)).size
+    return n >= 4 && chars >= 2 && reac && speakers >= 2
+  })()`],
   ['A4 dialog opens with a video', `(() => {
     if (typeof openTranscribeDialog !== 'function') return true
     project.videoPath = 'X:/fake.mp4'

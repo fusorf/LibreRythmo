@@ -1261,13 +1261,79 @@ async function runTranscribe() {
       $('trStatus').textContent = t('trFailed')
       return
     }
-    importSubsText(r.srt || '')
+    const n = r.segments ? buildLinesFromSegments(r.segments) : (importSubsText(r.srt || ''), 0)
     $('trBar').style.width = '100%'
-    $('trStatus').textContent = t('trDone')
+    $('trStatus').textContent = t('trImported', n || 0)
     trModal.classList.add('hidden')
   } finally {
     trBusy = false; $('trGo').disabled = false; $('trClose').textContent = t('close')
   }
+}
+
+// découpe un segment {start,end,text} en répliques courtes : les onomatopées / bruits
+// entre parenthèses ou crochets (rires, musique, soupir…) deviennent des réacs séparées,
+// le texte parlé est coupé aux phrases pour éviter les pavés. Durées proportionnelles.
+function segToChunks(text) {
+  const chunks = []
+  const re = /\(([^)]{1,60})\)|\[([^\]]{1,60})\]|♪([^♪]{0,60})♪/g
+  let last = 0, m
+  const pushSpoken = (s) => {
+    s = s.trim(); if (!s) return
+    const parts = s.split(/(?<=[.!?…])\s+/).map((x) => x.trim()).filter(Boolean)
+    for (const p of (parts.length ? parts : [s])) chunks.push({ reac: false, text: p })
+  }
+  while ((m = re.exec(text))) {
+    pushSpoken(text.slice(last, m.index))
+    const inner = (m[1] || m[2] || m[3] || '').trim()
+    if (inner) chunks.push({ reac: true, text: '(' + inner.toLowerCase() + ')' })
+    last = re.lastIndex
+  }
+  pushSpoken(text.slice(last))
+  return chunks
+}
+
+function buildLinesFromSegments(segments) {
+  if (!segments || !segments.length) { toast(t('trNone')); return 0 }
+  pushUndo()
+  const speakerChar = new Map()
+  const charFor = (sp) => {
+    const key = sp == null ? 0 : sp
+    if (speakerChar.has(key)) return speakerChar.get(key)
+    const name = t('speakerName', key + 1)
+    let c = project.characters.find((x) => x.name === name)
+    if (!c) {
+      c = { id: uid(), name, color: PALETTE[project.characters.length % PALETTE.length], prefTrack: clamp(key, 0, MAX_TRACKS - 1) }
+      project.characters.push(c)
+    }
+    speakerChar.set(key, c.id)
+    return c.id
+  }
+  let added = 0
+  for (const seg of segments) {
+    const cid = charFor(seg.speaker)
+    const chunks = segToChunks(String(seg.text || ''))
+    if (!chunks.length) continue
+    const a0 = Math.max(0, Number(seg.start) || 0)
+    const b0 = Math.max(a0 + 0.2, Number(seg.end) || a0 + 0.6)
+    // poids par longueur (réac = poids minimal) pour répartir la durée du segment
+    const w = chunks.map((c) => Math.max(c.reac ? 2 : 4, c.text.length))
+    const tot = w.reduce((s, x) => s + x, 0) || 1
+    let cur = a0
+    chunks.forEach((c, i) => {
+      const span = (b0 - a0) * (w[i] / tot)
+      const a = cur, b = Math.max(a + 0.2, cur + span); cur = b
+      const line = { id: uid(), characterId: cid, track: findFreeTrack(a, b, cid), words: splitWords(c.text, a, b) }
+      if (c.reac) line.kind = 'reac'
+      project.lines.push(line); added++
+    })
+  }
+  // assez de pistes pour tous les locuteurs, puis rafraîchir l'UI
+  const maxUsed = project.lines.reduce((mx, l) => Math.max(mx, l.track || 0), -1)
+  project.tracks = clamp(Math.max(project.tracks, maxUsed + 1), 1, MAX_TRACKS)
+  if (!getChar(selectedCharId)) selectedCharId = project.characters[0]?.id || null
+  renderChars(); applyBandHeight(); buildInsTrackOptions(); refreshTrackCountUI(); buildLineFilterOptions(); refreshInspector(); renderLinesLog()
+  markDirty()
+  return added
 }
 
 
