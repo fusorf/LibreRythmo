@@ -365,7 +365,7 @@ function setClean() {
 function updateTitle() {
   const name = projectPath ? projectPath.replace(/^.*[\\/]/, '') : t('untitled')
   const auto = autosaveOn ? `  [${t('autosaveTag')}]` : ''
-  document.title = `LibreRythmo — ${name}${dirty ? ' •' : ''}${auto}`
+  document.title = `LibreRythmo - ${name}${dirty ? ' •' : ''}${auto}`
 }
 
 // ---------- enregistrement automatique (Fichier → Enregistrement automatique)

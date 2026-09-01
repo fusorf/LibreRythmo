@@ -17,7 +17,7 @@ let buildInfo = null
 try {
   buildInfo = require('./build-info.json')
 } catch {}
-const versionLine = () => `Version ${app.getVersion()}${buildInfo?.builtAt ? ` — build ${buildInfo.builtAt}` : ' (dev)'}`
+const versionLine = () => `Version ${app.getVersion()}${buildInfo?.builtAt ? ` - build ${buildInfo.builtAt}` : ' (dev)'}`
 
 let win = null
 
@@ -298,7 +298,7 @@ const MENU_STR = {
     help: 'Aide',
     guide: 'Guide',
     about: 'À propos',
-    aboutDetail: 'Bande rythmo libre pour le doublage.\n\n{version}\n© 2026 fusorf — licence GPL-3.0-or-later\n\nConstruit avec :\n•  Electron (MIT) — electronjs.org\n•  FFmpeg (GPL v3, binaire embarqué via ffmpeg-static) — ffmpeg.org\n•  Chromium & Node.js, embarqués par Electron\n\nLe code source de LibreRythmo est libre (GPL v3).\nLe binaire FFmpeg embarqué reste sous sa propre licence (GPL v3) ; il est appelé comme programme externe.',
+    aboutDetail: 'Bande rythmo libre pour le doublage.\n\n{version}\n© 2026 fusorf - licence GPL-3.0-or-later\n\nConstruit avec :\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binaire embarqué via ffmpeg-static) - ffmpeg.org\n•  Chromium & Node.js, embarqués par Electron\n\nLe code source de LibreRythmo est libre (GPL v3).\nLe binaire FFmpeg embarqué reste sous sa propre licence (GPL v3) ; il est appelé comme programme externe.',
     confirmQuitTitle: 'Modifications non enregistrées',
     confirmQuitMsg: 'Le projet contient des modifications non enregistrées.',
     confirmQuitDetail: 'Quitter sans enregistrer ?',
@@ -374,7 +374,7 @@ const MENU_STR = {
     help: 'Help',
     guide: 'Guide',
     about: 'About',
-    aboutDetail: 'Free rythmo band for dubbing.\n\n{version}\n© 2026 fusorf — GPL-3.0-or-later license\n\nBuilt with:\n•  Electron (MIT) — electronjs.org\n•  FFmpeg (GPL v3, binary bundled via ffmpeg-static) — ffmpeg.org\n•  Chromium & Node.js, shipped by Electron\n\nLibreRythmo source code is free software (GPL v3).\nThe bundled FFmpeg binary keeps its own license (GPL v3); it is invoked as an external program.',
+    aboutDetail: 'Free rythmo band for dubbing.\n\n{version}\n© 2026 fusorf - GPL-3.0-or-later license\n\nBuilt with:\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binary bundled via ffmpeg-static) - ffmpeg.org\n•  Chromium & Node.js, shipped by Electron\n\nLibreRythmo source code is free software (GPL v3).\nThe bundled FFmpeg binary keeps its own license (GPL v3); it is invoked as an external program.',
     confirmQuitTitle: 'Unsaved changes',
     confirmQuitMsg: 'The project has unsaved changes.',
     confirmQuitDetail: 'Quit without saving?',
@@ -527,7 +527,7 @@ function buildMenu() {
             const r = await dialog.showMessageBox(win, {
               type: 'none',
               title: 'LibreRythmo',
-              message: 'LibreRythmo — by fusorf',
+              message: 'LibreRythmo - by fusorf',
               detail: st.aboutDetail.replace('{version}', ver),
               buttons: [st.btnClose, 'GitHub'],
               defaultId: 0,
