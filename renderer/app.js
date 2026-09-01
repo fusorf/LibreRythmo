@@ -505,7 +505,6 @@ function applyLang() {
   $('setCapDevLabel').textContent = t('setCapDevLabel')
   $('setOutDevLabel').textContent = t('setOutDevLabel')
   $('outTest').textContent = t(outTestState ? 'outTestStop' : 'outTestBtn')
-  $('capAsioFfmpeg').textContent = t('capAsioBtn')
   $('setTrLegend').textContent = t('setTrLegend')
   $('setTrActiveLabel').textContent = t('setActiveLabel')
   $('setSepLegend').textContent = t('setSepLegend')
@@ -956,7 +955,7 @@ const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture / monito
 const retainedTake = (line) => (line.takes || []).find((k) => k.id === line.take) || null
 
 // config capture (persistée côté main : audio-config.json)
-const audioCfg = { api: 'system', device: null, output: null, asioFfmpeg: null }
+const audioCfg = { api: 'system', device: null, output: null }
 
 function resetMic() {
   try { if (recorder.stream) recorder.stream.getTracks().forEach((t2) => t2.stop()) } catch {}
@@ -1043,7 +1042,7 @@ async function startRecordingWeb(line) {
 // --- capture DirectShow / ASIO (ffmpeg, process principal) ---
 async function startRecordingFfmpeg(line) {
   const name = `take_${line.id}_${uid()}.wav`
-  const r = await window.api.captureStart({ api: audioCfg.api, device: audioCfg.device, ffmpeg: audioCfg.asioFfmpeg, projectPath, name })
+  const r = await window.api.captureStart({ api: audioCfg.api, device: audioCfg.device, projectPath, name })
   if (!r || r.error) { toast(t(r && r.error === 'no-device' ? 'recNoDevice' : 'recCaptureFail')); return }
   recorder.mode = 'ffmpeg'
   recorder.captureName = name
@@ -1403,13 +1402,12 @@ function fmtDlSize(mb) {
   if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang === 'fr') s = s.replace('.', ','); return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
   return Math.round(mb) + ' ' + t('unitMB')
 }
-function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, output: audioCfg.output, asioFfmpeg: audioCfg.asioFfmpeg }) }
+function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, output: audioCfg.output }) }
 
 async function fillCaptureDevices() {
   const api = $('capApi').value
   const devSel = $('capDevice')
   devSel.innerHTML = ''
-  $('capAsioFfmpegWrap').hidden = api !== 'asio'
   $('capNote').textContent = ''
   if (api === 'system') {
     let devs = []
@@ -1419,7 +1417,7 @@ async function fillCaptureDevices() {
     for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); devSel.appendChild(o) }
     devSel.value = audioCfg.device || ''
   } else {
-    const r = await window.api.listCaptureDevices(api, audioCfg.asioFfmpeg)
+    const r = await window.api.listCaptureDevices(api)
     const devs = (r && r.devices) || []
     if (!r || !r.available) $('capNote').textContent = api === 'asio' ? t('capAsioMissing') : t('capNoBackend')
     for (const name of devs) { const o = document.createElement('option'); o.value = name; o.textContent = name; devSel.appendChild(o) }
@@ -1595,7 +1593,6 @@ $('capRefresh').addEventListener('click', fillCaptureDevices)
 $('outDevice').addEventListener('change', () => { audioCfg.output = $('outDevice').value || null; saveAudioCfg(); applyOutputSink() })
 $('outRefresh').addEventListener('click', fillOutputDevices)
 $('outTest').addEventListener('click', toggleOutputTest)
-$('capAsioFfmpeg').addEventListener('click', async () => { const p = await window.api.pickExecutable(); if (p) { audioCfg.asioFfmpeg = p; saveAudioCfg(); fillCaptureDevices() } })
 $('trActive').addEventListener('change', () => setActiveWhisper($('trActive').value))
 $('sepActive').addEventListener('change', () => setActiveSep($('sepActive').value))
 $('setClose').addEventListener('click', () => { stopOutputTest(); setModal.classList.add('hidden') })
@@ -6184,7 +6181,7 @@ function loop() {
 // principal — qui a déjà construit le menu avec les mêmes valeurs.
 ;(async () => {
   const st = await window.api.getSettings()
-  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.output = ac.output || null; audioCfg.asioFfmpeg = ac.asioFfmpeg || null } } catch {}
+  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.output = ac.output || null } } catch {}
   applyOutputSink()
   lang = st.lang === 'en' ? 'en' : 'fr'
   autosaveOn = !!st.autosave

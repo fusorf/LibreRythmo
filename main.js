@@ -1198,15 +1198,10 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
 
 // ---------- capture audio : périphérique + backend (WASAPI / DirectShow / ASIO) ----------
 // « Système » = capture navigateur (getUserMedia, WASAPI) côté renderer. « DirectSound »
-// = capture DirectShow via ffmpeg (atteint les interfaces pro). « ASIO » nécessite un
-// ffmpeg compilé avec ASIO (le build inclus ne l'a pas) : l'utilisateur fournit alors
-// son propre binaire. Rien n'est bundlé au-delà du ffmpeg déjà présent.
+// = capture DirectShow via ffmpeg (atteint les interfaces pro). « ASIO » utilise le
+// ffmpeg empaqueté avec l'appli (build + DLL ASIO fournis dans le paquet).
 function audioCfgPath() { return path.join(app.getPath('userData'), 'audio-config.json') }
 function readAudioCfg() { try { return JSON.parse(fs.readFileSync(audioCfgPath(), 'utf8')) } catch { return {} } }
-ipcMain.handle('pick-executable', async () => {
-  const r = await dialog.showOpenDialog(win, { properties: ['openFile'] })
-  return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
-})
 ipcMain.handle('pick-directory', async (e, defaultPath) => {
   const opts = { properties: ['openDirectory', 'createDirectory'] }
   if (defaultPath) opts.defaultPath = defaultPath
@@ -1223,8 +1218,8 @@ function parseDshowDevices(txt) {
   while ((m = re.exec(txt))) out.push(m[1])
   return out
 }
-ipcMain.handle('list-capture-devices', async (e, api, ffOverride) => {
-  const ff = api === 'asio' && ffOverride ? ffOverride : ffmpegPath
+ipcMain.handle('list-capture-devices', async (e, api) => {
+  const ff = ffmpegPath
   if (!ff) return { devices: [], available: false, error: 'no-ffmpeg' }
   const fmt = api === 'asio' ? 'asio' : 'dshow'
   return await new Promise((resolve) => {
@@ -1248,7 +1243,7 @@ let captureDone = null
 ipcMain.handle('capture-start', (e, opts) => {
   if (captureProc) return { error: 'busy' }
   const api = opts.api
-  const ff = api === 'asio' && opts.ffmpeg ? opts.ffmpeg : ffmpegPath
+  const ff = ffmpegPath
   if (!ff) return { error: 'no-ffmpeg' }
   if (!opts.device) return { error: 'no-device' }
   const name = path.basename(opts.name || `take_${Date.now()}.wav`)
