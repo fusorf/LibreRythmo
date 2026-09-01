@@ -4414,8 +4414,6 @@ function buildCuePop() {
   }
   mk(t('cueAddStreamer'), () => addCue('streamer'))
   mk(t('cueAddPunch'), () => addCue('punch'))
-  mk(t('cueRemoveNear'), removeNearestCue)
-  mk(t('cueClearAll'), clearCues)
 }
 buildCuePop()
 

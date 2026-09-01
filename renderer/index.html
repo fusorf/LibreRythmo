@@ -120,7 +120,7 @@
   <div id="tabBar">
     <div class="tab-group">
       <button id="tabRythmo" class="tab active">Rythmo</button>
-      <button id="tabTracks" class="tab">Pistes</button>
+      <button id="tabTracks" class="tab">Audio</button>
     </div>
     <div class="spacer"></div>
     <button id="btnToggleLoops" class="panel-toggle" title="Afficher / masquer le panneau Scènes">Scènes</button>
@@ -162,7 +162,7 @@
     </select>
     <select id="insEntry" title="Entrée : bouche du personnage en début de réplique"></select>
     <select id="insExit" title="Sortie : bouche du personnage en fin de réplique"></select>
-    <button id="insVoiceOff" class="ins-toggle" title="Voix off (bouche non visible) — texte souligné">Voix off</button>
+    <button id="insVoiceOff" class="ins-toggle" title="Voix off (bouche non visible)">Voix off</button>
     <input id="insText" type="text" placeholder="Texte de la réplique…" spellcheck="false">
     <input id="insStart" type="text" class="tc" title="Timecode de début">
     <span class="arrow">→</span>
@@ -187,13 +187,13 @@
     </span>
     <div id="insMulti">
       <span id="insMultiCount"></span>
-      <select id="insMultiChar" title="Personnage — appliquer à toutes les répliques sélectionnées"></select>
-      <span class="font-sel" title="Police — appliquer à toutes les répliques sélectionnées">
+      <select id="insMultiChar" title="Personnage"></select>
+      <span class="font-sel" title="Police">
         <span class="font-sel-ico" aria-hidden="true">A</span>
         <select id="insMultiFont"></select>
       </span>
-      <select id="insMultiTrack" title="Piste — déplacer toutes les répliques sélectionnées"></select>
-      <button id="insMultiVoiceOff" class="ins-toggle" title="Voix off — toutes les répliques sélectionnées">Voix off</button>
+      <select id="insMultiTrack" title="Piste"></select>
+      <button id="insMultiVoiceOff" class="ins-toggle" title="Voix off">Voix off</button>
     </div>
   </div>
   </div>
