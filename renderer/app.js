@@ -490,8 +490,6 @@ function applyLang() {
   $('trOpenSettings').textContent = t('aiOpenSettings')
   $('trClose').textContent = t('close')
   $('trGo').textContent = t('trGoBtn')
-  $('btnRemoveVoices').textContent = t('removeVoicesBtn')
-  $('btnRemoveVoices').title = t('removeVoicesTitle')
   $('sepModalTitle').textContent = t('sepModalTitle')
   $('sepInLabel').textContent = t('sepInLabel')
   $('sepRunModelLabel').textContent = t('sepRunModelLabel')
@@ -1597,7 +1595,6 @@ async function doSeparate() {
   toast(t('sepDone'))
   setTimeout(() => { if (!sepBusy) sepModal.classList.add('hidden') }, 700)
 }
-$('btnRemoveVoices').addEventListener('click', openSeparateDialog)
 
 $('btnToggleLines').addEventListener('click', () => {
   const panel = $('linesPanel')
