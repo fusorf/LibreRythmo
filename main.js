@@ -1125,25 +1125,26 @@ ipcMain.handle('whisper-list-models', () => WHISPER_MODELS.map((m) => {
 }))
 ipcMain.handle('whisper-delete-model', (e, m) => { try { fs.unlinkSync(whisperModelPath(m)) } catch {} return true })
 ipcMain.handle('whisper-clear-exe', () => { try { fs.unlinkSync(whisperCfgPath()) } catch {} return true })
+ipcMain.handle('whisper-reveal-dir', () => { try { shell.openPath(whisperDir()) } catch {} return true })
 
 // ---------- séparation de voix (IA) : retirer les voix d'une piste audio ----------
-// Modèle local exécuté par un moteur fourni par l'utilisateur (Demucs recommandé —
-// `pip install demucs`). Rien de bundlé. Le résultat « sans voix » (instrumental)
-// devient une nouvelle piste audio du projet. Le moteur télécharge son modèle au
-// premier usage. Deux stems : vocals / no_vocals.
+// Moteur léger « audio-separator » (modèles MDX-Net ONNX, ~10× plus léger que Demucs :
+// onnxruntime au lieu de PyTorch). Installé à la demande via pip (Python détecté) ;
+// rien de bundlé. Le modèle ONNX (~66 Mo) est téléchargé par le moteur au 1er usage.
+// Résultat : l'instrumental (sans voix) devient une nouvelle piste audio du projet.
 let sepProc = null
 function sepCfgPath() { return path.join(app.getPath('userData'), 'sep-config.json') }
 function readSepCfg() { try { return JSON.parse(fs.readFileSync(sepCfgPath(), 'utf8')) } catch { return {} } }
 ipcMain.handle('sep-config-get', () => readSepCfg())
 ipcMain.handle('sep-config-set', (e, cfg) => { try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg || {}), 'utf8') } catch {} return true })
 ipcMain.handle('sep-pick-exe', async () => {
-  const r = await dialog.showOpenDialog(win, { title: 'Demucs / séparation', properties: ['openFile'] })
+  const r = await dialog.showOpenDialog(win, { title: 'audio-separator', properties: ['openFile'] })
   if (r.canceled || !r.filePaths.length) return null
-  const cfg = readSepCfg(); cfg.exe = r.filePaths[0]; delete cfg.python; delete cfg.module
+  const cfg = readSepCfg(); cfg.exe = r.filePaths[0]; delete cfg.python
   try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {}
   return cfg.exe
 })
-// détection d'un interpréteur Python (pour installer/lancer Demucs via pip)
+// détection d'un interpréteur Python (pour installer/lancer le moteur via pip)
 function pythonInvoke(py) { return py === 'py' ? ['py', '-3'] : [py] }
 function detectPython() {
   return new Promise((resolve) => {
@@ -1162,15 +1163,10 @@ function detectPython() {
     tryNext()
   })
 }
-// argv du moteur de séparation : exe choisi, sinon module Demucs via le Python installé
-function sepArgv(cfg) {
-  if (cfg.exe && fs.existsSync(cfg.exe)) return [cfg.exe]
-  if (cfg.python && cfg.module) return [...pythonInvoke(cfg.python), '-m', cfg.module]
-  return null
-}
+const sepReady = (cfg) => !!((cfg.exe && fs.existsSync(cfg.exe)) || cfg.python)
 ipcMain.handle('sep-status', async () => {
   const cfg = readSepCfg()
-  const ready = !!sepArgv(cfg)
+  const ready = sepReady(cfg)
   const python = ready ? cfg.python || null : await detectPython()
   return { ready, mode: cfg.exe ? 'exe' : cfg.python ? 'module' : null, python }
 })
@@ -1181,7 +1177,7 @@ ipcMain.handle('sep-install', async () => {
   const inv = pythonInvoke(py)
   return await new Promise((resolve) => {
     let tail = ''
-    try { sepProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', 'install', '--user', '-U', 'demucs'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    try { sepProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', 'install', '--user', '-U', 'audio-separator[cpu]'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
     catch { sepProc = null; return resolve({ error: 'spawn' }) }
     const on = (d) => {
       const s = String(d); tail = (tail + s).slice(-4000)
@@ -1192,7 +1188,7 @@ ipcMain.handle('sep-install', async () => {
     sepProc.on('close', (code) => {
       sepProc = null
       if (code === 0) {
-        const cfg = readSepCfg(); cfg.python = py; cfg.module = 'demucs'; delete cfg.exe
+        const cfg = readSepCfg(); cfg.python = py; delete cfg.exe; delete cfg.module
         try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {}
         resolve({ ok: true })
       } else resolve({ error: tail.slice(-400) || 'install-failed' })
@@ -1200,6 +1196,8 @@ ipcMain.handle('sep-install', async () => {
     sepProc.on('error', () => { sepProc = null; resolve({ error: 'spawn' }) })
   })
 })
+// script Python exécuté pour la séparation MDX (audio-separator, stem instrumental)
+const SEP_PY = "import sys\nfrom audio_separator.separator import Separator\ninp, out, model = sys.argv[1], sys.argv[2], sys.argv[3]\ns = Separator(output_dir=out, output_format='WAV', output_single_stem='Instrumental')\ns.load_model(model_filename=model)\ns.separate(inp)\n"
 function sepDir(projectPath) {
   const base = projectPath ? path.join(path.dirname(projectPath), 'separated') : path.join(appBaseDir(), 'cache', 'separated')
   try { fs.mkdirSync(base, { recursive: true }); return base } catch {}
@@ -1226,11 +1224,10 @@ ipcMain.handle('sep-run', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
   if (sepProc) return { error: 'busy' }
   const cfg = readSepCfg()
-  const argv = sepArgv(cfg)
-  if (!argv) return { error: 'no-engine' }
+  if (!sepReady(cfg)) return { error: 'no-engine' }
   const src = opts.source
   if (!src || !fs.existsSync(src)) return { error: 'no-source' }
-  const model = opts.model || 'htdemucs'
+  const model = opts.model || 'UVR-MDX-NET-Inst_HQ_3.onnx'
   const base = `lr-sep-${Date.now()}`
   const wav = path.join(app.getPath('temp'), base + '.wav')
   // 1) extraction de la piste audio ciblée en WAV stéréo qualité
@@ -1239,20 +1236,22 @@ ipcMain.handle('sep-run', async (e, opts) => {
   extract.push('-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', wav)
   const okx = await new Promise((res) => { const p = spawn(ffmpegPath, extract, { stdio: 'ignore' }); p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
   if (!okx) return { error: 'extract-failed' }
-  // 2) séparation (Demucs : --two-stems=vocals → vocals.wav + no_vocals.wav)
+  // 2) séparation MDX (audio-separator, stem instrumental) → un fichier (Instrumental)
   const outDir = path.join(app.getPath('temp'), base + '-out')
   try { fs.mkdirSync(outDir, { recursive: true }) } catch {}
-  const args = ['--two-stems', 'vocals', '-n', model, '-o', outDir, wav]
+  let cmd, args
+  if (cfg.python) { const inv = pythonInvoke(cfg.python); cmd = inv[0]; args = [...inv.slice(1), '-c', SEP_PY, wav, outDir, model] }
+  else { cmd = cfg.exe; args = [wav, '--model_filename', model, '--output_dir', outDir, '--output_format', 'WAV', '--single_stem', 'Instrumental'] }
   return await new Promise((resolve) => {
     let tail = ''
-    try { sepProc = spawn(argv[0], [...argv.slice(1), ...args], { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    try { sepProc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }) }
     catch { return resolve({ error: 'engine-spawn-failed' }) }
     const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/(\d+)%/); if (m && win && !win.isDestroyed()) win.webContents.send('sep-progress', { pct: Number(m[1]) }) }
     sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
     sepProc.on('close', (code) => {
       sepProc = null
       try { fs.unlinkSync(wav) } catch {}
-      const found = findFileRec(outDir, /no_vocals\.(wav|mp3|flac|m4a)$/i)
+      const found = findFileRec(outDir, /(instrumental|no_vocals)\S*\.(wav|mp3|flac|m4a)$/i)
       if (code === 0 && found) {
         const destName = (opts.destBase || 'sans-voix') + '-' + Date.now() + path.extname(found)
         const dest = path.join(sepDir(opts.projectPath), destName)

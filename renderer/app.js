@@ -470,7 +470,7 @@ function applyLang() {
   $('trHint').textContent = t('trHint')
   $('trModelLabel').textContent = t('trModelLabel')
   $('trLangLabel').textContent = t('trLangLabel')
-  $('trPickExe').textContent = t('trPickExe')
+  $('trOpenSettings').textContent = t('aiOpenSettings')
   $('trClose').textContent = t('close')
   $('trGo').textContent = t('trGoBtn')
   $('btnRemoveVoices').textContent = t('removeVoicesBtn')
@@ -482,6 +482,7 @@ function applyLang() {
   $('capAsioFfmpeg').textContent = t('capAsioBtn')
   $('setTrLegend').textContent = t('setTrLegend')
   $('setTrHint').textContent = t('setTrHint')
+  $('setTrReveal').textContent = t('setTrReveal')
   $('setTrPick').textContent = t('setTrPick')
   $('setTrClear').textContent = t('setTrClear')
   $('setSepLegend').textContent = t('setSepLegend')
@@ -1188,54 +1189,62 @@ $('btnMonitor').addEventListener('click', () => {
 const trModal = $('transcribeModal')
 let trBusy = false
 
-async function refreshWhisperStatus() {
-  const st = await window.api.whisperStatus($('trModel').value)
-  $('trEngine').textContent = st.exe ? t('trEngineOk') : t('trEngineMissing')
-  return st
+// prêt à transcrire = moteur configuré ET au moins un modèle installé (tout se
+// configure dans les Paramètres ; la modale ne fait qu'utiliser ce qui est installé)
+async function transcribeReadiness() {
+  let st = { exe: null }
+  try { st = await window.api.whisperStatus('base') } catch {}
+  let models = []
+  try { models = (await window.api.whisperListModels()).filter((m) => m.present) } catch {}
+  return { engine: !!(st && st.exe), models }
 }
-function openTranscribeDialog() {
+
+async function openTranscribeDialog() {
   if (!project.videoPath) { toast(t('trNeedVideo')); return }
   trModal.classList.remove('hidden')
   $('trBar').style.width = '0%'
   $('trStatus').textContent = ''
-  refreshWhisperStatus()
+  const { engine, models } = await transcribeReadiness()
+  const ready = engine && models.length > 0
+  $('trNotReady').classList.toggle('hidden', ready)
+  $('trReady').classList.toggle('hidden', !ready)
+  $('trGo').classList.toggle('hidden', !ready)
+  if (ready) {
+    const sel = $('trModel'); sel.innerHTML = ''
+    for (const m of models) {
+      const o = document.createElement('option')
+      o.value = m.model; o.textContent = `${m.model} (${fmtDlSize(m.sizeMB)})`
+      sel.appendChild(o)
+    }
+  } else {
+    $('trNotReadyMsg').textContent = !engine ? t('trNeedEngine') : t('trNeedModel')
+  }
 }
 function closeTranscribe() { if (!trBusy) trModal.classList.add('hidden') }
 
-$('trModel').addEventListener('change', refreshWhisperStatus)
-$('trPickExe').addEventListener('click', async () => {
-  const exe = await window.api.whisperPickExe()
-  await refreshWhisperStatus()
-  if (exe) toast(t('trEngineSet'))
-})
+$('trOpenSettings').addEventListener('click', () => { trModal.classList.add('hidden'); openSettings() })
 $('trClose').addEventListener('click', () => {
   if (trBusy) { window.api.whisperCancel(); trBusy = false; $('trStatus').textContent = t('trCancelled'); $('trClose').textContent = t('close'); $('trGo').disabled = false }
   else closeTranscribe()
 })
 $('trGo').addEventListener('click', runTranscribe)
 window.api.onWhisperProgress((p) => {
-  if (!p) return
+  if (!p || p.phase !== 'transcribe') return // les téléchargements se font dans les Paramètres
   $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'
-  $('trStatus').textContent = p.phase === 'download' ? t('trDownloading', p.pct || 0) : t('trTranscribing', p.pct || 0)
+  $('trStatus').textContent = t('trTranscribing', p.pct || 0)
 })
 
 async function runTranscribe() {
   if (trBusy) return
   const model = $('trModel').value
+  if (!model) { toast(t('trNeedModel')); return }
   const lang = $('trLang').value
-  const st = await window.api.whisperStatus(model)
-  if (!st.exe) { toast(t('trEngineMissing')); return }
   trBusy = true; $('trGo').disabled = true; $('trClose').textContent = t('cancel')
   try {
-    if (!st.model) {
-      $('trStatus').textContent = t('trDownloading', 0)
-      const dl = await window.api.whisperDownloadModel(model)
-      if (!dl || dl.error) { $('trStatus').textContent = t('trFailed'); toast(t('trFailed')); return }
-    }
     $('trStatus').textContent = t('trTranscribing', 0)
     const r = await window.api.whisperTranscribe({ source: project.videoPath, model, language: lang })
     if (!r || r.error) {
-      const map = { 'no-engine': 'trEngineMissing', 'no-source': 'trNeedVideo' }
+      const map = { 'no-engine': 'trNeedEngine', 'no-model': 'trNeedModel', 'no-source': 'trNeedVideo' }
       toast(t(map[r && r.error] || 'trFailed'))
       $('trStatus').textContent = t('trFailed')
       return
@@ -1265,7 +1274,7 @@ function fmtDlSize(mb) {
   if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang === 'fr') s = s.replace('.', ','); return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
   return Math.round(mb) + ' ' + t('unitMB')
 }
-const DL_EST = { demucs: 2000 } // ~2 Go (Demucs + PyTorch) via pip
+const DL_EST = { sepEngine: 500 } // ~500 Mo (audio-separator + onnxruntime) via pip
 function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, asioFfmpeg: audioCfg.asioFfmpeg }) }
 
 async function fillCaptureDevices() {
@@ -1326,7 +1335,7 @@ async function renderSepCfg() {
   try { st = await window.api.sepStatus() } catch {}
   $('setSepEngine').textContent = st.ready ? (st.mode === 'module' ? t('sepEngineOkModule') : t('sepEngineOk')) : t('sepEngineMissing')
   const inst = $('setSepInstall')
-  inst.textContent = t('sepInstallBtn', fmtDlSize(DL_EST.demucs))
+  inst.textContent = t('sepInstallBtn', fmtDlSize(DL_EST.sepEngine))
   inst.disabled = !st.python
   inst.title = st.python ? t('sepInstallTitle') : t('sepNoPython')
 }
@@ -1344,6 +1353,7 @@ $('capRefresh').addEventListener('click', fillCaptureDevices)
 $('capAsioFfmpeg').addEventListener('click', async () => { const p = await window.api.pickExecutable(); if (p) { audioCfg.asioFfmpeg = p; saveAudioCfg(); fillCaptureDevices() } })
 $('setTrPick').addEventListener('click', async () => { await window.api.whisperPickExe(); renderTrModels() })
 $('setTrClear').addEventListener('click', async () => { await window.api.whisperClearExe(); renderTrModels() })
+$('setTrReveal').addEventListener('click', () => window.api.whisperRevealDir())
 $('setSepPick').addEventListener('click', async () => { await window.api.sepPickExe(); renderSepCfg() })
 $('setSepClear').addEventListener('click', async () => { await window.api.sepConfigSet({ model: (await window.api.sepConfigGet() || {}).model }); renderSepCfg() })
 $('setSepInstall').addEventListener('click', async () => {
@@ -1357,7 +1367,12 @@ $('setSepInstall').addEventListener('click', async () => {
 })
 $('sepModel').addEventListener('change', async () => { const c = (await window.api.sepConfigGet()) || {}; await window.api.sepConfigSet({ ...c, model: $('sepModel').value }) })
 $('setClose').addEventListener('click', () => setModal.classList.add('hidden'))
-window.api.onWhisperProgress((p) => { if (p && !$('setProgress').classList.contains('hidden')) $('setBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%' })
+window.api.onWhisperProgress((p) => {
+  if (!p || p.phase !== 'download' || $('setProgress').classList.contains('hidden')) return
+  const pct = Math.max(0, Math.min(100, p.pct || 0))
+  $('setBar').style.width = pct + '%'
+  $('setStatus').textContent = t('trDownloading', pct) // corrige le texte figé à 0 %
+})
 
 // ---------- retrait des voix (séparation IA) : produit une piste « sans voix » ----------
 async function runSeparation() {

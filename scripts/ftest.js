@@ -180,6 +180,17 @@ const TESTS = [
     project.videoPath = null
     return open
   })()`],
+  ['A4 modal redirects to Settings when not configured', `(async () => {
+    if (typeof openTranscribeDialog !== 'function') return true
+    await window.api.whisperClearExe()
+    project.videoPath = 'X:/fake.mp4'
+    await openTranscribeDialog()
+    const notReady = !document.getElementById('trNotReady').classList.contains('hidden')
+    const goHidden = document.getElementById('trGo').classList.contains('hidden')
+    document.getElementById('transcribeModal').classList.add('hidden')
+    project.videoPath = null
+    return notReady && goHidden
+  })()`],
   ['Long normal scene is not flagged (OUT-short still is)', `(() => {
     if (typeof loopWarn !== 'function') return true
     return loopWarn({ type: 'normal', start: 0, end: 300 }) === false

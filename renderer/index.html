@@ -310,14 +310,14 @@
   <div id="transcribeModal" class="hidden">
     <div class="modal-panel">
       <h2 id="trTitle">Transcription assistée (expérimental)</h2>
-      <p id="trHint" class="modal-hint">Génère le texte depuis l'audio de la vidéo, puis l'importe comme répliques. Le modèle est téléchargé à la demande (jamais inclus dans l'app). Nécessite le moteur libre whisper.cpp, à fournir une fois.</p>
-      <div class="detect-row">
+      <p id="trHint" class="modal-hint">Génère le texte depuis l'audio de la vidéo, puis l'importe comme répliques.</p>
+      <div id="trNotReady" class="ai-notready hidden">
+        <span id="trNotReadyMsg"></span>
+        <button id="trOpenSettings" class="primary">Ouvrir les Paramètres…</button>
+      </div>
+      <div id="trReady" class="detect-row">
         <label id="trModelLabel" for="trModel">Modèle</label>
-        <select id="trModel">
-          <option value="tiny">tiny (~75 Mo, rapide)</option>
-          <option value="base" selected>base (~142 Mo)</option>
-          <option value="small">small (~466 Mo, précis)</option>
-        </select>
+        <select id="trModel"></select>
         <label id="trLangLabel" for="trLang">Langue</label>
         <select id="trLang">
           <option value="auto" selected>auto</option>
@@ -330,11 +330,6 @@
           <option value="ar">ar</option>
           <option value="he">he</option>
         </select>
-      </div>
-      <div class="detect-row">
-        <span id="trEngine" class="dim-val"></span>
-        <div class="spacer"></div>
-        <button id="trPickExe">Choisir le moteur whisper.cpp…</button>
       </div>
       <div class="export-row">
         <div id="trProgress"><div id="trBar"></div></div>
@@ -373,7 +368,8 @@
         <div class="set-row">
           <span id="setTrEngine" class="dim-val"></span>
           <div class="spacer"></div>
-          <button id="setTrPick">Choisir le moteur…</button>
+          <button id="setTrReveal" title="Ouvrir le dossier où sont téléchargés les modèles">Dossier des modèles</button>
+          <button id="setTrPick">Moteur…</button>
           <button id="setTrClear">Effacer</button>
         </div>
         <div id="trModelList" class="model-list"></div>
@@ -391,9 +387,9 @@
         </div>
         <label><span id="setSepModelLabel">Modèle</span>
           <select id="sepModel">
-            <option value="htdemucs" selected>htdemucs (rapide, ~1 Go)</option>
-            <option value="htdemucs_ft">htdemucs_ft (meilleur, plus lent, ~4 Go)</option>
-            <option value="mdx_extra">mdx_extra (~1 Go)</option>
+            <option value="UVR-MDX-NET-Inst_HQ_3.onnx" selected>MDX-Net Inst HQ (~66 Mo, recommandé)</option>
+            <option value="UVR-MDX-NET-Inst_HQ_4.onnx">MDX-Net Inst HQ 4 (~66 Mo)</option>
+            <option value="UVR_MDXNET_KARA_2.onnx">MDX-Net Karaoké (~50 Mo)</option>
           </select>
         </label>
       </fieldset>

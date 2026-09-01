@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('api', {
   whisperPickExe: () => ipcRenderer.invoke('whisper-pick-exe'),
   whisperClearExe: () => ipcRenderer.invoke('whisper-clear-exe'),
   whisperListModels: () => ipcRenderer.invoke('whisper-list-models'),
+  whisperRevealDir: () => ipcRenderer.invoke('whisper-reveal-dir'),
   whisperDownloadModel: (model) => ipcRenderer.invoke('whisper-download-model', model),
   whisperDeleteModel: (model) => ipcRenderer.invoke('whisper-delete-model', model),
   whisperCancel: () => ipcRenderer.invoke('whisper-cancel'),
