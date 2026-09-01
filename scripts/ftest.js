@@ -225,7 +225,7 @@ const TESTS = [
     project.videoPath = 'X:/fake.mp4'
     setTab('rec')
     const recViewShown = !document.getElementById('recView').classList.contains('hidden')
-    const rows = document.querySelectorAll('#recTracks .rec-trk')
+    const rows = document.querySelectorAll('#recCharList .rec-ch')
     const okUI = recViewShown && rows.length === 2
     setTab('rythmo'); project.videoPath = null
     loadProjectData(JSON.parse(JSON.stringify(project)), null)
@@ -242,6 +242,19 @@ const TESTS = [
     const overlapOk = project.recordings[0].active === false && project.recordings[1].active === true
     toggleRecMute('a'); const muted = isRecMuted('a'); toggleRecMute('a'); const unmuted = !isRecMuted('a')
     return overlapOk && muted && unmuted
+  })()`],
+  ['Enregistrement : selectClip active la prise et désactive le chevauchement', `(() => {
+    if (typeof selectClip !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#fff' }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 3, active: true },
+                   { id: 'r2', characterId: 'a', file: 'f2', startTime: 1, dur: 3, active: false }], recMuted: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec'); selectClip('r1')
+    const g = (id) => project.recordings.find((r) => r.id === id)
+    const ok = selectedClipId === 'r1' && g('r1').active === true && g('r2').active === false
+    setTab('rythmo'); project.videoPath = null
+    return ok
   })()`],
   ['Enregistrement : bande de clips dessinée sans erreur', `(() => {
     if (typeof drawRecClips !== 'function') return true

@@ -877,8 +877,9 @@ body.on-rec .rythmo-ctl, body.on-rec .tracks-ctl { display: none; }
 #recEmpty svg { width: 40px; height: 40px; opacity: .5; }
 #recEmptyMain { font-size: 15px; font-weight: 600; color: var(--text); }
 #recEmptySub { font-size: 12px; max-width: 360px; text-align: center; }
-#recMain { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#recMain { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: row; }
 #recMain.hidden { display: none; }
+#recRight { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 /* contrôles d'enregistrement déplacés dans la barre d'outils : visibles seulement sur l'onglet */
 .rec-ctl { display: none; }
 body.on-rec .rec-ctl { display: inline-flex; }
@@ -892,25 +893,28 @@ body.on-rec .rec-ctl { display: inline-flex; }
 #recBigMeterBar { height: 100%; width: 0%; background: linear-gradient(90deg, #3fae5a 0%, #d8c53a 70%, #e0533a 100%); transition: width .05s linear; }
 .rec-charlbl { align-items: center; gap: 6px; }
 .rec-charlbl span { font-size: 12px; color: var(--dim); }
+/* liste des personnages (colonne gauche, pleine hauteur) */
+#recCharList { flex: 0 0 224px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border); }
+.rec-ch { padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.rec-ch:hover { background: var(--row-hover); }
+.rec-ch.target { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--toggle-text); }
+.rec-ch.muted .rec-ch-name { opacity: .5; }
+.rec-ch-head { display: flex; align-items: center; gap: 8px; }
+.rec-dot-c { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; }
+.rec-ch-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
+.rec-ch-head .trk-spk { flex: 0 0 auto; }
+.rec-ch-take { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
+.rec-ch-take .rec-takesel { flex: 1 1 auto; min-width: 0; font-size: 11px; }
+.rec-ch-take .icon-btn, .rec-ch-take .trk-del { flex: 0 0 auto; width: 26px; height: 26px; padding: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); background: none; border: 1px solid var(--border); border-radius: 5px; }
+.rec-ch-take .icon-btn:hover, .rec-ch-take .trk-del:hover { color: var(--text); }
+.rec-ch-take svg { width: 14px; height: 14px; display: block; }
+.rec-ch-meta { margin-top: 4px; font-size: 11px; color: var(--dim); }
 /* bande rythmo en rendu final (dubbing) */
 #recBandWrap { flex: 1 1 auto; min-height: 0; position: relative; background: var(--band-bg); }
 #recBand { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
-/* bande des prises enregistrées */
-#recClips { flex: 0 0 auto; display: block; width: 100%; height: 30px; cursor: pointer; border-top: 1px solid var(--border); }
-/* pistes d'enregistrement par personnage */
-#recTracks { flex: 0 0 auto; max-height: 34%; overflow-y: auto; border-top: 1px solid var(--border); }
-.rec-trk { display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
-.rec-trk:hover { background: var(--row-hover); }
-.rec-trk.target { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--toggle-text); }
-.rec-trk.muted .rec-trk-name, .rec-trk.muted .rec-trk-meta { opacity: .5; }
-.rec-dot-c { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; }
-.rec-trk-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
-.rec-trk-meta { flex: 0 0 auto; font-size: 11px; color: var(--dim); min-width: 70px; text-align: right; }
-.rec-trk .trk-spk, .rec-trk .trk-del { flex: 0 0 auto; }
-.rec-trk .trk-del { width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); background: none; border: none; }
-.rec-trk .trk-del svg { width: 15px; height: 15px; display: block; }
-.rec-trk .trk-del:hover:not(:disabled) { color: var(--text); }
-.rec-trk .trk-del:disabled { opacity: .3; cursor: default; }
+/* affichage des prises (blocs sélectionnables/glissables + waveform) */
+#recClipsWrap { flex: 0 0 96px; min-height: 0; border-top: 1px solid var(--border); }
+#recClips { display: block; width: 100%; height: 100%; cursor: default; touch-action: none; }
 
 /* ---------- vue Pistes (timeline façon montage) ---------- */
 #tracksView { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--panel2); border-top: 1px solid var(--border); }

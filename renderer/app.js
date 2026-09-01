@@ -1123,6 +1123,7 @@ async function addRecording(charId, fileName, startTime, durHint) {
   // chevauchement dans la même piste perso = prises alternatives → la plus récente reste active
   for (const r of project.recordings) if (r.characterId === charId && recOverlap(r, clip)) r.active = false
   project.recordings.push(clip)
+  selectedClipId = clip.id // sélectionne la prise qu'on vient d'enregistrer
   markDirty()
   if (activeTab === 'rec') renderRecTab()
   preloadTakeAudios()
@@ -1262,7 +1263,26 @@ const recBandEnd = () => { recBandDrag = null; recBandCanvas.style.cursor = 'gra
 recBandCanvas.addEventListener('pointerup', recBandEnd)
 recBandCanvas.addEventListener('pointercancel', recBandEnd)
 
-// ---- bande des prises enregistrées (même échelle de temps que la bande rythmo) ----
+// ---- forme d'onde des prises : décodage + peaks, en cache par fichier ----
+const clipWaves = new Map() // file -> {peaks,perSec,duration} | 'pending' | null
+async function ensureClipWave(file) {
+  if (clipWaves.has(file)) return
+  clipWaves.set(file, 'pending')
+  try {
+    const url = await window.api.takeUrl(projectPath, file)
+    const resp = await fetch(url); const ab = await resp.arrayBuffer()
+    const ac = new AudioContext({ sampleRate: 16000 })
+    const audio = await ac.decodeAudioData(ab); ac.close()
+    const PER = 80, n = Math.max(1, Math.ceil(audio.duration * PER))
+    const peaks = new Float32Array(n), d = audio.getChannelData(0), spb = audio.sampleRate / PER
+    for (let i = 0; i < d.length; i++) { const b = Math.min(n - 1, (i / spb) | 0); const v = Math.abs(d[i]); if (v > peaks[b]) peaks[b] = v }
+    let max = 0; for (let i = 0; i < n; i++) if (peaks[i] > max) max = peaks[i]; if (max > 0) for (let i = 0; i < n; i++) peaks[i] /= max
+    clipWaves.set(file, { peaks, perSec: PER, duration: audio.duration })
+  } catch { clipWaves.set(file, null) }
+}
+
+// ---- affichage des prises (blocs sélectionnables/glissables + waveform) ----
+let selectedClipId = null
 const recClipsCanvas = $('recClips')
 const recClipsCtx = recClipsCanvas.getContext('2d')
 let rcw = 0, rch = 0
@@ -1277,43 +1297,97 @@ function resizeRecClips() {
   }
 }
 new ResizeObserver(() => { if (activeTab === 'rec') resizeRecClips() }).observe(recClipsCanvas)
-const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * (rcw / REC_WIN_SEC)
+const recClipsPps = () => rcw / REC_WIN_SEC
+const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * recClipsPps()
 function drawRecClips() {
   if (!rcw) { resizeRecClips(); if (!rcw) return }
   const pal = bandPal()
   recClipsCtx.fillStyle = pal.rulerBg || pal.bg; recClipsCtx.fillRect(0, 0, rcw, rch)
   const muted = project.recMuted || []
+  const pps = recClipsPps()
   const y = 3, h = rch - 6
   for (const r of (project.recordings || [])) {
     const x0 = recClipXAt(r.startTime), x1 = recClipXAt(r.startTime + (r.dur || 0))
-    if (x1 < 0 || x0 > rcw) continue
+    if (x1 < -20 || x0 > rcw + 20) continue
     const col = getChar(r.characterId)?.color || '#888'
     const active = r.active && !muted.includes(r.characterId)
-    const xa = Math.max(0, x0), wpx = Math.max(2, Math.min(rcw, x1) - xa)
-    recClipsCtx.globalAlpha = active ? 0.85 : 0.28
-    recClipsCtx.fillStyle = col
-    recClipsCtx.beginPath(); recClipsCtx.roundRect(xa, y, wpx, h, 3); recClipsCtx.fill()
-    if (!active) { recClipsCtx.globalAlpha = 0.6; recClipsCtx.strokeStyle = col; recClipsCtx.beginPath(); recClipsCtx.roundRect(xa + 0.5, y + 0.5, wpx - 1, h - 1, 3); recClipsCtx.stroke() }
+    const selected = r.id === selectedClipId
+    const xa = Math.max(-2, x0), wpx = Math.max(3, Math.min(rcw + 2, x1) - xa)
+    // fond du bloc
+    recClipsCtx.globalAlpha = active ? 0.9 : 0.45
+    recClipsCtx.fillStyle = col + '2e'
+    recClipsCtx.beginPath(); recClipsCtx.roundRect(xa, y, wpx, h, 4); recClipsCtx.fill()
+    // waveform (décodée à la demande)
+    const wv = clipWaves.get(r.file)
+    if (wv && wv.peaks) {
+      const mid = y + h / 2, amp = h / 2 - 3
+      const va = Math.max(0, x0), vb = Math.min(rcw, x1)
+      recClipsCtx.fillStyle = col; recClipsCtx.globalAlpha = active ? 0.85 : 0.4
+      recClipsCtx.beginPath(); recClipsCtx.moveTo(va, mid)
+      for (let x = va; x <= vb; x++) { const tt = (x - x0) / pps; let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid - v * amp) }
+      for (let x = vb; x >= va; x--) { const tt = (x - x0) / pps; let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid + v * amp) }
+      recClipsCtx.closePath(); recClipsCtx.fill()
+    } else if (wv === undefined) { ensureClipWave(r.file) }
+    // bordure (sélection = accent épais)
     recClipsCtx.globalAlpha = 1
+    recClipsCtx.strokeStyle = selected ? pal.handleAccent : col + 'aa'
+    recClipsCtx.lineWidth = selected ? 2 : 1
+    recClipsCtx.beginPath(); recClipsCtx.roundRect(xa + 0.5, y + 0.5, wpx - 1, h - 1, 4); recClipsCtx.stroke()
+    recClipsCtx.lineWidth = 1
   }
-  // ligne de lecture (alignée sur la bande rythmo au-dessus)
   const px = rcw * READ_RATIO
   recClipsCtx.strokeStyle = pal.playhead; recClipsCtx.lineWidth = 1.5
   recClipsCtx.beginPath(); recClipsCtx.moveTo(px + 0.5, 0); recClipsCtx.lineTo(px + 0.5, rch); recClipsCtx.stroke(); recClipsCtx.lineWidth = 1
 }
-// clic sur une prise = aller à son début (pour l'écouter en lançant la lecture)
+// prise sous le curseur (coords canvas)
+function recClipAt(px) {
+  const t = effectiveTime() + (px - rcw * READ_RATIO) / recClipsPps()
+  for (const r of (project.recordings || [])) if (t >= r.startTime && t < r.startTime + (r.dur || 0)) return r
+  return null
+}
+// sélectionne une prise (et la rend active dans sa piste : c'est la prise écoutée)
+function selectClip(id) {
+  selectedClipId = id
+  const clip = (project.recordings || []).find((r) => r.id === id)
+  if (clip) {
+    for (const r of project.recordings) if (r.characterId === clip.characterId && r.id !== id && recOverlap(r, clip)) r.active = false
+    clip.active = true
+    recTargetChar = clip.characterId
+    markDirty()
+  }
+  renderRecCharList(); renderRecCharSel()
+}
+let clipDrag = null
 recClipsCanvas.addEventListener('pointerdown', (e) => {
   const r = recClipsCanvas.getBoundingClientRect()
-  const t = effectiveTime() + ((e.clientX - r.left) - rcw * READ_RATIO) / (rcw / REC_WIN_SEC)
-  // prise la plus proche sous le curseur (par ordre : celle qui contient t, sinon la plus proche)
-  let best = null, bestD = Infinity
-  for (const c of (project.recordings || [])) {
-    if (t >= c.startTime && t < c.startTime + (c.dur || 0)) { best = c; break }
-    const d = Math.min(Math.abs(t - c.startTime), Math.abs(t - (c.startTime + (c.dur || 0))))
-    if (d < bestD) { bestD = d; best = c }
-  }
-  if (best) { video.pause(); scrubTo(best.startTime); playScrubGrain(scrub.time) }
+  const clip = recClipAt(e.clientX - r.left)
+  if (!clip) { selectedClipId = null; renderRecCharList(); return }
+  recClipsCanvas.setPointerCapture(e.pointerId)
+  selectClip(clip.id)
+  clipDrag = { clip, x0: e.clientX, startOff: clip.startTime, moved: false, pushed: false }
 })
+recClipsCanvas.addEventListener('pointermove', (e) => {
+  if (!clipDrag) { const r = recClipsCanvas.getBoundingClientRect(); recClipsCanvas.style.cursor = recClipAt(e.clientX - r.left) ? 'grab' : 'default'; return }
+  const dx = e.clientX - clipDrag.x0
+  if (Math.abs(dx) > 3) clipDrag.moved = true
+  if (clipDrag.moved) {
+    if (!clipDrag.pushed) { pushUndo(); clipDrag.pushed = true }
+    clipDrag.clip.startTime = Math.max(0, clipDrag.startOff + dx / recClipsPps())
+    recClipsCanvas.style.cursor = 'grabbing'
+    markDirty()
+  }
+})
+function clipDragEnd() {
+  if (clipDrag && clipDrag.moved) {
+    const clip = clipDrag.clip // recalcule les chevauchements après déplacement
+    for (const r of project.recordings) if (r.characterId === clip.characterId && r.id !== clip.id && recOverlap(r, clip)) r.active = false
+    clip.active = true
+    renderRecCharList()
+  }
+  clipDrag = null; recClipsCanvas.style.cursor = 'default'
+}
+recClipsCanvas.addEventListener('pointerup', clipDragEnd)
+recClipsCanvas.addEventListener('pointercancel', clipDragEnd)
 
 function renderRecTab() {
   const noChars = !project.videoPath || !project.characters.length
@@ -1323,11 +1397,11 @@ function renderRecTab() {
   resizeRecBand()
   resizeRecClips()
   renderRecCharSel()
-  renderRecTracks()
+  renderRecCharList()
   updateRecUI()
 }
 
-// sélecteur du personnage ciblé par l'enregistrement
+// sélecteur du personnage ciblé par l'enregistrement (barre d'outils)
 function renderRecCharSel() {
   const sel = $('recCharSel'); if (!sel) return
   sel.innerHTML = ''
@@ -1335,30 +1409,69 @@ function renderRecCharSel() {
   sel.value = recTargetId() || ''
 }
 
-// pistes d'enregistrement (une par personnage) : nb de clips, cible, mute, suppression
-function renderRecTracks() {
-  const list = $('recTracks'); if (!list) return
+const clipLabel = (cl, i) => `${t('recTakeN', i + 1)} · ${formatTc(cl.startTime, project.fps).slice(3)} · ${(cl.dur || 0).toFixed(1)}s`
+async function listenClip(id) {
+  const cl = (project.recordings || []).find((r) => r.id === id); if (!cl) return
+  selectClip(id) // devient la prise active → jouée par le monitoring
+  video.pause(); scrubTo(cl.startTime)
+  await sleep0(); video.play().catch(() => {})
+}
+const sleep0 = () => new Promise((res) => setTimeout(res, 30))
+async function deleteClip(id) {
+  const idx = (project.recordings || []).findIndex((r) => r.id === id); if (idx < 0) return
+  const cl = project.recordings[idx]
+  pushUndo()
+  project.recordings.splice(idx, 1)
+  try { await window.api.deleteTake(projectPath, cl.file) } catch {}
+  takeAudios.delete(cl.file); clipWaves.delete(cl.file)
+  if (selectedClipId === id) selectedClipId = null
+  // réactive la dernière prise restante qui chevauchait, le cas échéant (latest wins)
+  markDirty(); renderRecTab()
+}
+
+// liste des personnages à gauche : cible d'enregistrement, mute, choix/écoute/suppression de prise
+function renderRecCharList() {
+  const list = $('recCharList'); if (!list) return
   list.innerHTML = ''
   const target = recTargetId()
   for (const c of project.characters) {
-    const clips = (project.recordings || []).filter((r) => r.characterId === c.id)
+    const clips = (project.recordings || []).filter((r) => r.characterId === c.id).sort((a, b) => a.startTime - b.startTime)
     const row = document.createElement('div')
-    row.className = 'rec-trk' + (c.id === target ? ' target' : '') + (isRecMuted(c.id) ? ' muted' : '')
-    row.addEventListener('click', () => { recTargetChar = c.id; renderRecTab() })
+    row.className = 'rec-ch' + (c.id === target ? ' target' : '') + (isRecMuted(c.id) ? ' muted' : '')
+    row.addEventListener('click', () => { recTargetChar = c.id; renderRecCharList(); renderRecCharSel() })
+    // ligne 1 : pastille + nom + mute
+    const head = document.createElement('div'); head.className = 'rec-ch-head'
     const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
-    const nm = document.createElement('span'); nm.className = 'rec-trk-name'; nm.textContent = c.name
-    const meta = document.createElement('span'); meta.className = 'rec-trk-meta'; meta.textContent = clips.length ? t('recTakes', clips.length) : t('recNoTakes')
+    const nm = document.createElement('span'); nm.className = 'rec-ch-name'; nm.textContent = c.name
     const mute = document.createElement('button'); mute.className = 'trk-spk' + (isRecMuted(c.id) ? '' : ' on'); mute.innerHTML = isRecMuted(c.id) ? SPK_OFF_SVG : SPK_ON_SVG
     mute.title = t('recMuteTrack'); mute.addEventListener('click', (e) => { e.stopPropagation(); toggleRecMute(c.id) })
-    const del = document.createElement('button'); del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('recDelTrack'); del.disabled = !clips.length
-    del.addEventListener('click', (e) => { e.stopPropagation(); deleteRecTrack(c.id) })
-    row.append(dot, nm, meta, mute, del)
+    head.append(dot, nm, mute)
+    row.appendChild(head)
+    // ligne 2 : dropdown de prise + écouter + supprimer (si prises)
+    if (clips.length) {
+      const ctr = document.createElement('div'); ctr.className = 'rec-ch-take'
+      const selc = clips.find((k) => k.id === selectedClipId) ? selectedClipId : clips[0].id
+      const dd = document.createElement('select'); dd.className = 'rec-takesel'
+      clips.forEach((cl, i) => { const o = document.createElement('option'); o.value = cl.id; o.textContent = clipLabel(cl, i) + (cl.active ? ' ●' : ''); dd.appendChild(o) })
+      dd.value = selc
+      dd.addEventListener('click', (e) => e.stopPropagation())
+      dd.addEventListener('change', () => selectClip(dd.value))
+      const play = document.createElement('button'); play.className = 'icon-btn'; play.innerHTML = SVG_PLAY; play.title = t('recPlay')
+      play.addEventListener('click', (e) => { e.stopPropagation(); listenClip(dd.value) })
+      const del = document.createElement('button'); del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('recDel')
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteClip(dd.value) })
+      ctr.append(dd, play, del)
+      row.appendChild(ctr)
+    } else {
+      const meta = document.createElement('div'); meta.className = 'rec-ch-meta'; meta.textContent = t('recNoTakes')
+      row.appendChild(meta)
+    }
     list.appendChild(row)
   }
 }
 
 $('recBigBtn').addEventListener('click', toggleRecord)
-$('recCharSel').addEventListener('change', () => { recTargetChar = $('recCharSel').value || null; renderRecTracks() })
+$('recCharSel').addEventListener('change', () => { recTargetChar = $('recCharSel').value || null; renderRecCharList() })
 
 
 // ============================================================ transcription automatique
@@ -2131,7 +2244,7 @@ function refreshInspector() {
   ins.el.classList.toggle('empty', !line && !multi)
   ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
-  if (activeTab === 'rec') { renderRecCharSel(); renderRecTracks() } // suit l'ajout/retrait de personnages
+  if (activeTab === 'rec') { renderRecCharSel(); renderRecCharList() } // suit l'ajout/retrait de personnages
   if (multi) { insShownId = null; refreshMultiInspector(selectedLines()); return }
   if (!line) {
     insShownId = null
