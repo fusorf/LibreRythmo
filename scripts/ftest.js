@@ -211,15 +211,26 @@ const TESTS = [
     return open
   })()`],
   // --- AI model manager ---
-  ['Models list shape', `(async () => {
+  ['Models list shape + DL estimate', `(async () => {
     if (!window.api.whisperListModels) return true
     const m = await window.api.whisperListModels()
-    return Array.isArray(m) && m.length >= 3 && ('present' in m[0]) && ('model' in m[0]) && ('sizeMB' in m[0])
+    return Array.isArray(m) && m.length >= 3 && ('present' in m[0]) && ('model' in m[0]) && ('sizeMB' in m[0]) && ('estMB' in m[0]) && m[0].estMB > 0
+  })()`],
+  ['DL size formatting', `(() => {
+    if (typeof fmtDlSize !== 'function') return true
+    lang = 'fr'
+    const ok = fmtDlSize(142) === '142 Mo' && fmtDlSize(2000) === '2 Go' && fmtDlSize(1500) === '1,5 Go'
+    return ok
   })()`],
   // --- Voice removal (separation) ---
+  ['Sep status shape', `(async () => {
+    if (!window.api.sepStatus) return true
+    const s = await window.api.sepStatus()
+    return s && typeof s === 'object' && ('ready' in s) && ('python' in s)
+  })()`],
   ['Sep config roundtrip + no-engine degrade', `(async () => {
     if (!window.api.sepConfigGet) return true
-    await window.api.sepConfigSet({ exe: null, model: 'htdemucs_ft' })
+    await window.api.sepConfigSet({ exe: null, python: null, module: null, model: 'htdemucs_ft' })
     const c = await window.api.sepConfigGet()
     const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'htdemucs' })
     return c && c.model === 'htdemucs_ft' && r && r.error === 'no-engine'

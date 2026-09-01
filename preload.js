@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('api', {
   sepConfigGet: () => ipcRenderer.invoke('sep-config-get'),
   sepConfigSet: (cfg) => ipcRenderer.invoke('sep-config-set', cfg),
   sepPickExe: () => ipcRenderer.invoke('sep-pick-exe'),
+  sepStatus: () => ipcRenderer.invoke('sep-status'),
+  sepInstall: () => ipcRenderer.invoke('sep-install'),
   sepRun: (opts) => ipcRenderer.invoke('sep-run', opts),
   sepCancel: () => ipcRenderer.invoke('sep-cancel'),
   onSepProgress: (cb) => ipcRenderer.on('sep-progress', (e, p) => cb(p)),

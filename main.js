@@ -1104,11 +1104,14 @@ ipcMain.handle('capture-stop', () => {
 
 // ---------- gestion des modèles whisper (installation optionnelle depuis l'UI) ----------
 const WHISPER_MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3']
+// tailles de téléchargement approximatives (Mo) des modèles ggml, pour afficher une
+// estimation AVANT installation
+const WHISPER_EST_MB = { tiny: 75, base: 142, small: 466, medium: 1500, 'large-v3': 3100 }
 ipcMain.handle('whisper-list-models', () => WHISPER_MODELS.map((m) => {
   const p = whisperModelPath(m)
   let sizeMB = 0, present = false
   try { const st = fs.statSync(p); if (st.size > 1e6) { present = true; sizeMB = Math.round(st.size / 1e6) } } catch {}
-  return { model: m, present, sizeMB }
+  return { model: m, present, sizeMB, estMB: WHISPER_EST_MB[m] || 0 }
 }))
 ipcMain.handle('whisper-delete-model', (e, m) => { try { fs.unlinkSync(whisperModelPath(m)) } catch {} return true })
 ipcMain.handle('whisper-clear-exe', () => { try { fs.unlinkSync(whisperCfgPath()) } catch {} return true })
@@ -1126,9 +1129,66 @@ ipcMain.handle('sep-config-set', (e, cfg) => { try { fs.writeFileSync(sepCfgPath
 ipcMain.handle('sep-pick-exe', async () => {
   const r = await dialog.showOpenDialog(win, { title: 'Demucs / séparation', properties: ['openFile'] })
   if (r.canceled || !r.filePaths.length) return null
-  const cfg = readSepCfg(); cfg.exe = r.filePaths[0]
+  const cfg = readSepCfg(); cfg.exe = r.filePaths[0]; delete cfg.python; delete cfg.module
   try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {}
   return cfg.exe
+})
+// détection d'un interpréteur Python (pour installer/lancer Demucs via pip)
+function pythonInvoke(py) { return py === 'py' ? ['py', '-3'] : [py] }
+function detectPython() {
+  return new Promise((resolve) => {
+    const cands = ['python3', 'python', 'py']
+    let i = 0
+    const tryNext = () => {
+      if (i >= cands.length) return resolve(null)
+      const py = cands[i++]
+      const inv = pythonInvoke(py)
+      let p
+      try { p = spawn(inv[0], [...inv.slice(1), '--version'], { stdio: 'ignore' }) }
+      catch { return tryNext() }
+      p.on('close', (c) => (c === 0 ? resolve(py) : tryNext()))
+      p.on('error', tryNext)
+    }
+    tryNext()
+  })
+}
+// argv du moteur de séparation : exe choisi, sinon module Demucs via le Python installé
+function sepArgv(cfg) {
+  if (cfg.exe && fs.existsSync(cfg.exe)) return [cfg.exe]
+  if (cfg.python && cfg.module) return [...pythonInvoke(cfg.python), '-m', cfg.module]
+  return null
+}
+ipcMain.handle('sep-status', async () => {
+  const cfg = readSepCfg()
+  const ready = !!sepArgv(cfg)
+  const python = ready ? cfg.python || null : await detectPython()
+  return { ready, mode: cfg.exe ? 'exe' : cfg.python ? 'module' : null, python }
+})
+ipcMain.handle('sep-install', async () => {
+  if (sepProc) return { error: 'busy' }
+  const py = await detectPython()
+  if (!py) return { error: 'no-python' }
+  const inv = pythonInvoke(py)
+  return await new Promise((resolve) => {
+    let tail = ''
+    try { sepProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', 'install', '--user', '-U', 'demucs'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch { sepProc = null; return resolve({ error: 'spawn' }) }
+    const on = (d) => {
+      const s = String(d); tail = (tail + s).slice(-4000)
+      const line = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop()
+      if (line && win && !win.isDestroyed()) win.webContents.send('sep-progress', { phase: 'install', text: line.slice(0, 120) })
+    }
+    sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
+    sepProc.on('close', (code) => {
+      sepProc = null
+      if (code === 0) {
+        const cfg = readSepCfg(); cfg.python = py; cfg.module = 'demucs'; delete cfg.exe
+        try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {}
+        resolve({ ok: true })
+      } else resolve({ error: tail.slice(-400) || 'install-failed' })
+    })
+    sepProc.on('error', () => { sepProc = null; resolve({ error: 'spawn' }) })
+  })
 })
 function sepDir(projectPath) {
   const base = projectPath ? path.join(path.dirname(projectPath), 'separated') : path.join(appBaseDir(), 'cache', 'separated')
@@ -1156,8 +1216,8 @@ ipcMain.handle('sep-run', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
   if (sepProc) return { error: 'busy' }
   const cfg = readSepCfg()
-  const exe = cfg.exe
-  if (!exe || !fs.existsSync(exe)) return { error: 'no-engine' }
+  const argv = sepArgv(cfg)
+  if (!argv) return { error: 'no-engine' }
   const src = opts.source
   if (!src || !fs.existsSync(src)) return { error: 'no-source' }
   const model = opts.model || 'htdemucs'
@@ -1175,7 +1235,7 @@ ipcMain.handle('sep-run', async (e, opts) => {
   const args = ['--two-stems', 'vocals', '-n', model, '-o', outDir, wav]
   return await new Promise((resolve) => {
     let tail = ''
-    try { sepProc = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    try { sepProc = spawn(argv[0], [...argv.slice(1), ...args], { stdio: ['ignore', 'pipe', 'pipe'] }) }
     catch { return resolve({ error: 'engine-spawn-failed' }) }
     const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/(\d+)%/); if (m && win && !win.isDestroyed()) win.webContents.send('sep-progress', { pct: Number(m[1]) }) }
     sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)

@@ -30,13 +30,14 @@ logiciel de fandub complet : vidéo → détection → texte → calage → enre
   whisper.cpp — modèle téléchargé à la demande, moteur fourni par l'utilisateur, rien
   n'est inclus dans l'application.
 - **Séparation de voix (IA)** : retire les voix d'une piste audio (produit un
-  instrumental ajouté comme nouvelle piste). Moteur local fourni par l'utilisateur
-  (Demucs recommandé), rien n'est inclus — bouton « Retirer les voix (IA) » dans
-  l'onglet Pistes.
+  instrumental ajouté comme nouvelle piste). Bouton « Retirer les voix (IA) » dans
+  l'onglet Pistes, et **bouton « Installer » (Demucs) dans les Paramètres** (via pip,
+  Python requis) — sinon moteur fourni manuellement. Rien n'est bundlé.
 - **Fenêtre Paramètres** : sélecteur d'**interface et de périphérique de capture**
   (Système/WASAPI, DirectSound/DirectShow, ASIO), et **gestion des modèles IA**
-  (installation/suppression à la demande, moteurs configurés depuis l'UI). L'IA est
-  entièrement optionnelle et pilotée depuis l'interface — rien n'est bundlé.
+  (transcription + séparation) : installation/suppression à la demande depuis l'UI,
+  avec **estimation de la taille de téléchargement** pour chaque élément installable.
+  L'IA est entièrement optionnelle — rien n'est bundlé.
 - **Confort** : recherche rapide et **fusion de personnages**, **zoom sur l'image**
   (Ctrl+molette, glisser, double-clic pour réinitialiser), **signets** libres
   (Ctrl+B ; Ctrl+, / Ctrl+. pour naviguer) distincts des scènes et des plans.

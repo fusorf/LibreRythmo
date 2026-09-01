@@ -1259,6 +1259,13 @@ function setDl(on, msg) {
   $('setStatus').textContent = msg || ''
   if (!on) $('setBar').style.width = '0%'
 }
+// estimation de taille de téléchargement lisible (Mo / Go) selon la langue
+function fmtDlSize(mb) {
+  if (!mb) return '?'
+  if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang === 'fr') s = s.replace('.', ','); return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
+  return Math.round(mb) + ' ' + t('unitMB')
+}
+const DL_EST = { demucs: 2000 } // ~2 Go (Demucs + PyTorch) via pip
 function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, asioFfmpeg: audioCfg.asioFfmpeg }) }
 
 async function fillCaptureDevices() {
@@ -1294,10 +1301,11 @@ async function renderTrModels() {
   for (const m of models) {
     const row = document.createElement('div'); row.className = 'model-row' + (m.present ? ' installed' : '')
     const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = m.model
-    const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = m.present ? t('mdlInstalled', m.sizeMB) : t('mdlNotInstalled')
+    const stt = document.createElement('span'); stt.className = 'mdl-state'
+    stt.textContent = m.present ? t('mdlInstalled', m.sizeMB) : `${t('mdlNotInstalled')} · ~${fmtDlSize(m.estMB)}`
     const sp = document.createElement('div'); sp.className = 'spacer'
     const btn = document.createElement('button')
-    btn.textContent = m.present ? t('mdlRemove') : t('mdlInstall')
+    btn.textContent = m.present ? t('mdlRemove') : `${t('mdlInstall')} (${fmtDlSize(m.estMB)})`
     btn.addEventListener('click', async () => {
       if (m.present) { await window.api.whisperDeleteModel(m.model); renderTrModels() }
       else {
@@ -1313,8 +1321,14 @@ async function renderTrModels() {
 
 async function renderSepCfg() {
   const cfg = (await window.api.sepConfigGet()) || {}
-  $('setSepEngine').textContent = cfg.exe ? t('sepEngineOk') : t('sepEngineMissing')
   if (cfg.model) $('sepModel').value = cfg.model
+  let st = { ready: false, python: null, mode: null }
+  try { st = await window.api.sepStatus() } catch {}
+  $('setSepEngine').textContent = st.ready ? (st.mode === 'module' ? t('sepEngineOkModule') : t('sepEngineOk')) : t('sepEngineMissing')
+  const inst = $('setSepInstall')
+  inst.textContent = t('sepInstallBtn', fmtDlSize(DL_EST.demucs))
+  inst.disabled = !st.python
+  inst.title = st.python ? t('sepInstallTitle') : t('sepNoPython')
 }
 
 function openSettings() {
@@ -1331,7 +1345,16 @@ $('capAsioFfmpeg').addEventListener('click', async () => { const p = await windo
 $('setTrPick').addEventListener('click', async () => { await window.api.whisperPickExe(); renderTrModels() })
 $('setTrClear').addEventListener('click', async () => { await window.api.whisperClearExe(); renderTrModels() })
 $('setSepPick').addEventListener('click', async () => { await window.api.sepPickExe(); renderSepCfg() })
-$('setSepClear').addEventListener('click', async () => { const c = (await window.api.sepConfigGet()) || {}; await window.api.sepConfigSet({ ...c, exe: null }); renderSepCfg() })
+$('setSepClear').addEventListener('click', async () => { await window.api.sepConfigSet({ model: (await window.api.sepConfigGet() || {}).model }); renderSepCfg() })
+$('setSepInstall').addEventListener('click', async () => {
+  const btn = $('setSepInstall'); btn.disabled = true
+  setDl(true, t('sepInstalling'))
+  const r = await window.api.sepInstall()
+  setDl(false, '')
+  if (!r || r.error) toast(t(r && r.error === 'no-python' ? 'sepNoPython' : 'sepInstallFail'))
+  else toast(t('sepInstallDone'))
+  renderSepCfg()
+})
 $('sepModel').addEventListener('change', async () => { const c = (await window.api.sepConfigGet()) || {}; await window.api.sepConfigSet({ ...c, model: $('sepModel').value }) })
 $('setClose').addEventListener('click', () => setModal.classList.add('hidden'))
 window.api.onWhisperProgress((p) => { if (p && !$('setProgress').classList.contains('hidden')) $('setBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%' })
@@ -1356,7 +1379,11 @@ async function runSeparation() {
   await addExternalAudio(r.path)
   toast(t('sepDone'))
 }
-window.api.onSepProgress((p) => { if (sepActive && p) showLoading(true, t('sepRunning', p.pct || 0)) })
+window.api.onSepProgress((p) => {
+  if (!p) return
+  if (p.phase === 'install') { $('setStatus').textContent = p.text || t('sepInstalling'); return }
+  if (sepActive) showLoading(true, t('sepRunning', p.pct || 0))
+})
 $('btnRemoveVoices').addEventListener('click', runSeparation)
 
 $('btnToggleLines').addEventListener('click', () => {
