@@ -186,6 +186,45 @@ const TESTS = [
     project.videoPath = null
     return open
   })()`],
+  // --- Capture device selector + settings ---
+  ['Cap audio-config roundtrip', `(async () => {
+    if (!window.api.audioConfigSet) return true
+    await window.api.audioConfigSet({ api: 'dshow', device: 'X', asioFfmpeg: null })
+    const c = await window.api.audioConfigGet()
+    await window.api.audioConfigSet({ api: 'system', device: null, asioFfmpeg: null })
+    return c && c.api === 'dshow' && c.device === 'X'
+  })()`],
+  ['Cap dshow enumeration returns list', `(async () => {
+    if (!window.api.listCaptureDevices) return true
+    const r = await window.api.listCaptureDevices('dshow')
+    return r && Array.isArray(r.devices)
+  })()`],
+  ['Cap asio degrades (no bundled backend)', `(async () => {
+    if (!window.api.listCaptureDevices) return true
+    const r = await window.api.listCaptureDevices('asio')
+    return r && r.available === false
+  })()`],
+  ['Settings modal opens', `(() => {
+    if (typeof openSettings !== 'function') return true
+    openSettings()
+    const open = !document.getElementById('settingsModal').classList.contains('hidden')
+    document.getElementById('settingsModal').classList.add('hidden')
+    return open
+  })()`],
+  // --- AI model manager ---
+  ['Models list shape', `(async () => {
+    if (!window.api.whisperListModels) return true
+    const m = await window.api.whisperListModels()
+    return Array.isArray(m) && m.length >= 3 && ('present' in m[0]) && ('model' in m[0]) && ('sizeMB' in m[0])
+  })()`],
+  // --- Voice removal (separation) ---
+  ['Sep config roundtrip + no-engine degrade', `(async () => {
+    if (!window.api.sepConfigGet) return true
+    await window.api.sepConfigSet({ exe: null, model: 'htdemucs_ft' })
+    const c = await window.api.sepConfigGet()
+    const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'htdemucs' })
+    return c && c.model === 'htdemucs_ft' && r && r.error === 'no-engine'
+  })()`],
 ]
 
 function getJson() {

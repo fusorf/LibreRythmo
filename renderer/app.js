@@ -476,6 +476,23 @@ function applyLang() {
   $('trPickExe').textContent = t('trPickExe')
   $('trClose').textContent = t('close')
   $('trGo').textContent = t('trGoBtn')
+  $('btnRemoveVoices').textContent = t('removeVoicesBtn')
+  $('btnRemoveVoices').title = t('removeVoicesTitle')
+  $('setTitle').textContent = t('setTitle')
+  $('setCapLegend').textContent = t('setCapLegend')
+  $('setCapApiLabel').textContent = t('setCapApiLabel')
+  $('setCapDevLabel').textContent = t('setCapDevLabel')
+  $('capAsioFfmpeg').textContent = t('capAsioBtn')
+  $('setTrLegend').textContent = t('setTrLegend')
+  $('setTrHint').textContent = t('setTrHint')
+  $('setTrPick').textContent = t('setTrPick')
+  $('setTrClear').textContent = t('setTrClear')
+  $('setSepLegend').textContent = t('setSepLegend')
+  $('setSepHint').innerHTML = t('setSepHint')
+  $('setSepPick').textContent = t('setSepPick')
+  $('setSepClear').textContent = t('setSepClear')
+  $('setSepModelLabel').textContent = t('setSepModelLabel')
+  $('setClose').textContent = t('close')
   $('btnTogglePanel').textContent = t('panelToggle')
   $('btnTogglePanel').title = t('panelToggleTitle')
   $('btnToggleLines').textContent = t('linesTitle')
@@ -915,10 +932,21 @@ const recorder = { stream: null, mr: null, chunks: [], active: false, lineId: nu
 const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture / monitoring)
 const retainedTake = (line) => (line.takes || []).find((k) => k.id === line.take) || null
 
+// config capture (persistée côté main : audio-config.json)
+const audioCfg = { api: 'system', device: null, asioFfmpeg: null }
+
+function resetMic() {
+  try { if (recorder.stream) recorder.stream.getTracks().forEach((t2) => t2.stop()) } catch {}
+  try { if (recorder.ac) recorder.ac.close() } catch {}
+  recorder.stream = null; recorder.ac = null; recorder.analyser = null
+}
+
 async function ensureMic() {
   if (recorder.stream) return recorder.stream
+  const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  if (audioCfg.device) audio.deviceId = { ideal: audioCfg.device } // périphérique choisi (Système)
   try {
-    recorder.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+    recorder.stream = await navigator.mediaDevices.getUserMedia({ audio })
   } catch (e) { toast(t('recMicDenied')); return null }
   try {
     recorder.ac = new (window.AudioContext || window.webkitAudioContext)()
@@ -937,71 +965,93 @@ function pickMime() {
   return 'audio/webm'
 }
 
-function blobDuration(blob) {
-  return new Promise((resolve) => {
-    const a = new Audio()
-    a.preload = 'metadata'
-    a.onloadedmetadata = () => {
-      if (isFinite(a.duration)) { resolve(a.duration); URL.revokeObjectURL(a.src); return }
-      // certains .webm renvoient Infinity : on force le calcul en cherchant la fin
-      a.currentTime = 1e9
-      a.ontimeupdate = () => { a.ontimeupdate = null; resolve(isFinite(a.duration) ? a.duration : 0); URL.revokeObjectURL(a.src) }
-    }
-    a.onerror = () => resolve(0)
-    a.src = URL.createObjectURL(blob)
-  })
-}
-
 async function startRecording() {
   if (recorder.active) return
   const line = singleSelected()
   if (!line) { toast(t('recNeedLine')); return }
+  recorder.lineId = line.id
+  recorder.recStartAt = Math.max(0, lineStart(line) - 1.0) // pré-roll pour se caler
+  if ((audioCfg.api || 'system') === 'system') return startRecordingWeb(line)
+  return startRecordingFfmpeg(line)
+}
+
+// --- capture navigateur (getUserMedia / WASAPI) ---
+async function startRecordingWeb(line) {
   const stream = await ensureMic()
   if (!stream) return
+  recorder.mode = 'web'
   recorder.mime = pickMime()
   recorder.ext = recorder.mime.includes('ogg') ? 'ogg' : 'webm'
   recorder.chunks = []
   try { recorder.mr = new MediaRecorder(stream, { mimeType: recorder.mime }) }
   catch { recorder.mr = new MediaRecorder(stream) }
   recorder.mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) recorder.chunks.push(ev.data) }
-  recorder.mr.onstop = () => finishRecording()
+  recorder.mr.onstop = () => finishRecordingWeb()
   recorder.active = true
-  recorder.lineId = line.id
-  // pré-roll : on démarre un peu avant le début de la réplique pour se caler
-  recorder.recStartAt = Math.max(0, lineStart(line) - 1.0)
-  video.pause()
-  video.currentTime = recorder.recStartAt
+  video.pause(); video.currentTime = recorder.recStartAt
   recorder.mr.start()
   video.play().catch(() => {})
+  updateRecUI(); meterLoop()
+}
+
+// --- capture DirectShow / ASIO (ffmpeg, process principal) ---
+async function startRecordingFfmpeg(line) {
+  const name = `take_${line.id}_${uid()}.wav`
+  const r = await window.api.captureStart({ api: audioCfg.api, device: audioCfg.device, ffmpeg: audioCfg.asioFfmpeg, projectPath, name })
+  if (!r || r.error) { toast(t(r && r.error === 'no-device' ? 'recNoDevice' : 'recCaptureFail')); return }
+  recorder.mode = 'ffmpeg'
+  recorder.captureName = name
+  recorder.active = true
+  video.pause(); video.currentTime = recorder.recStartAt
+  video.play().catch(() => {})
   updateRecUI()
-  meterLoop()
 }
 
 function stopRecording() {
-  if (!recorder.active || !recorder.mr) return
+  if (!recorder.active) return
+  if (recorder.mode === 'ffmpeg') return stopRecordingFfmpeg()
+  if (!recorder.mr) return
   try { recorder.mr.stop() } catch {}
-  video.pause()
-  recorder.active = false
+  video.pause(); recorder.active = false
 }
 
-async function finishRecording() {
+async function stopRecordingFfmpeg() {
+  video.pause(); recorder.active = false; recorder.mode = null; updateRecUI()
+  const r = await window.api.captureStop()
+  if (!r || r.error || !r.name) { toast(t('recCaptureFail')); return }
+  await addRecordedTake(recorder.lineId, r.name, recorder.recStartAt)
+}
+
+async function finishRecordingWeb() {
   cancelAnimationFrame(recorder.raf)
   recorder.level = 0
+  recorder.active = false
+  recorder.mode = null
   updateRecUI()
   const blob = new Blob(recorder.chunks, { type: recorder.mime })
   recorder.chunks = []
-  const line = getLine(recorder.lineId)
-  if (!line || !blob.size) return
-  const dur = await blobDuration(blob).catch(() => 0)
+  if (!getLine(recorder.lineId) || !blob.size) return
   const buf = await blob.arrayBuffer()
   const name = `take_${recorder.lineId}_${uid()}.${recorder.ext}`
   const r = await window.api.saveTake(projectPath, name, buf)
   if (!r || r.error) { toast(t('recSaveFail')); return }
+  await addRecordedTake(recorder.lineId, r.name, recorder.recStartAt)
+}
+
+// ajoute une prise enregistrée (quel que soit le backend) à sa réplique
+async function addRecordedTake(lineId, fileName, startTime) {
+  const line = getLine(lineId)
+  if (!line) return
+  const url = await window.api.takeUrl(projectPath, fileName)
+  let dur = 0
+  if (url) {
+    try { dur = await new Promise((res) => { const a = new Audio(); a.onloadedmetadata = () => res(isFinite(a.duration) ? a.duration : 0); a.onerror = () => res(0); a.src = url }) } catch {}
+  }
   pushUndo()
   if (!line.takes) line.takes = []
-  const take = { id: uid(), file: r.name, startTime: recorder.recStartAt, dur: dur || 0 }
+  const take = { id: uid(), file: fileName, startTime, dur: dur || 0 }
   line.takes.push(take)
-  line.take = take.id // la nouvelle prise devient la prise retenue
+  line.take = take.id
   markDirty()
   refreshInspector()
   preloadTakeAudios()
@@ -1201,6 +1251,116 @@ async function runTranscribe() {
     trBusy = false; $('trGo').disabled = false; $('trClose').textContent = t('close')
   }
 }
+
+
+// ============================================================ Paramètres (capture + modèles IA + séparation)
+const setModal = $('settingsModal')
+let sepActive = false
+
+function setDl(on, msg) {
+  $('setProgress').classList.toggle('hidden', !on)
+  $('setStatus').textContent = msg || ''
+  if (!on) $('setBar').style.width = '0%'
+}
+function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, asioFfmpeg: audioCfg.asioFfmpeg }) }
+
+async function fillCaptureDevices() {
+  const api = $('capApi').value
+  const devSel = $('capDevice')
+  devSel.innerHTML = ''
+  $('capAsioFfmpegWrap').hidden = api !== 'asio'
+  $('capNote').textContent = ''
+  if (api === 'system') {
+    let devs = []
+    try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput') } catch {}
+    if (!devs.some((d) => d.label)) $('capNote').textContent = t('capGrantMic')
+    const def = document.createElement('option'); def.value = ''; def.textContent = t('capDefault'); devSel.appendChild(def)
+    for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); devSel.appendChild(o) }
+    devSel.value = audioCfg.device || ''
+  } else {
+    const r = await window.api.listCaptureDevices(api, audioCfg.asioFfmpeg)
+    const devs = (r && r.devices) || []
+    if (!r || !r.available) $('capNote').textContent = api === 'asio' ? t('capAsioMissing') : t('capNoBackend')
+    for (const name of devs) { const o = document.createElement('option'); o.value = name; o.textContent = name; devSel.appendChild(o) }
+    if (!devs.length) { const o = document.createElement('option'); o.value = ''; o.textContent = t('capNoDevices'); devSel.appendChild(o) }
+    devSel.value = devs.includes(audioCfg.device) ? audioCfg.device : (devs[0] || '')
+    audioCfg.device = devSel.value || null
+  }
+}
+
+async function renderTrModels() {
+  const list = $('trModelList'); list.innerHTML = ''
+  const st = await window.api.whisperStatus('base')
+  $('setTrEngine').textContent = st && st.exe ? t('trEngineOk') : t('trEngineMissing')
+  let models = []
+  try { models = await window.api.whisperListModels() } catch {}
+  for (const m of models) {
+    const row = document.createElement('div'); row.className = 'model-row' + (m.present ? ' installed' : '')
+    const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = m.model
+    const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = m.present ? t('mdlInstalled', m.sizeMB) : t('mdlNotInstalled')
+    const sp = document.createElement('div'); sp.className = 'spacer'
+    const btn = document.createElement('button')
+    btn.textContent = m.present ? t('mdlRemove') : t('mdlInstall')
+    btn.addEventListener('click', async () => {
+      if (m.present) { await window.api.whisperDeleteModel(m.model); renderTrModels() }
+      else {
+        btn.disabled = true; setDl(true, t('trDownloading', 0))
+        const r = await window.api.whisperDownloadModel(m.model)
+        setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t('trFailed'))
+        renderTrModels()
+      }
+    })
+    row.append(nm, stt, sp, btn); list.appendChild(row)
+  }
+}
+
+async function renderSepCfg() {
+  const cfg = (await window.api.sepConfigGet()) || {}
+  $('setSepEngine').textContent = cfg.exe ? t('sepEngineOk') : t('sepEngineMissing')
+  if (cfg.model) $('sepModel').value = cfg.model
+}
+
+function openSettings() {
+  setModal.classList.remove('hidden')
+  $('capApi').value = audioCfg.api || 'system'
+  setDl(false, '')
+  fillCaptureDevices(); renderTrModels(); renderSepCfg()
+}
+
+$('capApi').addEventListener('change', () => { audioCfg.api = $('capApi').value; audioCfg.device = null; saveAudioCfg(); resetMic(); fillCaptureDevices() })
+$('capDevice').addEventListener('change', () => { audioCfg.device = $('capDevice').value || null; saveAudioCfg(); resetMic() })
+$('capRefresh').addEventListener('click', fillCaptureDevices)
+$('capAsioFfmpeg').addEventListener('click', async () => { const p = await window.api.pickExecutable(); if (p) { audioCfg.asioFfmpeg = p; saveAudioCfg(); fillCaptureDevices() } })
+$('setTrPick').addEventListener('click', async () => { await window.api.whisperPickExe(); renderTrModels() })
+$('setTrClear').addEventListener('click', async () => { await window.api.whisperClearExe(); renderTrModels() })
+$('setSepPick').addEventListener('click', async () => { await window.api.sepPickExe(); renderSepCfg() })
+$('setSepClear').addEventListener('click', async () => { const c = (await window.api.sepConfigGet()) || {}; await window.api.sepConfigSet({ ...c, exe: null }); renderSepCfg() })
+$('sepModel').addEventListener('change', async () => { const c = (await window.api.sepConfigGet()) || {}; await window.api.sepConfigSet({ ...c, model: $('sepModel').value }) })
+$('setClose').addEventListener('click', () => setModal.classList.add('hidden'))
+window.api.onWhisperProgress((p) => { if (p && !$('setProgress').classList.contains('hidden')) $('setBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%' })
+
+// ---------- retrait des voix (séparation IA) : produit une piste « sans voix » ----------
+async function runSeparation() {
+  if (!project.videoPath) { toast(t('loadVideoFirst')); return }
+  const cfg = (await window.api.sepConfigGet()) || {}
+  if (!cfg.exe) { toast(t('sepNeedEngine')); openSettings(); return }
+  const at = activeAudioTrack()
+  let source = project.videoPath, aIndex = 0
+  if (at) {
+    if (at.type === 'file' && at.path) { source = at.path; aIndex = 0 }
+    else { source = project.videoPath; aIndex = at.index || 0 }
+  }
+  sepActive = true
+  showLoading(true, t('sepRunning', 0))
+  const r = await window.api.sepRun({ source, aIndex, projectPath, model: cfg.model || 'htdemucs', destBase: t('sepTrackName') })
+  sepActive = false
+  showLoading(false)
+  if (!r || r.error) { toast(t(r && r.error === 'no-engine' ? 'sepNeedEngine' : 'sepFailed')); return }
+  await addExternalAudio(r.path)
+  toast(t('sepDone'))
+}
+window.api.onSepProgress((p) => { if (sepActive && p) showLoading(true, t('sepRunning', p.pct || 0)) })
+$('btnRemoveVoices').addEventListener('click', runSeparation)
 
 $('btnToggleLines').addEventListener('click', () => {
   const panel = $('linesPanel')
@@ -4793,6 +4953,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'export-presence') exportWorkDoc('presence')
   else if (action === 'export-tally') exportWorkDoc('tally')
   else if (action === 'transcribe') openTranscribeDialog()
+  else if (action === 'open-settings') openSettings()
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
   else if (action === 'set-lang') setLanguage(arg)
@@ -5634,6 +5795,7 @@ function loop() {
 // principal — qui a déjà construit le menu avec les mêmes valeurs.
 ;(async () => {
   const st = await window.api.getSettings()
+  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.asioFfmpeg = ac.asioFfmpeg || null } } catch {}
   lang = st.lang === 'en' ? 'en' : 'fr'
   autosaveOn = !!st.autosave
   autofocusText = st.autofocus !== false

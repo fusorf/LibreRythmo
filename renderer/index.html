@@ -106,6 +106,7 @@
       <svg viewBox="0 0 16 16"><path d="M8 1v14M2 8h1.5M12.5 8H14" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
     </button>
     <button id="btnImportAudio" class="tracks-ctl">+ Importer un audio…</button>
+    <button id="btnRemoveVoices" class="tracks-ctl" title="Retirer les voix de la piste audio active (IA)">Retirer les voix (IA)</button>
     <div class="sep"></div>
     <select id="trackCount" class="rythmo-ctl" title="Nombre de pistes affichées"></select>
     <span class="font-sel rythmo-ctl" title="Police par défaut de la bande">
@@ -345,6 +346,66 @@
         <button id="trClose">Fermer</button>
         <button id="trGo" class="primary">Transcrire</button>
       </div>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="hidden">
+    <div class="modal-panel settings-panel">
+      <h2 id="setTitle">Paramètres</h2>
+
+      <fieldset class="opt-group set-block">
+        <legend id="setCapLegend">Capture audio</legend>
+        <label><span id="setCapApiLabel">Interface</span>
+          <select id="capApi">
+            <option value="system">Système (WASAPI)</option>
+            <option value="dshow">DirectSound (DirectShow)</option>
+            <option value="asio">ASIO</option>
+          </select>
+        </label>
+        <label class="cap-dev-wrap"><span id="setCapDevLabel">Périphérique</span>
+          <select id="capDevice"></select>
+        </label>
+        <button id="capRefresh" title="Rafraîchir la liste">↻</button>
+        <span id="capAsioFfmpegWrap" hidden><button id="capAsioFfmpeg">ffmpeg ASIO…</button></span>
+        <div class="set-note"><span id="capNote" class="dim-val"></span></div>
+      </fieldset>
+
+      <fieldset class="opt-group set-block">
+        <legend id="setTrLegend">Transcription (IA) — optionnel</legend>
+        <p id="setTrHint" class="modal-hint">Génère le texte depuis l'audio (whisper.cpp). Rien n'est inclus : moteur fourni une fois, modèles installés à la demande ci-dessous.</p>
+        <div class="set-row">
+          <span id="setTrEngine" class="dim-val"></span>
+          <div class="spacer"></div>
+          <button id="setTrPick">Choisir le moteur…</button>
+          <button id="setTrClear">Effacer</button>
+        </div>
+        <div id="trModelList" class="model-list"></div>
+      </fieldset>
+
+      <fieldset class="opt-group set-block">
+        <legend id="setSepLegend">Séparation de voix (IA) — optionnel</legend>
+        <p id="setSepHint" class="modal-hint">Retire les voix d'une piste audio (produit un instrumental ajouté comme nouvelle piste). Nécessite un moteur local (Demucs recommandé : <code>pip install demucs</code>). Rien n'est inclus ; le modèle est téléchargé par le moteur au premier usage.</p>
+        <div class="set-row">
+          <span id="setSepEngine" class="dim-val"></span>
+          <div class="spacer"></div>
+          <button id="setSepPick">Choisir le moteur…</button>
+          <button id="setSepClear">Effacer</button>
+        </div>
+        <label><span id="setSepModelLabel">Modèle</span>
+          <select id="sepModel">
+            <option value="htdemucs" selected>htdemucs (rapide)</option>
+            <option value="htdemucs_ft">htdemucs_ft (meilleur, plus lent)</option>
+            <option value="mdx_extra">mdx_extra</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <div class="set-row">
+        <div id="setProgress" class="hidden"><div id="setBar"></div></div>
+        <span id="setStatus" class="dim-val"></span>
+      </div>
+      <hr class="modal-sep">
+      <div class="export-row"><div class="spacer"></div><button id="setClose" class="primary">Fermer</button></div>
     </div>
   </div>
 

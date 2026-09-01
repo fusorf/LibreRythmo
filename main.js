@@ -291,6 +291,7 @@ const MENU_STR = {
     lightMode: 'Mode clair',
     discord: 'Discord Rich Presence',
     clearProxies: 'Vider le cache vidéo',
+    settings: 'Paramètres…',
     language: 'Langue',
     fullscreen: 'Plein écran',
     help: 'Aide',
@@ -365,6 +366,7 @@ const MENU_STR = {
     lightMode: 'Light mode',
     discord: 'Discord Rich Presence',
     clearProxies: 'Clear video cache',
+    settings: 'Settings…',
     language: 'Language',
     fullscreen: 'Full screen',
     help: 'Help',
@@ -491,6 +493,7 @@ function buildMenu() {
         { label: s.lightMode, type: 'checkbox', checked: settings.theme === 'light', click: (item) => send('toggle-theme', item.checked) },
         { label: s.discord, type: 'checkbox', checked: settings.discord, click: (item) => send('toggle-discord', item.checked) },
         { type: 'separator' },
+        { label: s.settings, click: () => send('open-settings') },
         { label: s.clearProxies, click: () => send('clear-proxy-cache') },
         { type: 'separator' },
         {
@@ -1029,6 +1032,169 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
       } else resolve({ error: tail.slice(-300) || 'transcribe-failed' })
     })
     whisperProc.on('error', () => { whisperProc = null; resolve({ error: 'engine-spawn-failed' }) })
+  })
+})
+
+// ---------- capture audio : périphérique + backend (WASAPI / DirectShow / ASIO) ----------
+// « Système » = capture navigateur (getUserMedia, WASAPI) côté renderer. « DirectSound »
+// = capture DirectShow via ffmpeg (atteint les interfaces pro). « ASIO » nécessite un
+// ffmpeg compilé avec ASIO (le build inclus ne l'a pas) : l'utilisateur fournit alors
+// son propre binaire. Rien n'est bundlé au-delà du ffmpeg déjà présent.
+function audioCfgPath() { return path.join(app.getPath('userData'), 'audio-config.json') }
+function readAudioCfg() { try { return JSON.parse(fs.readFileSync(audioCfgPath(), 'utf8')) } catch { return {} } }
+ipcMain.handle('pick-executable', async () => {
+  const r = await dialog.showOpenDialog(win, { properties: ['openFile'] })
+  return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
+})
+ipcMain.handle('audio-config-get', () => readAudioCfg())
+ipcMain.handle('audio-config-set', (e, cfg) => { try { fs.writeFileSync(audioCfgPath(), JSON.stringify(cfg || {}), 'utf8') } catch {} return true })
+
+function parseDshowDevices(txt) {
+  const out = []
+  const re = /"([^"]+)"\s*\(audio\)/g
+  let m
+  while ((m = re.exec(txt))) out.push(m[1])
+  return out
+}
+ipcMain.handle('list-capture-devices', async (e, api, ffOverride) => {
+  const ff = api === 'asio' && ffOverride ? ffOverride : ffmpegPath
+  if (!ff) return { devices: [], available: false, error: 'no-ffmpeg' }
+  const fmt = api === 'asio' ? 'asio' : 'dshow'
+  return await new Promise((resolve) => {
+    let buf = ''
+    let p
+    try { p = spawn(ff, ['-hide_banner', '-f', fmt, '-list_devices', 'true', '-i', 'dummy'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch { return resolve({ devices: [], available: false, error: 'spawn' }) }
+    const on = (d) => (buf += String(d))
+    p.stdout.on('data', on); p.stderr.on('data', on)
+    p.on('close', () => {
+      if (/Unknown input format|not (?:found|available)/i.test(buf) && !/\(audio\)/.test(buf)) resolve({ devices: [], available: false, error: 'no-backend' })
+      else resolve({ devices: parseDshowDevices(buf), available: true })
+    })
+    p.on('error', () => resolve({ devices: [], available: false, error: 'spawn' }))
+    setTimeout(() => { try { p.kill() } catch {} }, 8000)
+  })
+})
+
+let captureProc = null
+let captureDone = null
+ipcMain.handle('capture-start', (e, opts) => {
+  if (captureProc) return { error: 'busy' }
+  const api = opts.api
+  const ff = api === 'asio' && opts.ffmpeg ? opts.ffmpeg : ffmpegPath
+  if (!ff) return { error: 'no-ffmpeg' }
+  if (!opts.device) return { error: 'no-device' }
+  const name = path.basename(opts.name || `take_${Date.now()}.wav`)
+  const out = path.join(takesDir(opts.projectPath), name)
+  const fmt = api === 'asio' ? 'asio' : 'dshow'
+  const input = api === 'asio' ? opts.device : `audio=${opts.device}`
+  const args = ['-y', '-f', fmt, '-i', input, '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', out]
+  try { captureProc = spawn(ff, args, { stdio: ['pipe', 'ignore', 'pipe'] }) }
+  catch (err) { captureProc = null; return { error: String((err && err.message) || err) } }
+  captureProc.on('close', () => { if (captureDone) { const d = captureDone; captureDone = null; d({ ok: true, name, path: out }) } captureProc = null })
+  captureProc.on('error', () => { if (captureDone) { const d = captureDone; captureDone = null; d({ error: 'spawn' }) } captureProc = null })
+  captureProc.stdin.on('error', () => {})
+  return { ok: true, name }
+})
+ipcMain.handle('capture-stop', () => {
+  if (!captureProc) return { error: 'not-recording' }
+  return new Promise((resolve) => {
+    captureDone = resolve
+    try { captureProc.stdin.write('q') } catch {}
+    setTimeout(() => { try { if (captureProc) captureProc.kill('SIGINT') } catch {} }, 600)
+  })
+})
+
+// ---------- gestion des modèles whisper (installation optionnelle depuis l'UI) ----------
+const WHISPER_MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3']
+ipcMain.handle('whisper-list-models', () => WHISPER_MODELS.map((m) => {
+  const p = whisperModelPath(m)
+  let sizeMB = 0, present = false
+  try { const st = fs.statSync(p); if (st.size > 1e6) { present = true; sizeMB = Math.round(st.size / 1e6) } } catch {}
+  return { model: m, present, sizeMB }
+}))
+ipcMain.handle('whisper-delete-model', (e, m) => { try { fs.unlinkSync(whisperModelPath(m)) } catch {} return true })
+ipcMain.handle('whisper-clear-exe', () => { try { fs.unlinkSync(whisperCfgPath()) } catch {} return true })
+
+// ---------- séparation de voix (IA) : retirer les voix d'une piste audio ----------
+// Modèle local exécuté par un moteur fourni par l'utilisateur (Demucs recommandé —
+// `pip install demucs`). Rien de bundlé. Le résultat « sans voix » (instrumental)
+// devient une nouvelle piste audio du projet. Le moteur télécharge son modèle au
+// premier usage. Deux stems : vocals / no_vocals.
+let sepProc = null
+function sepCfgPath() { return path.join(app.getPath('userData'), 'sep-config.json') }
+function readSepCfg() { try { return JSON.parse(fs.readFileSync(sepCfgPath(), 'utf8')) } catch { return {} } }
+ipcMain.handle('sep-config-get', () => readSepCfg())
+ipcMain.handle('sep-config-set', (e, cfg) => { try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg || {}), 'utf8') } catch {} return true })
+ipcMain.handle('sep-pick-exe', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Demucs / séparation', properties: ['openFile'] })
+  if (r.canceled || !r.filePaths.length) return null
+  const cfg = readSepCfg(); cfg.exe = r.filePaths[0]
+  try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {}
+  return cfg.exe
+})
+function sepDir(projectPath) {
+  const base = projectPath ? path.join(path.dirname(projectPath), 'separated') : path.join(appBaseDir(), 'cache', 'separated')
+  try { fs.mkdirSync(base, { recursive: true }); return base } catch {}
+  const fb = path.join(app.getPath('temp'), 'librerythmo-sep')
+  try { fs.mkdirSync(fb, { recursive: true }) } catch {}
+  return fb
+}
+function findFileRec(dir, rx) {
+  let best = null, bestT = -1
+  const walk = (d) => {
+    let ents = []
+    try { ents = fs.readdirSync(d, { withFileTypes: true }) } catch { return }
+    for (const en of ents) {
+      const p = path.join(d, en.name)
+      if (en.isDirectory()) walk(p)
+      else if (rx.test(en.name)) { try { const st = fs.statSync(p); if (st.mtimeMs > bestT) { bestT = st.mtimeMs; best = p } } catch {} }
+    }
+  }
+  walk(dir)
+  return best
+}
+ipcMain.handle('sep-cancel', () => { try { if (sepProc) sepProc.kill() } catch {} sepProc = null; return true })
+ipcMain.handle('sep-run', async (e, opts) => {
+  if (!ffmpegPath) return { error: 'no-ffmpeg' }
+  if (sepProc) return { error: 'busy' }
+  const cfg = readSepCfg()
+  const exe = cfg.exe
+  if (!exe || !fs.existsSync(exe)) return { error: 'no-engine' }
+  const src = opts.source
+  if (!src || !fs.existsSync(src)) return { error: 'no-source' }
+  const model = opts.model || 'htdemucs'
+  const base = `lr-sep-${Date.now()}`
+  const wav = path.join(app.getPath('temp'), base + '.wav')
+  // 1) extraction de la piste audio ciblée en WAV stéréo qualité
+  const extract = ['-y', '-i', src]
+  if (opts.aIndex != null) extract.push('-map', `0:a:${opts.aIndex}`)
+  extract.push('-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', wav)
+  const okx = await new Promise((res) => { const p = spawn(ffmpegPath, extract, { stdio: 'ignore' }); p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
+  if (!okx) return { error: 'extract-failed' }
+  // 2) séparation (Demucs : --two-stems=vocals → vocals.wav + no_vocals.wav)
+  const outDir = path.join(app.getPath('temp'), base + '-out')
+  try { fs.mkdirSync(outDir, { recursive: true }) } catch {}
+  const args = ['--two-stems', 'vocals', '-n', model, '-o', outDir, wav]
+  return await new Promise((resolve) => {
+    let tail = ''
+    try { sepProc = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch { return resolve({ error: 'engine-spawn-failed' }) }
+    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/(\d+)%/); if (m && win && !win.isDestroyed()) win.webContents.send('sep-progress', { pct: Number(m[1]) }) }
+    sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
+    sepProc.on('close', (code) => {
+      sepProc = null
+      try { fs.unlinkSync(wav) } catch {}
+      const found = findFileRec(outDir, /no_vocals\.(wav|mp3|flac|m4a)$/i)
+      if (code === 0 && found) {
+        const destName = (opts.destBase || 'sans-voix') + '-' + Date.now() + path.extname(found)
+        const dest = path.join(sepDir(opts.projectPath), destName)
+        try { fs.copyFileSync(found, dest) } catch { try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}; return resolve({ error: 'copy-failed' }) }
+        try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}
+        resolve({ ok: true, path: dest, name: destName })
+      } else { try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}; resolve({ error: tail.slice(-300) || 'sep-failed' }) }
+    })
+    sepProc.on('error', () => { sepProc = null; resolve({ error: 'engine-spawn-failed' }) })
   })
 })
 
