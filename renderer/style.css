@@ -1206,9 +1206,9 @@ button.primary:disabled { opacity: .45; cursor: default; }
 #separateModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 20; }
 #separateModal.hidden { display: none; }
 #separateModal .modal-panel { width: 480px; max-width: 92vw; }
-.sep-form { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: center; margin: 2px 0 4px; }
-.sep-form > label { color: var(--dim); font-size: 12px; white-space: nowrap; }
-.sep-form select, .sep-form input[type="text"] { width: 100%; min-width: 0; }
+.ai-form { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: center; margin: 2px 0 4px; }
+.ai-form > label { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.ai-form select, .ai-form input[type="text"] { width: 100%; min-width: 0; }
 .sep-dir { display: flex; gap: 6px; min-width: 0; }
 .sep-dir input { flex: 1 1 auto; }
 .sep-dir button { flex: 0 0 auto; }

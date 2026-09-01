@@ -468,6 +468,7 @@ function applyLang() {
   $('btnMonitor').title = t('recMonitor')
   $('trTitle').textContent = t('trTitle')
   $('trHint').textContent = t('trHint')
+  $('trModelLabel').textContent = t('trModelLabel')
   $('trLangLabel').textContent = t('trLangLabel')
   $('trOpenSettings').textContent = t('aiOpenSettings')
   $('trClose').textContent = t('close')
@@ -1212,8 +1213,13 @@ async function openTranscribeDialog() {
   $('trNotReady').classList.toggle('hidden', ready)
   $('trReady').classList.toggle('hidden', !ready)
   $('trGo').classList.toggle('hidden', !ready)
-  if (!ready) $('trNotReadyMsg').textContent = !engine ? t('trNeedEngine') : t('trNeedModel')
+  if (!ready) { $('trNotReadyMsg').textContent = !engine ? t('trNeedEngine') : t('trNeedModel'); return }
+  // dropdown modèle (installés) — défaut = modèle actif
+  const msel = $('trModel'); msel.innerHTML = ''
+  for (const m of models) { const o = document.createElement('option'); o.value = m.model; o.textContent = `${m.model} (${fmtDlSize(m.sizeMB)})`; msel.appendChild(o) }
+  msel.value = activeWhisper()
 }
+$('trModel').addEventListener('change', () => setActiveWhisper($('trModel').value))
 function closeTranscribe() { if (!trBusy) trModal.classList.add('hidden') }
 
 $('trOpenSettings').addEventListener('click', () => { trModal.classList.add('hidden'); openSettings() })
@@ -1230,7 +1236,7 @@ window.api.onWhisperProgress((p) => {
 
 async function runTranscribe() {
   if (trBusy) return
-  const model = activeWhisper()
+  const model = $('trModel').value || activeWhisper()
   if (!model) { toast(t('trNeedModel')); return }
   const lang = $('trLang').value
   trBusy = true; $('trGo').disabled = true; $('trClose').textContent = t('cancel')
