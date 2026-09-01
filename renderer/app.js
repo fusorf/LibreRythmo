@@ -966,7 +966,18 @@ const audioCfg = { api: 'system', device: null, output: null, asioFfmpeg: null }
 function resetMic() {
   try { if (recorder.stream) recorder.stream.getTracks().forEach((t2) => t2.stop()) } catch {}
   try { if (recorder.ac) recorder.ac.close() } catch {}
-  recorder.stream = null; recorder.ac = null; recorder.analyser = null
+  recorder.stream = null; recorder.ac = null; recorder.analyser = null; recorder.procStream = null
+}
+
+// micro mono (ex. « in 1L » d'une MOTU, présent sur le seul canal gauche) → dual-mono :
+// on duplique le canal 0 sur L et R pour l'entendre au centre (deux oreilles)
+function toDualMono(ac, node) {
+  const splitter = ac.createChannelSplitter(2)
+  const merger = ac.createChannelMerger(2)
+  node.connect(splitter)
+  splitter.connect(merger, 0, 0)
+  splitter.connect(merger, 0, 1)
+  return merger
 }
 
 async function ensureMic() {
@@ -986,10 +997,14 @@ async function ensureMic() {
   try {
     recorder.ac = new (window.AudioContext || window.webkitAudioContext)()
     const src = recorder.ac.createMediaStreamSource(recorder.stream)
+    const mono = toDualMono(recorder.ac, src) // enregistre en dual-mono (L+R)
     recorder.analyser = recorder.ac.createAnalyser()
     recorder.analyser.fftSize = 512
-    src.connect(recorder.analyser)
-  } catch {}
+    mono.connect(recorder.analyser)
+    const dest = recorder.ac.createMediaStreamDestination()
+    recorder.analyser.connect(dest) // flux traité (dual-mono) que MediaRecorder enregistre
+    recorder.procStream = dest.stream
+  } catch { recorder.procStream = null }
   return recorder.stream
 }
 
@@ -1018,8 +1033,9 @@ async function startRecordingWeb(line) {
   recorder.mime = pickMime()
   recorder.ext = recorder.mime.includes('ogg') ? 'ogg' : 'webm'
   recorder.chunks = []
-  try { recorder.mr = new MediaRecorder(stream, { mimeType: recorder.mime }) }
-  catch { recorder.mr = new MediaRecorder(stream) }
+  const recStream = recorder.procStream || stream // dual-mono si dispo
+  try { recorder.mr = new MediaRecorder(recStream, { mimeType: recorder.mime }) }
+  catch { recorder.mr = new MediaRecorder(recStream) }
   recorder.mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) recorder.chunks.push(ev.data) }
   recorder.mr.onstop = () => finishRecordingWeb()
   recorder.active = true
@@ -1464,9 +1480,10 @@ async function toggleOutputTest() {
   } catch { toast(t('recMicDenied')); return }
   const ac = new AC()
   const src = ac.createMediaStreamSource(stream)
+  const mono = toDualMono(ac, src) // mono (canal gauche) entendu sur L et R
   const analyser = ac.createAnalyser(); analyser.fftSize = 512
   const dest = ac.createMediaStreamDestination()
-  src.connect(analyser); analyser.connect(dest) // on ne connecte PAS ac.destination (évite le doublon sur la sortie par défaut)
+  mono.connect(analyser); analyser.connect(dest) // on ne connecte PAS ac.destination (évite le doublon sur la sortie par défaut)
   const audioEl = new Audio(); audioEl.srcObject = dest.stream
   try { if (audioEl.setSinkId && audioCfg.output) await audioEl.setSinkId(audioCfg.output) } catch {}
   try { await audioEl.play() } catch {}
