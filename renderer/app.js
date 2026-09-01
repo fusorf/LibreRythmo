@@ -2672,12 +2672,15 @@ $('detGo').addEventListener('click', runDetectScenes)
 let activeTab = 'rythmo'
 let selectedTrackId = null
 const TRK_LANE_H = 56
+// icônes monochromes (haut-parleur actif / muet) — remplacent les emoji 🔊/🔈
+const SPK_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a4 4 0 0 1 0 7"/><path d="M18.7 6a7 7 0 0 1 0 12"/></svg>'
+const SPK_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9.5l4.5 5M21.5 9.5l-4.5 5"/></svg>'
 const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
 const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + ' ch' : '')
 
 const tcanvas = $('tracksCanvas')
 const tctx = tcanvas.getContext('2d')
-$('tracksPlayhead').style.left = (READ_RATIO * 100) + '%' // ligne de lecture alignée sur tReadX
+$('tracksPlayhead').style.left = '0px' // repositionnée chaque frame par drawTracks (timeline pleine largeur)
 let tcw = 0, tch = 0
 
 function setTab(name) {
@@ -2786,7 +2789,7 @@ function renderTrackHeads() {
       const on = tr.id === project.activeAudioId
       const spk = document.createElement('button')
       spk.className = 'trk-spk' + (on ? ' on' : '')
-      spk.textContent = on ? '🔊' : '🔈'
+      spk.innerHTML = on ? SPK_ON_SVG : SPK_OFF_SVG
       spk.title = t('trackActiveTitle')
       spk.addEventListener('click', (e) => { e.stopPropagation(); setActiveAudio(tr.id) })
       const nm = document.createElement('span'); nm.className = 'trk-hname'; nm.textContent = tr.label || baseName(tr.path)
@@ -2839,34 +2842,65 @@ function resizeTracksCanvas() {
 }
 new ResizeObserver(() => { if (activeTab === 'tracks') resizeTracksCanvas() }).observe($('tracksCanvasWrap'))
 
-const tPps = () => (tcw > 0 ? tcw / clamp(secondsVisible, SEC_MIN, SEC_MAX) : pxPerSec)
-const tReadX = () => tcw * READ_RATIO
-const tTAt = (x, now) => now + (x - tReadX()) / tPps()
+// ---------- timeline « pleine largeur » : toute la vidéo tient dans la largeur, sans zoom ----------
+const TRK_MARGIN = 30 // marge gauche/droite (px) : marque début/fin et laisse offsetter au drag
+const tDurTracks = () => (isFinite(video.duration) && video.duration > 0 ? video.duration : 0)
+const tUsable = () => Math.max(1, tcw - 2 * TRK_MARGIN)
+const tPpsFit = () => { const d = tDurTracks(); return d > 0 ? tUsable() / d : 0 }
+const tXAt = (tt) => TRK_MARGIN + tt * tPpsFit()
+const tTimeAt = (x) => { const p = tPpsFit(); return p > 0 ? clamp((x - TRK_MARGIN) / p, 0, tDurTracks()) : 0 }
+// pas de règle « joli » pour ~une graduation tous les ~100 px
+function niceTimeStep(total) {
+  const target = total / Math.max(3, Math.floor(tUsable() / 100))
+  return [1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600, 900, 1800, 3600].find((s) => s >= target) || 3600
+}
+const fmtMS = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.round(s % 60)).padStart(2, '0')}`
+
+// overlay « carte des répliques » sur la piste vidéo : phrases empilées par piste rythmo,
+// colorées par personnage (comme la barre de progression, mais sur plusieurs niveaux)
+function drawVideoLane(y, x0v, x1v) {
+  const cy = y + 4, chh = TRK_LANE_H - 8
+  tctx.fillStyle = '#6cbf6a22'; tctx.strokeStyle = '#6cbf6acc'
+  tctx.beginPath(); tctx.roundRect(x0v, cy, Math.max(6, x1v - x0v), chh, 5); tctx.fill(); tctx.stroke()
+  const nT = Math.max(1, project.tracks || 1)
+  const lvlH = chh / nT
+  for (const l of project.lines) {
+    if (!l.words || !l.words.length) continue
+    const lx0 = tXAt(lineStart(l))
+    const lx1 = tXAt(lineEnd(l))
+    const lvl = clamp(l.track || 0, 0, nT - 1)
+    const ly = cy + lvl * lvlH + 1
+    tctx.fillStyle = getChar(l.characterId)?.color || '#888'
+    tctx.beginPath(); tctx.roundRect(lx0, ly, Math.max(1.5, lx1 - lx0), Math.max(2, lvlH - 2), 2); tctx.fill()
+  }
+}
 
 function drawTracks() {
   if (!tcw) { resizeTracksCanvas(); if (!tcw) return }
   const pal = bandPal()
   if (!project.videoPath) { tctx.fillStyle = pal.bg; tctx.fillRect(0, 0, tcw, tch); return }
   const now = effectiveTime()
-  const pps = tPps()
-  const dur = isFinite(video.duration) ? video.duration : 0
-  const xAt = (tt) => tReadX() + (tt - now) * pps
+  const dur = tDurTracks()
   const lanes = trackLanes()
+  const x0v = tXAt(0), x1v = tXAt(dur)
 
   tctx.fillStyle = pal.bg; tctx.fillRect(0, 0, tcw, tch)
 
-  // règle (mm:ss)
+  // règle (mm:ss) : graduations réparties sur toute la largeur
   tctx.fillStyle = pal.rulerBg; tctx.fillRect(0, 0, tcw, RULER_H)
-  const step = pps < 70 ? 2 : 1
-  const t0 = Math.max(0, Math.floor(tTAt(0, now)))
-  const t1 = Math.ceil(tTAt(tcw, now))
-  tctx.font = '12px Consolas, monospace'; tctx.textAlign = 'left'; tctx.textBaseline = 'middle'
-  for (let s = t0 - (t0 % step); s <= t1; s += step) {
-    if (s < 0) continue
-    const x = xAt(s)
-    tctx.strokeStyle = pal.tick; tctx.beginPath(); tctx.moveTo(x + 0.5, RULER_H - 8); tctx.lineTo(x + 0.5, RULER_H); tctx.stroke()
-    tctx.fillStyle = pal.tickText
-    tctx.fillText(`${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`, x + 3, RULER_H / 2)
+  tctx.font = '12px Consolas, monospace'; tctx.textBaseline = 'middle'
+  if (dur > 0) {
+    const step = niceTimeStep(dur)
+    tctx.textAlign = 'left'
+    for (let s = 0; s < dur - step * 0.5; s += step) {
+      const x = tXAt(s)
+      tctx.strokeStyle = pal.tick; tctx.beginPath(); tctx.moveTo(x + 0.5, RULER_H - 8); tctx.lineTo(x + 0.5, RULER_H); tctx.stroke()
+      tctx.fillStyle = pal.tickText; tctx.fillText(fmtMS(s), x + 3, RULER_H / 2)
+    }
+    // fin de vidéo : graduation + label calés à droite
+    tctx.strokeStyle = pal.tick; tctx.beginPath(); tctx.moveTo(x1v + 0.5, RULER_H - 8); tctx.lineTo(x1v + 0.5, RULER_H); tctx.stroke()
+    tctx.fillStyle = pal.tickText; tctx.textAlign = 'right'; tctx.fillText(fmtMS(dur), x1v - 3, RULER_H / 2)
+    tctx.textAlign = 'left'
   }
 
   lanes.forEach((tr, i) => {
@@ -2875,47 +2909,46 @@ function drawTracks() {
     if (tr.id === selectedTrackId) { tctx.fillStyle = pal.handleAccent + '22'; tctx.fillRect(0, y, tcw, TRK_LANE_H) }
     tctx.strokeStyle = pal.grid; tctx.beginPath(); tctx.moveTo(0, y + 0.5); tctx.lineTo(tcw, y + 0.5); tctx.stroke()
 
-    const isVideo = tr.kind === 'video'
+    if (tr.kind === 'video') { drawVideoLane(y, x0v, x1v); return }
+
+    // piste audio : clip positionné par offset, glissable librement
     const isActive = tr.id === project.activeAudioId
-    const off = isVideo ? 0 : (tr.offset || 0)
-    const cx0 = xAt(off)
-    const cx1 = xAt(off + (dur || 0))
+    const off = tr.offset || 0
+    const cx0 = tXAt(off)
+    const cx1 = tXAt(off + (dur || 0))
     const cy = y + 5, chh = TRK_LANE_H - 10
-    const col = isVideo ? '#6cbf6a' : isActive ? pal.handleAccent : pal.tickText
+    const col = isActive ? pal.handleAccent : pal.tickText
     tctx.fillStyle = col + '2e'
-    tctx.strokeStyle = col + (isActive || isVideo ? 'cc' : '66')
+    tctx.strokeStyle = col + (isActive ? 'cc' : '66')
     tctx.lineWidth = isActive ? 1.8 : 1
-    tctx.beginPath(); tctx.roundRect(Math.max(-2, cx0), cy, Math.max(6, cx1 - cx0), chh, 5)
+    tctx.beginPath(); tctx.roundRect(cx0, cy, Math.max(6, cx1 - cx0), chh, 5)
     tctx.fill(); tctx.stroke(); tctx.lineWidth = 1
 
-    // forme d'onde de la piste active (identique à celle de la bande)
+    // forme d'onde de la piste active (calée sur le clip via son offset)
     if (isActive && wave) {
       const midY = cy + chh / 2, amp = chh / 2 - 4
-      const x0 = Math.max(0, cx0), x1 = Math.min(tcw, cx1)
-      tctx.fillStyle = col + '66'; tctx.beginPath(); tctx.moveTo(x0, midY)
-      for (let x = x0; x <= x1; x++) {
-        const tt = tTAt(x, now) - off
-        let v = 0
-        if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] }
-        tctx.lineTo(x, midY - v * amp)
-      }
-      for (let x = x1; x >= x0; x--) {
-        const tt = tTAt(x, now) - off
-        let v = 0
-        if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] }
-        tctx.lineTo(x, midY + v * amp)
-      }
+      const pps = tPpsFit() || 1
+      const xa = Math.max(0, cx0), xb = Math.min(tcw, cx1)
+      tctx.fillStyle = col + '66'; tctx.beginPath(); tctx.moveTo(xa, midY)
+      for (let x = xa; x <= xb; x++) { const tt = (x - cx0) / pps; let v = 0; if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] } tctx.lineTo(x, midY - v * amp) }
+      for (let x = xb; x >= xa; x--) { const tt = (x - cx0) / pps; let v = 0; if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] } tctx.lineTo(x, midY + v * amp) }
       tctx.closePath(); tctx.fill()
     }
 
     tctx.fillStyle = pal.tickText; tctx.font = '11px "Segoe UI", sans-serif'; tctx.textBaseline = 'middle'
-    tctx.fillText(isVideo ? t('trackVideoName') : (tr.label || baseName(tr.path)), Math.max(4, cx0 + 7), cy + 9)
+    tctx.fillText(tr.label || baseName(tr.path), Math.max(4, cx0 + 7), cy + 9)
   })
 
-  // ligne de lecture : overlay DOM pleine hauteur (#tracksPlayhead), pas dessinée ici
+  // repères début / fin de vidéo : lignes verticales pleine hauteur bien visibles
+  tctx.strokeStyle = pal.handleAccent + 'dd'; tctx.lineWidth = 1.5
+  for (const bx of [x0v, x1v]) { tctx.beginPath(); tctx.moveTo(bx + 0.5, RULER_H); tctx.lineTo(bx + 0.5, tch); tctx.stroke() }
+  tctx.lineWidth = 1
+
+  // ligne de lecture : overlay DOM pleine hauteur, positionné ici (le canvas ne défile plus)
+  $('tracksPlayhead').style.left = tXAt(now) + 'px'
 }
 
-// ---------- interactions souris (scrub/zoom comme la bande, + glisser offset) ----------
+// ---------- interactions souris : clic/glisser = seek (position absolue), glisser piste = offset ----------
 let tdrag = null
 const tLaneAt = (y) => (y < RULER_H ? -1 : Math.floor((y - RULER_H) / TRK_LANE_H))
 
@@ -2930,7 +2963,8 @@ tcanvas.addEventListener('pointerdown', (e) => {
     tdrag = { kind: 'offset', tr, x0: x, startOff: tr.offset || 0, pushed: false }
   } else {
     video.pause(); scrub.active = true
-    tdrag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: tTAt(x, effectiveTime()), fromRuler: li < 0, moved: false }
+    tdrag = { kind: 'scrub' }
+    scrubTo(tTimeAt(x)); playScrubGrain(scrub.time)
     tcanvas.style.cursor = 'grabbing'
   }
 })
@@ -2938,21 +2972,19 @@ tcanvas.addEventListener('pointermove', (e) => {
   const r = tcanvas.getBoundingClientRect()
   const x = e.clientX - r.left
   if (!tdrag) { tcanvas.style.cursor = tLaneAt(e.clientY - r.top) >= 1 ? 'ew-resize' : 'grab'; return }
-  const dx = x - tdrag.x0
   if (tdrag.kind === 'scrub') {
-    if (Math.abs(dx) > 3) tdrag.moved = true
-    if (tdrag.moved) { scrubTo(tdrag.t0 - dx / tPps()); playScrubGrain(scrub.time) }
+    scrubTo(tTimeAt(x)); playScrubGrain(scrub.time)
   } else if (tdrag.kind === 'offset') {
     if (!tdrag.pushed) { pushUndo(); tdrag.pushed = true }
-    let off = tdrag.startOff + dx / tPps()
-    if (Math.abs(off) < 6 / tPps()) off = 0 // aimant sur l'origine
+    const pps = tPpsFit() || 1
+    let off = tdrag.startOff + (x - tdrag.x0) / pps
+    if (Math.abs(off) < 6 / pps) off = 0 // aimant sur l'origine
     tdrag.tr.offset = off
     if (tdrag.tr.id === project.activeAudioId) { waveOffset = off; playAOffset = off }
     markDirty()
   }
 })
 function tEndDrag() {
-  if (tdrag && tdrag.kind === 'scrub' && tdrag.fromRuler && !tdrag.moved && video.src) scrubTo(tdrag.tClick)
   // fin d'un glisser d'offset sur la piste active → la lecture doit suivre le décalage
   if (tdrag && tdrag.kind === 'offset' && tdrag.tr.id === project.activeAudioId) syncPlaybackAudio()
   tdrag = null; scrub.active = false
@@ -2963,9 +2995,9 @@ tcanvas.addEventListener('pointerup', tEndDrag)
 tcanvas.addEventListener('pointercancel', tEndDrag)
 tcanvas.addEventListener('wheel', (e) => {
   e.preventDefault()
-  if (e.ctrlKey) { secondsVisible = clamp(secondsVisible * (e.deltaY < 0 ? 1 / 1.12 : 1.12), SEC_MIN, SEC_MAX); recomputePps(); syncZoomSlider(); return }
   video.pause()
-  scrubTo(effectiveTime() + (e.deltaY || e.deltaX) / tPps() * 0.8)
+  const pps = tPpsFit() || 1
+  scrubTo(clamp(effectiveTime() + (e.deltaY || e.deltaX) / pps * 0.5, 0, tDurTracks()))
   playScrubGrain(scrub.time)
 }, { passive: false })
 

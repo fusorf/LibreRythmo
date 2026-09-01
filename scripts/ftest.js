@@ -135,6 +135,17 @@ const TESTS = [
     mergeCharacter('b', 'a')
     return project.characters.length === 1 && project.lines.every(l => l.characterId === 'a')
   })()`],
+  ['Onglet Audio : haut-parleur en icône monochrome (SVG)', `(() => {
+    if (typeof renderTrackHeads !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], characters: [],
+      audioTracks: [{ id: 't1', type: 'file', path: 'x.wav', label: 'X', offset: 0 }], activeAudioId: 't1', lines: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    renderTrackHeads()
+    const spk = document.querySelector('#trackHeads .trk-spk')
+    const ok = !!spk && !!spk.querySelector('svg') && spk.textContent.indexOf('🔊') < 0
+    project.videoPath = null
+    return ok
+  })()`],
   ['Piste audio active restaurée par clé stable (id régénéré)', `(() => {
     if (typeof ensureActiveAudio !== 'function') return true
     // simule une réouverture : les id embarqués ont changé, mais la clé « emb:1 » persiste
