@@ -942,12 +942,36 @@ function whisperExeSaved() {
 function whisperModelPath(model) {
   return path.join(whisperDir(), `ggml-${String(model).replace(/[^a-z0-9.\-]/gi, '')}.bin`)
 }
+// détection automatique du moteur whisper.cpp : override enregistré, sinon binaire sur
+// le PATH (noms usuels). Rien à choisir manuellement.
+let whisperEngineCache
+function whisperDetect() {
+  return new Promise((resolve) => {
+    const saved = whisperExeSaved()
+    if (saved && fs.existsSync(saved)) return resolve(saved)
+    if (whisperEngineCache !== undefined) return resolve(whisperEngineCache)
+    const cands = process.platform === 'win32'
+      ? ['whisper-cli.exe', 'whisper-cli', 'whisper.exe', 'whisper', 'main.exe']
+      : ['whisper-cli', 'whisper', 'main']
+    let i = 0
+    const tryNext = () => {
+      if (i >= cands.length) { whisperEngineCache = null; return resolve(null) }
+      const c = cands[i++]
+      let p
+      try { p = spawn(c, ['--help'], { stdio: 'ignore' }) } catch { return tryNext() }
+      p.on('error', tryNext)
+      p.on('close', () => { whisperEngineCache = c; resolve(c) }) // s'est lancé → présent
+    }
+    tryNext()
+  })
+}
 
-ipcMain.handle('whisper-status', (e, model) => {
+ipcMain.handle('whisper-status', async (e, model) => {
   const mp = whisperModelPath(model)
   let modelOk = false
   try { modelOk = fs.existsSync(mp) && fs.statSync(mp).size > 1e6 } catch {}
-  return { model: modelOk, modelPath: mp, exe: whisperExeSaved() }
+  const engine = await whisperDetect()
+  return { model: modelOk, modelPath: mp, engine, exe: engine }
 })
 
 ipcMain.handle('whisper-pick-exe', async () => {
@@ -999,8 +1023,8 @@ ipcMain.handle('whisper-cancel', () => {
 ipcMain.handle('whisper-transcribe', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
   if (whisperProc) return { error: 'busy' }
-  const exe = whisperExeSaved()
-  if (!exe || !fs.existsSync(exe)) return { error: 'no-engine' }
+  const exe = await whisperDetect()
+  if (!exe) return { error: 'no-engine' }
   const model = whisperModelPath(opts.model)
   if (!fs.existsSync(model)) return { error: 'no-model' }
   const src = opts.source
@@ -1127,23 +1151,17 @@ ipcMain.handle('whisper-delete-model', (e, m) => { try { fs.unlinkSync(whisperMo
 ipcMain.handle('whisper-clear-exe', () => { try { fs.unlinkSync(whisperCfgPath()) } catch {} return true })
 ipcMain.handle('whisper-reveal-dir', () => { try { shell.openPath(whisperDir()) } catch {} return true })
 
-// ---------- séparation de voix (IA) : retirer les voix d'une piste audio ----------
-// Moteur léger « audio-separator » (modèles MDX-Net ONNX via onnxruntime, sans
-// PyTorch). Installé à la demande via pip (Python détecté) ;
-// rien de bundlé. Le modèle ONNX (~66 Mo) est téléchargé par le moteur au 1er usage.
-// Résultat : l'instrumental (sans voix) devient une nouvelle piste audio du projet.
+// ---------- séparation de voix (IA) : gestionnaire de modèles MDX-Net ONNX ----------
+// Moteur « audio-separator » (onnxruntime, sans PyTorch) installé via pip au 1er modèle
+// installé (Python détecté). Les modèles ONNX sont téléchargés/gérés par l'app (dossier
+// dédié) : Installer = (moteur si absent) + télécharger le .onnx ; Désinstaller =
+// supprimer le .onnx. L'instrumental produit devient une piste audio du projet.
 let sepProc = null
+let sepAbort = null
 function sepCfgPath() { return path.join(app.getPath('userData'), 'sep-config.json') }
 function readSepCfg() { try { return JSON.parse(fs.readFileSync(sepCfgPath(), 'utf8')) } catch { return {} } }
 ipcMain.handle('sep-config-get', () => readSepCfg())
 ipcMain.handle('sep-config-set', (e, cfg) => { try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg || {}), 'utf8') } catch {} return true })
-ipcMain.handle('sep-pick-exe', async () => {
-  const r = await dialog.showOpenDialog(win, { title: 'audio-separator', properties: ['openFile'] })
-  if (r.canceled || !r.filePaths.length) return null
-  const cfg = readSepCfg(); cfg.exe = r.filePaths[0]; delete cfg.python
-  try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {}
-  return cfg.exe
-})
 // détection d'un interpréteur Python (pour installer/lancer le moteur via pip)
 function pythonInvoke(py) { return py === 'py' ? ['py', '-3'] : [py] }
 function detectPython() {
@@ -1163,41 +1181,67 @@ function detectPython() {
     tryNext()
   })
 }
-const sepReady = (cfg) => !!((cfg.exe && fs.existsSync(cfg.exe)) || cfg.python)
-ipcMain.handle('sep-status', async () => {
-  const cfg = readSepCfg()
-  const ready = sepReady(cfg)
-  const python = ready ? cfg.python || null : await detectPython()
-  return { ready, mode: cfg.exe ? 'exe' : cfg.python ? 'module' : null, python }
-})
-ipcMain.handle('sep-install', async () => {
-  if (sepProc) return { error: 'busy' }
+ipcMain.handle('detect-python', async () => ({ python: await detectPython() }))
+
+function sepModelsDir() { const d = path.join(app.getPath('userData'), 'sep-models'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
+const SEP_MODELS = [
+  { file: 'UVR-MDX-NET-Inst_HQ_3.onnx', estMB: 66, label: 'MDX-Net Inst HQ 3' },
+  { file: 'UVR-MDX-NET-Inst_HQ_4.onnx', estMB: 66, label: 'MDX-Net Inst HQ 4' },
+  { file: 'UVR_MDXNET_KARA_2.onnx', estMB: 51, label: 'MDX-Net Karaoké 2' },
+]
+const SEP_MODEL_URL = (f) => `https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/${f}`
+ipcMain.handle('sep-list-models', () => SEP_MODELS.map((m) => {
+  const p = path.join(sepModelsDir(), m.file)
+  let sizeMB = 0, present = false
+  try { const st = fs.statSync(p); if (st.size > 1e6) { present = true; sizeMB = Math.round(st.size / 1e6) } } catch {}
+  return { model: m.file, label: m.label, present, sizeMB, estMB: m.estMB }
+}))
+ipcMain.handle('sep-delete-model', (e, file) => { try { fs.unlinkSync(path.join(sepModelsDir(), path.basename(file))) } catch {} return true })
+function sepPkgImportable(py) {
+  return new Promise((resolve) => {
+    const inv = pythonInvoke(py)
+    let p
+    try { p = spawn(inv[0], [...inv.slice(1), '-c', 'import audio_separator'], { stdio: 'ignore' }) } catch { return resolve(false) }
+    p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false))
+  })
+}
+ipcMain.handle('sep-install-model', async (e, file) => {
+  if (sepProc || sepAbort) return { error: 'busy' }
   const py = await detectPython()
   if (!py) return { error: 'no-python' }
   const inv = pythonInvoke(py)
-  return await new Promise((resolve) => {
-    let tail = ''
-    try { sepProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', 'install', '--user', '-U', 'audio-separator[cpu]'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
-    catch { sepProc = null; return resolve({ error: 'spawn' }) }
-    const on = (d) => {
-      const s = String(d); tail = (tail + s).slice(-4000)
-      const line = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop()
-      if (line && win && !win.isDestroyed()) win.webContents.send('sep-progress', { phase: 'install', text: line.slice(0, 120) })
-    }
-    sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
-    sepProc.on('close', (code) => {
-      sepProc = null
-      if (code === 0) {
-        const cfg = readSepCfg(); cfg.python = py; delete cfg.exe; delete cfg.module
-        try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {}
-        resolve({ ok: true })
-      } else resolve({ error: tail.slice(-400) || 'install-failed' })
+  // 1) moteur audio-separator si absent (pip)
+  if (!(await sepPkgImportable(py))) {
+    const okEng = await new Promise((resolve) => {
+      let tail = ''
+      try { sepProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', 'install', '--user', '-U', 'audio-separator[cpu]'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
+      catch { sepProc = null; return resolve(false) }
+      const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const line = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop(); if (line && win && !win.isDestroyed()) win.webContents.send('sep-progress', { phase: 'install', text: line.slice(0, 120) }) }
+      sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
+      sepProc.on('close', (c) => { sepProc = null; resolve(c === 0) })
+      sepProc.on('error', () => { sepProc = null; resolve(false) })
     })
-    sepProc.on('error', () => { sepProc = null; resolve({ error: 'spawn' }) })
-  })
+    if (!okEng) return { error: 'engine-install-failed' }
+  }
+  const cfg = readSepCfg(); if (cfg.python !== py) { cfg.python = py; try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {} }
+  // 2) téléchargement du modèle .onnx (géré par l'app)
+  const out = path.join(sepModelsDir(), path.basename(file))
+  if (fs.existsSync(out) && fs.statSync(out).size > 1e6) return { ok: true, cached: true }
+  const tmp = out + '.part'
+  sepAbort = new AbortController()
+  try {
+    const res = await fetch(SEP_MODEL_URL(file), { signal: sepAbort.signal, headers: { 'User-Agent': 'LibreRythmo' } })
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status)
+    const total = Number(res.headers.get('content-length')) || 0
+    const ws = fs.createWriteStream(tmp); const reader = res.body.getReader(); let got = 0
+    for (;;) { const { done, value } = await reader.read(); if (done) break; ws.write(Buffer.from(value)); got += value.length; if (win && !win.isDestroyed()) win.webContents.send('sep-progress', { phase: 'download', pct: total ? Math.round((got / total) * 100) : 0 }) }
+    await new Promise((r2, rj) => { ws.end(() => r2()); ws.on('error', rj) })
+    fs.renameSync(tmp, out); sepAbort = null
+    return { ok: true }
+  } catch (err) { sepAbort = null; try { fs.unlinkSync(tmp) } catch {}; return { error: String((err && err.message) || err) } }
 })
 // script Python exécuté pour la séparation MDX (audio-separator, stem instrumental)
-const SEP_PY = "import sys\nfrom audio_separator.separator import Separator\ninp, out, model = sys.argv[1], sys.argv[2], sys.argv[3]\ns = Separator(output_dir=out, output_format='WAV', output_single_stem='Instrumental')\ns.load_model(model_filename=model)\ns.separate(inp)\n"
+const SEP_PY = "import sys\nfrom audio_separator.separator import Separator\ninp, out, mdir, model = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]\ns = Separator(output_dir=out, model_file_dir=mdir, output_format='WAV', output_single_stem='Instrumental')\ns.load_model(model_filename=model)\ns.separate(inp)\n"
 function sepDir(projectPath) {
   const base = projectPath ? path.join(path.dirname(projectPath), 'separated') : path.join(appBaseDir(), 'cache', 'separated')
   try { fs.mkdirSync(base, { recursive: true }); return base } catch {}
@@ -1219,15 +1263,23 @@ function findFileRec(dir, rx) {
   walk(dir)
   return best
 }
-ipcMain.handle('sep-cancel', () => { try { if (sepProc) sepProc.kill() } catch {} sepProc = null; return true })
+ipcMain.handle('sep-cancel', () => {
+  try { if (sepAbort) sepAbort.abort() } catch {}
+  try { if (sepProc) sepProc.kill() } catch {}
+  sepAbort = null; sepProc = null
+  return true
+})
 ipcMain.handle('sep-run', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
   if (sepProc) return { error: 'busy' }
   const cfg = readSepCfg()
-  if (!sepReady(cfg)) return { error: 'no-engine' }
+  const model = opts.model || (SEP_MODELS[0] && SEP_MODELS[0].file)
+  const mdir = sepModelsDir()
+  if (!model || !fs.existsSync(path.join(mdir, model))) return { error: 'no-model' }
+  const py = cfg.python || (await detectPython())
+  if (!py) return { error: 'no-engine' }
   const src = opts.source
   if (!src || !fs.existsSync(src)) return { error: 'no-source' }
-  const model = opts.model || 'UVR-MDX-NET-Inst_HQ_3.onnx'
   const base = `lr-sep-${Date.now()}`
   const wav = path.join(app.getPath('temp'), base + '.wav')
   // 1) extraction de la piste audio ciblée en WAV stéréo qualité
@@ -1239,9 +1291,8 @@ ipcMain.handle('sep-run', async (e, opts) => {
   // 2) séparation MDX (audio-separator, stem instrumental) → un fichier (Instrumental)
   const outDir = path.join(app.getPath('temp'), base + '-out')
   try { fs.mkdirSync(outDir, { recursive: true }) } catch {}
-  let cmd, args
-  if (cfg.python) { const inv = pythonInvoke(cfg.python); cmd = inv[0]; args = [...inv.slice(1), '-c', SEP_PY, wav, outDir, model] }
-  else { cmd = cfg.exe; args = [wav, '--model_filename', model, '--output_dir', outDir, '--output_format', 'WAV', '--single_stem', 'Instrumental'] }
+  const inv = pythonInvoke(py)
+  const cmd = inv[0], args = [...inv.slice(1), '-c', SEP_PY, wav, outDir, mdir, model]
   return await new Promise((resolve) => {
     let tail = ''
     try { sepProc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }) }

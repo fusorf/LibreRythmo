@@ -316,8 +316,6 @@
         <button id="trOpenSettings" class="primary">Ouvrir les Paramètres…</button>
       </div>
       <div id="trReady" class="detect-row">
-        <label id="trModelLabel" for="trModel">Modèle</label>
-        <select id="trModel"></select>
         <label id="trLangLabel" for="trLang">Langue</label>
         <select id="trLang">
           <option value="auto" selected>auto</option>
@@ -363,35 +361,15 @@
       </fieldset>
 
       <fieldset class="opt-group set-block">
-        <legend id="setTrLegend">Transcription (IA) — optionnel</legend>
-        <p id="setTrHint" class="modal-hint">Génère le texte depuis l'audio (whisper.cpp). Rien n'est inclus : moteur fourni une fois, modèles installés à la demande ci-dessous.</p>
-        <div class="set-row">
-          <span id="setTrEngine" class="dim-val"></span>
-          <div class="spacer"></div>
-          <button id="setTrReveal" title="Ouvrir le dossier où sont téléchargés les modèles">Dossier des modèles</button>
-          <button id="setTrPick">Moteur…</button>
-          <button id="setTrClear">Effacer</button>
-        </div>
+        <legend id="setTrLegend">Transcription (IA)</legend>
         <div id="trModelList" class="model-list"></div>
+        <label><span id="setTrActiveLabel">Modèle actif</span> <select id="trActive"></select></label>
       </fieldset>
 
       <fieldset class="opt-group set-block">
-        <legend id="setSepLegend">Séparation de voix (IA) — optionnel</legend>
-        <p id="setSepHint" class="modal-hint">Retire les voix d'une piste (ajoute un instrumental). Installe le moteur ci-dessous ; le modèle (~66 Mo) se télécharge au 1er usage.</p>
-        <div class="set-row">
-          <span id="setSepEngine" class="dim-val"></span>
-          <div class="spacer"></div>
-          <button id="setSepInstall" class="primary">Installer</button>
-          <button id="setSepPick">Choisir le moteur…</button>
-          <button id="setSepClear">Effacer</button>
-        </div>
-        <label><span id="setSepModelLabel">Modèle</span>
-          <select id="sepModel">
-            <option value="UVR-MDX-NET-Inst_HQ_3.onnx" selected>MDX-Net Inst HQ (~66 Mo, recommandé)</option>
-            <option value="UVR-MDX-NET-Inst_HQ_4.onnx">MDX-Net Inst HQ 4 (~66 Mo)</option>
-            <option value="UVR_MDXNET_KARA_2.onnx">MDX-Net Karaoké (~50 Mo)</option>
-          </select>
-        </label>
+        <legend id="setSepLegend">Séparation de voix (IA)</legend>
+        <div id="sepModelList" class="model-list"></div>
+        <label><span id="setSepActiveLabel">Modèle actif</span> <select id="sepActive"></select></label>
       </fieldset>
 
       <div class="set-row">

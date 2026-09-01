@@ -180,16 +180,16 @@ const TESTS = [
     project.videoPath = null
     return open
   })()`],
-  ['A4 modal redirects to Settings when not configured', `(async () => {
+  ['A4 modal shows exactly one coherent state (ready xor not-ready)', `(async () => {
     if (typeof openTranscribeDialog !== 'function') return true
-    await window.api.whisperClearExe()
     project.videoPath = 'X:/fake.mp4'
     await openTranscribeDialog()
-    const notReady = !document.getElementById('trNotReady').classList.contains('hidden')
+    const nr = !document.getElementById('trNotReady').classList.contains('hidden')
+    const rd = !document.getElementById('trReady').classList.contains('hidden')
     const goHidden = document.getElementById('trGo').classList.contains('hidden')
     document.getElementById('transcribeModal').classList.add('hidden')
     project.videoPath = null
-    return notReady && goHidden
+    return (nr !== rd) && (nr ? goHidden : !goHidden) // état cohérent quel que soit la config
   })()`],
   ['Long normal scene is not flagged (OUT-short still is)', `(() => {
     if (typeof loopWarn !== 'function') return true
@@ -234,17 +234,15 @@ const TESTS = [
     return ok
   })()`],
   // --- Voice removal (separation) ---
-  ['Sep status shape', `(async () => {
-    if (!window.api.sepStatus) return true
-    const s = await window.api.sepStatus()
-    return s && typeof s === 'object' && ('ready' in s) && ('python' in s)
+  ['Sep model list shape', `(async () => {
+    if (!window.api.sepListModels) return true
+    const m = await window.api.sepListModels()
+    return Array.isArray(m) && m.length >= 1 && ('present' in m[0]) && ('model' in m[0]) && ('estMB' in m[0])
   })()`],
-  ['Sep config roundtrip + no-engine degrade', `(async () => {
-    if (!window.api.sepConfigGet) return true
-    await window.api.sepConfigSet({ exe: null, python: null, module: null, model: 'UVR-MDX-NET-Inst_HQ_4.onnx' })
-    const c = await window.api.sepConfigGet()
+  ['Sep run degrades without installed model', `(async () => {
+    if (!window.api.sepRun) return true
     const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'UVR-MDX-NET-Inst_HQ_3.onnx' })
-    return c && c.model === 'UVR-MDX-NET-Inst_HQ_4.onnx' && r && r.error === 'no-engine'
+    return r && r.error === 'no-model'
   })()`],
 ]
 
