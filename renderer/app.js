@@ -115,7 +115,7 @@ function recomputePps() {
 // Hauteur de piste FIXE : une piste a toujours la même hauteur. Moins de pistes =
 // bande plus courte en bas (la vidéo récupère la place).
 const LANE_H = 76
-const NEW_LINE_DUR = 1 // durée (s) par défaut d'une nouvelle réplique
+const NEW_LINE_DUR = 0.25 // durée (s) par défaut d'une nouvelle réplique (1/4 de 1 s)
 const bandHeightFor = (n) => Math.round(RULER_H + n * LANE_H)
 
 // Panneau du bas redimensionnable. Une poignée unique en haut du dock (#panelResizer,
@@ -4324,7 +4324,7 @@ $('btnAddLine').addEventListener('click', () => {
 // (kind='reac' pour le DETX), sans flèche entrée/sortie par défaut — comme une
 // réplique normale, l'utilisateur les ajoute s'il le souhaite. Insertion à la
 // palette « Réactions » ou directement par la touche du lexique.
-const REAC_DUR = 0.8 // durée par défaut d'une réac insérée
+const REAC_DUR = 0.2 // durée par défaut d'une réac insérée (1/4 de 0,8 s)
 const onomaPop = $('onomaPop')
 
 // token écrit dans le projet/DETX, dans la langue courante
