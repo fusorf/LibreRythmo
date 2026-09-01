@@ -166,6 +166,26 @@ const TESTS = [
     const l = project.lines[0]
     return okUI && l.take === 't1' && l.takes.length === 1
   })()`],
+  // --- A4 whisper transcription (experimental; engine not present in test env) ---
+  ['A4 whisper status shape', `(async () => {
+    if (!window.api.whisperStatus) return true
+    const st = await window.api.whisperStatus('base')
+    return st && typeof st === 'object' && ('model' in st) && ('exe' in st)
+  })()`],
+  ['A4 transcribe degrades without engine', `(async () => {
+    if (!window.api.whisperTranscribe) return true
+    const r = await window.api.whisperTranscribe({ source: 'C:/nope.mp4', model: 'base', language: 'auto' })
+    return r && typeof r.error === 'string'
+  })()`],
+  ['A4 dialog opens with a video', `(() => {
+    if (typeof openTranscribeDialog !== 'function') return true
+    project.videoPath = 'X:/fake.mp4'
+    openTranscribeDialog()
+    const open = !document.getElementById('transcribeModal').classList.contains('hidden')
+    document.getElementById('transcribeModal').classList.add('hidden')
+    project.videoPath = null
+    return open
+  })()`],
 ]
 
 function getJson() {

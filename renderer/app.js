@@ -469,6 +469,13 @@ function applyLang() {
   $('btnPlayTake').title = t('recPlay')
   $('btnDelTake').title = t('recDel')
   $('btnMonitor').title = t('recMonitor')
+  $('trTitle').textContent = t('trTitle')
+  $('trHint').textContent = t('trHint')
+  $('trModelLabel').textContent = t('trModelLabel')
+  $('trLangLabel').textContent = t('trLangLabel')
+  $('trPickExe').textContent = t('trPickExe')
+  $('trClose').textContent = t('close')
+  $('trGo').textContent = t('trGoBtn')
   $('btnTogglePanel').textContent = t('panelToggle')
   $('btnTogglePanel').title = t('panelToggleTitle')
   $('btnToggleLines').textContent = t('linesTitle')
@@ -1125,6 +1132,75 @@ $('btnMonitor').addEventListener('click', () => {
   $('btnMonitor').classList.toggle('active', recorder.monitor)
   if (!recorder.monitor) stopAllTakeAudio()
 })
+
+
+// ============================================================ A4 — transcription assistée (expérimental)
+// Génère le texte depuis l'audio via whisper.cpp (moteur fourni par l'utilisateur,
+// modèle téléchargé à la demande — rien de bundlé). Le résultat SRT est importé par
+// importSubsText (circuit éprouvé). Dégrade proprement si le moteur est absent.
+const trModal = $('transcribeModal')
+let trBusy = false
+
+async function refreshWhisperStatus() {
+  const st = await window.api.whisperStatus($('trModel').value)
+  $('trEngine').textContent = st.exe ? t('trEngineOk') : t('trEngineMissing')
+  return st
+}
+function openTranscribeDialog() {
+  if (!project.videoPath) { toast(t('trNeedVideo')); return }
+  trModal.classList.remove('hidden')
+  $('trBar').style.width = '0%'
+  $('trStatus').textContent = ''
+  refreshWhisperStatus()
+}
+function closeTranscribe() { if (!trBusy) trModal.classList.add('hidden') }
+
+$('trModel').addEventListener('change', refreshWhisperStatus)
+$('trPickExe').addEventListener('click', async () => {
+  const exe = await window.api.whisperPickExe()
+  await refreshWhisperStatus()
+  if (exe) toast(t('trEngineSet'))
+})
+$('trClose').addEventListener('click', () => {
+  if (trBusy) { window.api.whisperCancel(); trBusy = false; $('trStatus').textContent = t('trCancelled'); $('trClose').textContent = t('close'); $('trGo').disabled = false }
+  else closeTranscribe()
+})
+$('trGo').addEventListener('click', runTranscribe)
+window.api.onWhisperProgress((p) => {
+  if (!p) return
+  $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'
+  $('trStatus').textContent = p.phase === 'download' ? t('trDownloading', p.pct || 0) : t('trTranscribing', p.pct || 0)
+})
+
+async function runTranscribe() {
+  if (trBusy) return
+  const model = $('trModel').value
+  const lang = $('trLang').value
+  const st = await window.api.whisperStatus(model)
+  if (!st.exe) { toast(t('trEngineMissing')); return }
+  trBusy = true; $('trGo').disabled = true; $('trClose').textContent = t('cancel')
+  try {
+    if (!st.model) {
+      $('trStatus').textContent = t('trDownloading', 0)
+      const dl = await window.api.whisperDownloadModel(model)
+      if (!dl || dl.error) { $('trStatus').textContent = t('trFailed'); toast(t('trFailed')); return }
+    }
+    $('trStatus').textContent = t('trTranscribing', 0)
+    const r = await window.api.whisperTranscribe({ source: project.videoPath, model, language: lang })
+    if (!r || r.error) {
+      const map = { 'no-engine': 'trEngineMissing', 'no-source': 'trNeedVideo' }
+      toast(t(map[r && r.error] || 'trFailed'))
+      $('trStatus').textContent = t('trFailed')
+      return
+    }
+    importSubsText(r.srt || '')
+    $('trBar').style.width = '100%'
+    $('trStatus').textContent = t('trDone')
+    trModal.classList.add('hidden')
+  } finally {
+    trBusy = false; $('trGo').disabled = false; $('trClose').textContent = t('close')
+  }
+}
 
 $('btnToggleLines').addEventListener('click', () => {
   const panel = $('linesPanel')
@@ -4716,6 +4792,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'export-pdf') exportPdfDialog()
   else if (action === 'export-presence') exportWorkDoc('presence')
   else if (action === 'export-tally') exportWorkDoc('tally')
+  else if (action === 'transcribe') openTranscribeDialog()
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
   else if (action === 'set-lang') setLanguage(arg)

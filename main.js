@@ -277,6 +277,7 @@ const MENU_STR = {
     workDocs: 'Documents de travail (PDF)',
     docPresence: 'Grille de présence…',
     docTally: 'Relevé de lignes…',
+    transcribe: 'Transcription assistée (expérimental)…',
     quit: 'Quitter',
     edit: 'Édition',
     undo: 'Annuler',
@@ -350,6 +351,7 @@ const MENU_STR = {
     workDocs: 'Work documents (PDF)',
     docPresence: 'Presence grid…',
     docTally: 'Line tally…',
+    transcribe: 'Assisted transcription (experimental)…',
     quit: 'Quit',
     edit: 'Edit',
     undo: 'Undo',
@@ -462,6 +464,8 @@ function buildMenu() {
             { label: s.docTally, click: () => send('export-tally') },
           ],
         },
+        { type: 'separator' },
+        { label: s.transcribe, click: () => send('transcribe') },
         { type: 'separator' },
         { label: s.quit, role: 'quit' },
       ],
@@ -907,6 +911,125 @@ ipcMain.handle('take-url', (e, projectPath, name) => {
 ipcMain.handle('delete-take', (e, projectPath, name) => {
   try { fs.unlinkSync(path.join(takesDir(projectPath), path.basename(name))) } catch {}
   return true
+})
+
+// ---------- A4 (expérimental) : transcription assistée via whisper.cpp ----------
+// Rien n'est bundlé (cohérence/poids) : le modèle est téléchargé à la demande et le
+// moteur whisper.cpp doit être fourni par l'utilisateur (exécutable choisi une fois).
+// Le résultat est produit en SRT puis importé par le circuit d'import sous-titres
+// existant (déjà éprouvé). Modèles ggml : HuggingFace ggerganov/whisper.cpp.
+let whisperProc = null
+let whisperAbort = null
+function whisperDir() {
+  const d = path.join(app.getPath('userData'), 'whisper-models')
+  try { fs.mkdirSync(d, { recursive: true }) } catch {}
+  return d
+}
+const whisperCfgPath = () => path.join(app.getPath('userData'), 'whisper.json')
+function whisperExeSaved() {
+  try { return JSON.parse(fs.readFileSync(whisperCfgPath(), 'utf8')).exe || null } catch { return null }
+}
+function whisperModelPath(model) {
+  return path.join(whisperDir(), `ggml-${String(model).replace(/[^a-z0-9.\-]/gi, '')}.bin`)
+}
+
+ipcMain.handle('whisper-status', (e, model) => {
+  const mp = whisperModelPath(model)
+  let modelOk = false
+  try { modelOk = fs.existsSync(mp) && fs.statSync(mp).size > 1e6 } catch {}
+  return { model: modelOk, modelPath: mp, exe: whisperExeSaved() }
+})
+
+ipcMain.handle('whisper-pick-exe', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'whisper.cpp', properties: ['openFile'] })
+  if (r.canceled || !r.filePaths.length) return null
+  const exe = r.filePaths[0]
+  try { fs.writeFileSync(whisperCfgPath(), JSON.stringify({ exe }), 'utf8') } catch {}
+  return exe
+})
+
+ipcMain.handle('whisper-download-model', async (e, model) => {
+  const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${model}.bin`
+  const out = whisperModelPath(model)
+  if (fs.existsSync(out) && fs.statSync(out).size > 1e6) return { ok: true, path: out, cached: true }
+  const tmp = out + '.part'
+  whisperAbort = new AbortController()
+  try {
+    const res = await fetch(url, { signal: whisperAbort.signal, headers: { 'User-Agent': 'LibreRythmo' } })
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status)
+    const total = Number(res.headers.get('content-length')) || 0
+    const ws = fs.createWriteStream(tmp)
+    const reader = res.body.getReader()
+    let got = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      ws.write(Buffer.from(value))
+      got += value.length
+      if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'download', pct: total ? Math.round((got / total) * 100) : 0 })
+    }
+    await new Promise((r2, rj) => { ws.end(() => r2()); ws.on('error', rj) })
+    fs.renameSync(tmp, out)
+    whisperAbort = null
+    return { ok: true, path: out }
+  } catch (err) {
+    whisperAbort = null
+    try { fs.unlinkSync(tmp) } catch {}
+    return { error: String((err && err.message) || err) }
+  }
+})
+
+ipcMain.handle('whisper-cancel', () => {
+  try { if (whisperAbort) whisperAbort.abort() } catch {}
+  try { if (whisperProc) whisperProc.kill() } catch {}
+  whisperAbort = null; whisperProc = null
+  return true
+})
+
+ipcMain.handle('whisper-transcribe', async (e, opts) => {
+  if (!ffmpegPath) return { error: 'no-ffmpeg' }
+  if (whisperProc) return { error: 'busy' }
+  const exe = whisperExeSaved()
+  if (!exe || !fs.existsSync(exe)) return { error: 'no-engine' }
+  const model = whisperModelPath(opts.model)
+  if (!fs.existsSync(model)) return { error: 'no-model' }
+  const src = opts.source
+  if (!src || !fs.existsSync(src)) return { error: 'no-source' }
+  // 1) extraction audio 16 kHz mono WAV (format attendu par whisper.cpp)
+  const wav = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.wav`)
+  const ok = await new Promise((resolve) => {
+    const p = spawn(ffmpegPath, ['-y', '-i', src, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { stdio: 'ignore' })
+    p.on('close', (c) => resolve(c === 0))
+    p.on('error', () => resolve(false))
+  })
+  if (!ok) return { error: 'extract-failed' }
+  // 2) exécution du moteur → SRT
+  const outBase = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}`)
+  const lang = opts.language || 'auto'
+  const args = ['-m', model, '-f', wav, '-l', lang, '-osrt', '-of', outBase]
+  return await new Promise((resolve) => {
+    let tail = ''
+    whisperProc = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const onData = (d) => {
+      const s = String(d); tail = (tail + s).slice(-4000)
+      const m = s.match(/(\d+)%/)
+      if (m && win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'transcribe', pct: Number(m[1]) })
+    }
+    whisperProc.stdout.on('data', onData)
+    whisperProc.stderr.on('data', onData)
+    whisperProc.on('close', (code) => {
+      whisperProc = null
+      try { fs.unlinkSync(wav) } catch {}
+      const srtPath = outBase + '.srt'
+      if (code === 0 && fs.existsSync(srtPath)) {
+        let srt = ''
+        try { srt = fs.readFileSync(srtPath, 'utf8') } catch {}
+        try { fs.unlinkSync(srtPath) } catch {}
+        resolve({ ok: true, srt })
+      } else resolve({ error: tail.slice(-300) || 'transcribe-failed' })
+    })
+    whisperProc.on('error', () => { whisperProc = null; resolve({ error: 'engine-spawn-failed' }) })
+  })
 })
 
 // ---------- proxy vidéo (cache portable basse résolution H.264) ----------
