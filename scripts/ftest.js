@@ -186,6 +186,11 @@ const TESTS = [
     project.videoPath = null
     return open
   })()`],
+  ['Long normal scene is not flagged (OUT-short still is)', `(() => {
+    if (typeof loopWarn !== 'function') return true
+    return loopWarn({ type: 'normal', start: 0, end: 300 }) === false
+      && loopWarn({ type: 'out', start: 0, end: 5 }) === true
+  })()`],
   // --- Capture device selector + settings ---
   ['Cap audio-config roundtrip', `(async () => {
     if (!window.api.audioConfigSet) return true

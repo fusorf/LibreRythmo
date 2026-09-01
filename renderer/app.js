@@ -90,10 +90,9 @@ function newProject() {
   return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], rtl: false, cues: [], bookmarks: [] }
 }
 
-// Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
-// doublage FR : on alerte au-delà de ~50 s pour une boucle normale, et en deçà de
-// 30 s pour un segment OUT (qui doit rester long et d'un seul tenant).
-const LOOP_WARN_SEC = 50
+// Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
+// doublage FR : un segment OUT doit rester long (≥ 30 s) et d'un seul tenant. Une
+// scène normale peut durer autant que voulu — on ne signale pas les scènes longues.
 const LOOP_OUT_MIN_SEC = 30
 const LOOP_DEFAULT_SEC = 40 // longueur par défaut d'une nouvelle boucle
 
@@ -1919,10 +1918,10 @@ function loopStats(lp) {
   return { lines: inScene.length, chars: new Set(inScene.map((l) => l.characterId)).size }
 }
 
-// une boucle est « hors normes » : normale trop longue, ou OUT trop courte
+// une boucle est « hors normes » uniquement si un segment OUT est trop court. Une
+// scène normale n'est jamais signalée, même très longue (ce n'est pas un problème).
 function loopWarn(lp) {
-  if (lp.type === 'out') return loopDur(lp) < LOOP_OUT_MIN_SEC
-  return loopDur(lp) > LOOP_WARN_SEC
+  return lp.type === 'out' && loopDur(lp) < LOOP_OUT_MIN_SEC
 }
 
 function addLoopAtPlayhead() {
@@ -2006,7 +2005,7 @@ function renderLoopsPanel() {
     const dur = document.createElement('span')
     dur.className = 'lp-dur' + (loopWarn(lp) ? ' warn' : '')
     dur.textContent = formatTcShort(loopDur(lp))
-    dur.title = loopWarn(lp) ? (lp.type === 'out' ? t('loopOutTooShort', LOOP_OUT_MIN_SEC) : t('loopTooLong', LOOP_WARN_SEC)) : ''
+    dur.title = loopWarn(lp) ? t('loopOutTooShort', LOOP_OUT_MIN_SEC) : ''
     const cnt = document.createElement('span')
     cnt.className = 'lp-count'
     cnt.textContent = t('loopStatLines', st.lines)
