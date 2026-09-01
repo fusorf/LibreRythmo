@@ -963,6 +963,17 @@ function resetMic() {
   recorder.stream = null; recorder.ac = null; recorder.analyser = null; recorder.procStream = null
 }
 
+// crée un AudioContext calé sur la fréquence d'échantillonnage réelle de l'entrée.
+// Sinon, si le périphérique (ex. MOTU à 44,1 kHz) diffère du taux par défaut du
+// contexte (souvent 48 kHz), le MediaStreamAudioSourceNode n'est pas rééchantillonné
+// par Chromium → la voix est transposée (pitch up/down).
+function makeAcForStream(stream) {
+  const AC = window.AudioContext || window.webkitAudioContext
+  let rate = 0
+  try { const s = stream.getAudioTracks()[0].getSettings(); rate = s && s.sampleRate } catch {}
+  try { return rate ? new AC({ sampleRate: rate }) : new AC() } catch { return new AC() }
+}
+
 // micro mono (ex. « in 1L » d'une MOTU, présent sur le seul canal gauche) → dual-mono :
 // on duplique le canal 0 sur L et R pour l'entendre au centre (deux oreilles)
 function toDualMono(ac, node) {
@@ -989,7 +1000,7 @@ async function ensureMic() {
     }
   } catch (e) { toast(t('recMicDenied')); return null }
   try {
-    recorder.ac = new (window.AudioContext || window.webkitAudioContext)()
+    recorder.ac = makeAcForStream(recorder.stream) // même taux que l'entrée (sinon pitch)
     const src = recorder.ac.createMediaStreamSource(recorder.stream)
     const mono = toDualMono(recorder.ac, src) // enregistre en dual-mono (L+R)
     recorder.analyser = recorder.ac.createAnalyser()
@@ -1457,7 +1468,7 @@ let outTestState = null
 function stopOutputTest() {
   if (!outTestState) return
   cancelAnimationFrame(outTestState.raf)
-  try { outTestState.audioEl.pause(); outTestState.audioEl.srcObject = null } catch {}
+  try { if (outTestState.audioEl) { outTestState.audioEl.pause(); outTestState.audioEl.srcObject = null } } catch {}
   try { outTestState.stream.getTracks().forEach((tr) => tr.stop()) } catch {}
   try { outTestState.ac.close() } catch {}
   $('outMeterFill').style.width = '0%'
@@ -1478,15 +1489,24 @@ async function toggleOutputTest() {
       ? await getAudio({ ...base, deviceId: { exact: audioCfg.device } }).catch(() => getAudio(base))
       : await getAudio(base)
   } catch { toast(t('recMicDenied')); return }
-  const ac = new AC()
+  const ac = makeAcForStream(stream) // même taux que l'entrée (sinon pitch)
   const src = ac.createMediaStreamSource(stream)
   const mono = toDualMono(ac, src) // mono (canal gauche) entendu sur L et R
   const analyser = ac.createAnalyser(); analyser.fftSize = 512
-  const dest = ac.createMediaStreamDestination()
-  mono.connect(analyser); analyser.connect(dest) // on ne connecte PAS ac.destination (évite le doublon sur la sortie par défaut)
-  const audioEl = new Audio(); audioEl.srcObject = dest.stream
-  try { if (audioEl.setSinkId && audioCfg.output) await audioEl.setSinkId(audioCfg.output) } catch {}
-  try { await audioEl.play() } catch {}
+  mono.connect(analyser)
+  let audioEl = null
+  if (typeof ac.setSinkId === 'function') {
+    // route direct vers la sortie choisie : évite le MediaStreamDestination + <audio>,
+    // autre cause possible de transposition (pitch)
+    try { if (audioCfg.output) await ac.setSinkId(audioCfg.output) } catch {}
+    analyser.connect(ac.destination)
+  } else {
+    const dest = ac.createMediaStreamDestination()
+    analyser.connect(dest)
+    audioEl = new Audio(); audioEl.srcObject = dest.stream
+    try { if (audioEl.setSinkId && audioCfg.output) await audioEl.setSinkId(audioCfg.output) } catch {}
+    try { await audioEl.play() } catch {}
+  }
   const buf = new Uint8Array(analyser.frequencyBinCount)
   const fill = $('outMeterFill')
   const tick = () => {
