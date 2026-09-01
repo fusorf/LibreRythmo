@@ -3,6 +3,39 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [3.0.0] - 2026-09-01
+
+**« De la préparation à la performance »** — LibreRythmo passe d'éditeur de rythmo à
+logiciel de fandub complet : vidéo → détection → texte → calage → enregistrement → export.
+
+### Nouveautés
+
+- **Enregistrement des voix + plusieurs prises par réplique** : on enregistre sa voix
+  directement sur la bande qui défile (micro, pré-roll), plusieurs prises par réplique,
+  sélection de la prise retenue, vu-mètre d'entrée, écoute d'une prise et **monitoring**
+  (entendre les prises retenues en synchro pendant la lecture). Les fichiers audio sont
+  des sidecars portables (dossier `takes/` à côté du projet). La prise retenue est
+  **mixée au composite à l'export**.
+- **Signes de détection** : palette de signes articulatoires (labiale, labio-dentale,
+  arrondie, ouverture, dentale, vélaire, nasale, semi-voyelle) posés sur les syllabes
+  au clic ou au clavier ; rendus sur la bande (éditeur, export, plein écran). Pensé pour
+  se former à la détection.
+- **Sens de lecture RTL** (arabe, hébreu) : texte des répliques rendu droite→gauche,
+  champs d'édition et incrustation sous-titre bascule en RTL.
+- **Documents de travail (PDF)** : grille de présence (personnages × scènes) et relevé
+  de lignes par personnage, pour organiser une session d'enregistrement.
+- **Repères ADR** : streamers (barre de balayage) et punches (flash) posés sur l'image,
+  pour lancer le comédien sans lip-sync (voice-over, audiodescription, localisation).
+- **Transcription assistée** (expérimental) : génère le texte depuis l'audio via
+  whisper.cpp — modèle téléchargé à la demande, moteur fourni par l'utilisateur, rien
+  n'est inclus dans l'application.
+- **Confort** : recherche rapide et **fusion de personnages**, **zoom sur l'image**
+  (Ctrl+molette, glisser, double-clic pour réinitialiser), **signets** libres
+  (Ctrl+B ; Ctrl+, / Ctrl+. pour naviguer) distincts des scènes et des plans.
+
+Le format `.rythmo` s'étend (prises, signes de détection, repères ADR, signets, sens de
+lecture) en restant rétrocompatible : les anciens projets s'ouvrent inchangés.
+
 ## [2.7.4] - 2026-08-31
 
 ### Ajustements

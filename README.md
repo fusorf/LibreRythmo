@@ -1,6 +1,6 @@
 # <img src="assets/icon.png" width="32" alt="" valign="middle"> LibreRythmo
 
-Free, open-source rythmo band editor for dubbing — sync dialogue to picture frame by frame, then export a composited video or a DETX.
+Free, open-source rythmo band editor for dubbing — sync dialogue to picture frame by frame, place detection marks, record the voices, then export a composited video or a DETX.
 
 [![Latest release](https://img.shields.io/github/v/release/fusorf/LibreRythmo?label=download)](https://github.com/fusorf/LibreRythmo/releases/latest)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
@@ -18,6 +18,13 @@ Free, open-source rythmo band editor for dubbing — sync dialogue to picture fr
 - **Smooth playback** — a 720p H.264 proxy is generated in the background and cached, so 4K/HEVC sources scrub smoothly and play in any codec; the export always re-renders from the full-quality source.
 - **Fullscreen playback (F5)** — video + composited band with auto-hiding controls: play, scene jump, loop a scene, band zoom.
 - **Import / export** — DETX (Joker / Cappella), SRT / ASS / VTT in (corrected-subtitle re-import for SRT), PDF script and DETX out, MP4 composite with GPU encoding (NVENC / QuickSync / AMF, x264 fallback), an output frame-rate dropdown, and a choice of tracks, scenes and audio track.
+- **Voice recording** — record takes right on the scrolling band (input meter, pre-roll), keep several takes per line and pick the keeper, preview and monitor them in sync during playback; retained takes are mixed into the MP4 export. Takes are portable sidecar files next to the project (`takes/`).
+- **Detection marks** — a palette of articulatory signs (labial, labiodental, rounded, open, dental, velar, nasal, glide) placed on syllables by click or key, drawn on the band (editor, export, fullscreen) — to learn and practise dubbing detection.
+- **ADR cues** — streamers (sweeping wipe) and punches (flash) over the picture, to cue the actor without lip-sync (voice-over, audio description, game localization).
+- **Work documents (PDF)** — a presence grid (characters × scenes) and a per-character line tally to organize a recording session.
+- **Right-to-left** — Arabic / Hebrew reading direction for the band text and editing fields.
+- **Assisted transcription** *(experimental)* — bootstrap the text from the audio with whisper.cpp; the model is downloaded on demand and the engine is user-provided — nothing is bundled.
+- **Quality of life** — character quick-search and merge, image zoom (Ctrl+wheel), free bookmarks distinct from scenes/shots.
 - **Projects** — single-file `.rythmo` (JSON), autosave, recent projects, undo/redo, dark/light themes, English/French UI, optional Discord Rich Presence.
 
 | Fullscreen playback (F5) | Audio & video tracks | MP4 export |
@@ -44,6 +51,7 @@ Press `F1` in the app for the full shortcut list.
 | `Page Up` / `Page Down` | Previous / next scene |
 | `F5` | Fullscreen playback |
 | `Ctrl+F` | Search lines |
+| `Ctrl+B`, `Ctrl+,` / `Ctrl+.` | Add/remove bookmark, previous / next bookmark |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste lines (timing kept) |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | wheel, `Ctrl+wheel` | Scrub, zoom the band |
@@ -104,9 +112,9 @@ a Windows installer + portable zip, macOS `.dmg` (Apple Silicon), and Linux
 
 - `main.js` — Electron main process (window, menus, file dialogs, ffmpeg, PDF, Discord presence)
 - `preload.js` — IPC bridge
-- `renderer/` — vanilla JS UI: `app.js` (logic + canvas rendering), `i18n.js` (EN/FR), `reacs.js` (reac lexicon)
+- `renderer/` — vanilla JS UI: `app.js` (logic + canvas rendering), `i18n.js` (EN/FR), `reacs.js` (reac lexicon), `detection.js` (detection-mark lexicon)
 - `assets/` — icon (SVG source, PNG, ICO)
-- `scripts/` — dev tools (drive the app through Chrome DevTools Protocol)
+- `scripts/` — dev tools (drive the app through Chrome DevTools Protocol): `smoke.js` (boot check), `ftest.js` (functional checks)
 
 ## Credits
 
