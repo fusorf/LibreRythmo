@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null, recordings: [], recMuted: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
@@ -537,7 +537,7 @@ function applyLang() {
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
   $('tabRec').textContent = t('tabRec')
-  $('recMonBtn').textContent = t('recMonBtn')
+  $('recCharLabel').textContent = t('recCharLabel')
   $('recEmptyMain').textContent = t('recEmptyMain')
   $('recEmptySub').textContent = t('recEmptySub')
   if (activeTab === 'rec') renderRecTab()
@@ -948,15 +948,19 @@ function gotoBookmark(dir) {
 }
 
 
-// ============================================================ S1 — enregistrement voix + prises
-// Enregistre la voix directement sur la bande qui défile. Plusieurs prises par
-// réplique : line.takes = [{ id, file, startTime, dur }], la prise retenue est
-// line.take (id). Les fichiers audio sont des sidecars (dossier « takes » à côté
-// du projet, via window.api.saveTake) — jamais dans le JSON. La prise retenue est
-// mixée à l'export et peut être écoutée en synchro pendant la lecture (monitoring).
-const recorder = { stream: null, mr: null, chunks: [], active: false, lineId: null, mime: 'audio/webm', ext: 'webm', ac: null, analyser: null, raf: 0, level: 0, recStartAt: 0, monitor: false }
-const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture / monitoring)
-const retainedTake = (line) => (line.takes || []).find((k) => k.id === line.take) || null
+// ============================================================ enregistrement voix (libre, par personnage)
+// On enregistre librement au fil de la lecture. Chaque enregistrement est un clip
+// rangé dans la « piste » du personnage ciblé : project.recordings = [{ id,
+// characterId, file, startTime, dur, active }]. Les fichiers sont des sidecars
+// (dossier « takes » via window.api.saveTake), jamais dans le JSON. Une piste perso
+// s'entend en lecture comme une piste audio normale et peut être coupée
+// (project.recMuted = [charId]). Chevauchement dans une même piste = prises
+// alternatives (la plus récente reste active) ; enregistrements qui se suivent =
+// ils coexistent. Les clips actifs (pistes non coupées) sont mixés à l'export.
+const recorder = { stream: null, mr: null, chunks: [], active: false, charId: null, mime: 'audio/webm', ext: 'webm', ac: null, analyser: null, raf: 0, level: 0, recStartAt: 0 }
+const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture)
+const recOverlap = (a, b) => a.startTime < b.startTime + (b.dur || 0) && b.startTime < a.startTime + (a.dur || 0)
+let recTargetChar = null // personnage ciblé par l'enregistrement
 
 // config capture (persistée côté main : audio-config.json)
 const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null }
@@ -1015,18 +1019,26 @@ function pickMime() {
   return 'audio/webm'
 }
 
+// personnage ciblé par l'enregistrement (dernier choisi, sinon perso sélectionné, sinon 1er)
+function recTargetId() {
+  const has = (id) => project.characters.some((c) => c.id === id)
+  if (recTargetChar && has(recTargetChar)) return recTargetChar
+  if (selectedCharId && has(selectedCharId)) return selectedCharId
+  return project.characters[0]?.id || null
+}
 async function startRecording() {
   if (recorder.active) return
-  const line = singleSelected()
-  if (!line) { toast(t('recNeedLine')); return }
-  recorder.lineId = line.id
-  recorder.recStartAt = Math.max(0, lineStart(line) - 1.0) // pré-roll pour se caler
-  if ((audioCfg.api || 'system') === 'system') return startRecordingWeb(line)
-  return startRecordingFfmpeg(line)
+  const chId = recTargetId()
+  if (!chId) { toast(t('recNeedChar')); return }
+  recTargetChar = chId
+  recorder.charId = chId
+  recorder.recStartAt = Math.max(0, effectiveTime()) // enregistrement libre : au playhead courant
+  if ((audioCfg.api || 'system') === 'system') return startRecordingWeb()
+  return startRecordingFfmpeg()
 }
 
 // --- capture navigateur (getUserMedia / WASAPI) ---
-async function startRecordingWeb(line) {
+async function startRecordingWeb() {
   const stream = await ensureMic()
   if (!stream) return
   recorder.mode = 'web'
@@ -1039,21 +1051,21 @@ async function startRecordingWeb(line) {
   recorder.mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) recorder.chunks.push(ev.data) }
   recorder.mr.onstop = () => finishRecordingWeb()
   recorder.active = true
-  video.pause(); video.currentTime = recorder.recStartAt
+  video.currentTime = recorder.recStartAt
   recorder.mr.start()
   video.play().catch(() => {})
   updateRecUI(); meterLoop()
 }
 
 // --- capture DirectShow / ASIO (ffmpeg, process principal) ---
-async function startRecordingFfmpeg(line) {
-  const name = `take_${line.id}_${uid()}.wav`
+async function startRecordingFfmpeg() {
+  const name = `rec_${recorder.charId}_${uid()}.wav`
   const r = await window.api.captureStart({ api: audioCfg.api, device: audioCfg.device, projectPath, name })
   if (!r || r.error) { toast(t(r && r.error === 'no-device' ? 'recNoDevice' : 'recCaptureFail')); return }
   recorder.mode = 'ffmpeg'
   recorder.captureName = name
   recorder.active = true
-  video.pause(); video.currentTime = recorder.recStartAt
+  video.currentTime = recorder.recStartAt
   video.play().catch(() => {})
   updateRecUI()
 }
@@ -1070,7 +1082,7 @@ async function stopRecordingFfmpeg() {
   video.pause(); recorder.active = false; recorder.mode = null; updateRecUI()
   const r = await window.api.captureStop()
   if (!r || r.error || !r.name) { toast(t('recCaptureFail')); return }
-  await addRecordedTake(recorder.lineId, r.name, recorder.recStartAt)
+  await addRecording(recorder.charId, r.name, recorder.recStartAt)
 }
 
 async function finishRecordingWeb() {
@@ -1081,67 +1093,49 @@ async function finishRecordingWeb() {
   updateRecUI()
   const blob = new Blob(recorder.chunks, { type: recorder.mime })
   recorder.chunks = []
-  if (!getLine(recorder.lineId) || !blob.size) return
+  if (!blob.size) return
   const buf = await blob.arrayBuffer()
-  const name = `take_${recorder.lineId}_${uid()}.${recorder.ext}`
+  const name = `rec_${recorder.charId}_${uid()}.${recorder.ext}`
   const r = await window.api.saveTake(projectPath, name, buf)
   if (!r || r.error) { toast(t('recSaveFail')); return }
-  await addRecordedTake(recorder.lineId, r.name, recorder.recStartAt)
+  await addRecording(recorder.charId, r.name, recorder.recStartAt)
 }
 
-// ajoute une prise enregistrée (quel que soit le backend) à sa réplique
-async function addRecordedTake(lineId, fileName, startTime) {
-  const line = getLine(lineId)
-  if (!line) return
+// ajoute un clip enregistré à la piste du personnage (quel que soit le backend)
+async function addRecording(charId, fileName, startTime) {
   const url = await window.api.takeUrl(projectPath, fileName)
   let dur = 0
   if (url) {
     try { dur = await new Promise((res) => { const a = new Audio(); a.onloadedmetadata = () => res(isFinite(a.duration) ? a.duration : 0); a.onerror = () => res(0); a.src = url }) } catch {}
   }
   pushUndo()
-  if (!line.takes) line.takes = []
-  const take = { id: uid(), file: fileName, startTime, dur: dur || 0 }
-  line.takes.push(take)
-  line.take = take.id
+  project.recordings ||= []
+  const clip = { id: uid(), characterId: charId, file: fileName, startTime, dur: dur || 0, active: true }
+  // chevauchement dans la même piste perso = prises alternatives → la plus récente reste active
+  for (const r of project.recordings) if (r.characterId === charId && recOverlap(r, clip)) r.active = false
+  project.recordings.push(clip)
   markDirty()
-  refreshInspector()
+  if (activeTab === 'rec') renderRecTab()
   preloadTakeAudios()
-  toast(t('recTakeSaved', line.takes.length))
+  toast(t('recSaved'))
 }
 
-function getTakeAudio(file, url) {
-  let a = takeAudios.get(file)
-  if (!a) { a = new Audio(url); takeAudios.set(file, a) }
-  return a
-}
-
-async function playRetainedTake() {
-  const line = singleSelected(); if (!line) return
-  const tk = retainedTake(line)
-  if (!tk) { toast(t('recNoTake')); return }
-  const url = await window.api.takeUrl(projectPath, tk.file)
-  if (!url) { toast(t('recNoTake')); return }
-  const a = getTakeAudio(tk.file, url)
-  video.pause()
-  video.currentTime = tk.startTime
-  try { a.currentTime = 0; await a.play() } catch {}
-  video.play().catch(() => {})
-}
-
-async function deleteRetainedTake() {
-  const line = singleSelected(); if (!line) return
-  const idx = (line.takes || []).findIndex((k) => k.id === line.take)
-  if (idx < 0) { toast(t('recNoTake')); return }
-  const tk = line.takes[idx]
+// supprime tous les clips d'une piste perso (fichiers inclus)
+async function deleteRecTrack(charId) {
+  const clips = (project.recordings || []).filter((r) => r.characterId === charId)
+  if (!clips.length) return
   pushUndo()
-  line.takes.splice(idx, 1)
-  await window.api.deleteTake(projectPath, tk.file)
-  takeAudios.delete(tk.file)
-  line.take = line.takes.length ? line.takes[Math.max(0, idx - 1)].id : null
-  if (!line.takes.length) delete line.takes
+  for (const c of clips) { try { await window.api.deleteTake(projectPath, c.file) } catch {}; takeAudios.delete(c.file) }
+  project.recordings = (project.recordings || []).filter((r) => r.characterId !== charId)
   markDirty()
-  refreshInspector()
-  toast(t('recTakeDeleted'))
+  if (activeTab === 'rec') renderRecTab()
+}
+const isRecMuted = (id) => (project.recMuted || []).includes(id)
+function toggleRecMute(id) {
+  const was = isRecMuted(id)
+  project.recMuted = (project.recMuted || []).filter((c) => c !== id)
+  if (!was) project.recMuted.push(id)
+  markDirty(); stopAllTakeAudio(); if (activeTab === 'rec') renderRecTab()
 }
 
 function meterLoop() {
@@ -1167,26 +1161,17 @@ function updateRecUI() {
     big.title = t(recorder.active ? 'recStop' : 'recBtnLabel')
     const lbl = $('recBigLabel'); if (lbl) lbl.textContent = t(recorder.active ? 'recStopLabel' : 'recBtnLabel')
   }
-  const mon = $('recMonBtn'); if (mon) mon.classList.toggle('active', recorder.monitor)
-  // surligne la ligne en cours d'enregistrement dans la liste
-  if (activeTab === 'rec') {
-    for (const row of document.querySelectorAll('#recList .rec-row')) {
-      row.classList.toggle('recording', recorder.active && row.dataset.id === recorder.lineId)
-    }
-  }
 }
 
 // précharge les <audio> des prises retenues (lecture/monitoring sans latence) et
 // purge celles qui ne sont plus référencées
 async function preloadTakeAudios() {
   const wanted = new Set()
-  for (const line of project.lines) {
-    const tk = retainedTake(line)
-    if (!tk) continue
-    wanted.add(tk.file)
-    if (!takeAudios.has(tk.file)) {
-      const url = await window.api.takeUrl(projectPath, tk.file)
-      if (url) takeAudios.set(tk.file, new Audio(url))
+  for (const r of (project.recordings || [])) {
+    wanted.add(r.file)
+    if (!takeAudios.has(r.file)) {
+      const url = await window.api.takeUrl(projectPath, r.file)
+      if (url) takeAudios.set(r.file, new Audio(url))
     }
   }
   for (const f of [...takeAudios.keys()]) if (!wanted.has(f)) takeAudios.delete(f)
@@ -1194,19 +1179,17 @@ async function preloadTakeAudios() {
 
 function stopAllTakeAudio() { for (const a of takeAudios.values()) if (!a.paused) a.pause() }
 
-// monitoring : pendant la lecture normale, joue les prises retenues calées sur leur
-// position timeline (on entend sa voix par-dessus la vidéo). Best-effort.
+// lecture des enregistrements : pendant la lecture, joue les clips actifs des pistes
+// perso non coupées, calés sur leur position timeline (comme une piste audio normale).
 function syncTakesMonitor() {
-  if (!recorder.monitor || recorder.active || video.paused) { stopAllTakeAudio(); return }
+  if (recorder.active || video.paused) { stopAllTakeAudio(); return }
   const now = effectiveTime()
-  for (const line of project.lines) {
-    const tk = retainedTake(line)
-    if (!tk || !tk.dur) continue
-    const a = takeAudios.get(tk.file)
-    if (!a) continue
-    const within = now >= tk.startTime && now < tk.startTime + tk.dur
-    if (within) {
-      const target = now - tk.startTime
+  const muted = project.recMuted || []
+  for (const r of (project.recordings || [])) {
+    const a = takeAudios.get(r.file); if (!a) continue
+    const playable = r.active && r.dur && !muted.includes(r.characterId) && now >= r.startTime && now < r.startTime + r.dur
+    if (playable) {
+      const target = now - r.startTime
       if (a.paused) { a.currentTime = target; a.play().catch(() => {}) }
       else if (Math.abs(a.currentTime - target) > 0.3) a.currentTime = target
     } else if (!a.paused) a.pause()
@@ -1218,84 +1201,84 @@ const SVG_PLAY = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.5
 const SVG_TAKE_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/></svg>'
 const SVG_REC = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg>'
 
-// sélectionne une réplique (cible d'enregistrement) et rafraîchit l'UI
-function recSelectLine(id) {
-  selectedIds = new Set([id])
-  refreshInspector() // met aussi à jour la liste (voir crochet dans refreshInspector)
-  updateRecUI()
-}
-// bascule enregistrement sur une réplique donnée (ou la sélection courante si id absent)
-function toggleRecordLine(id) {
+function toggleRecord() {
   if (recorder.active) { stopRecording(); return }
-  if (id && !selectedIds.has(id)) recSelectLine(id)
-  else if (!id && !singleSelected()) { toast(t('recNeedLine')); return }
   startRecording()
 }
 
+// ---- bande rythmo en rendu final (comme la preview plein écran) dans l'onglet Enregistrement
+const recBandCanvas = $('recBand')
+const recBandCtx = recBandCanvas.getContext('2d')
+let rbw = 0, rbh = 0
+const REC_WIN_SEC = 3 // secondes visibles (zoom serré, lisible comme la preview)
+function resizeRecBand() {
+  const wrap = $('recBandWrap'); if (!wrap) return
+  const r = wrap.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  rbw = r.width; rbh = r.height
+  const pw = Math.round(rbw * dpr), ph = Math.round(rbh * dpr)
+  if (recBandCanvas.width !== pw || recBandCanvas.height !== ph) {
+    recBandCanvas.width = pw; recBandCanvas.height = ph
+    recBandCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+}
+new ResizeObserver(() => { if (activeTab === 'rec') resizeRecBand() }).observe($('recBandWrap'))
+function drawRecBand() {
+  if (!rbw) { resizeRecBand(); if (!rbw) return }
+  renderBand(recBandCtx, effectiveTime(), rbw, rbh, rbw / REC_WIN_SEC, { ruler: false, wave: false, handles: false, theme: bandPal() })
+}
+// scrub sur la bande rythmo de l'onglet (clic/glisser = déplacer le playhead)
+let recBandDrag = false
+const recBandTimeAt = (clientX) => { const r = recBandCanvas.getBoundingClientRect(); return effectiveTime() + ((clientX - r.left) - r.width * READ_RATIO) / (rbw / REC_WIN_SEC) }
+recBandCanvas.addEventListener('pointerdown', (e) => { recBandCanvas.setPointerCapture(e.pointerId); recBandDrag = true; video.pause(); scrubTo(recBandTimeAt(e.clientX)); playScrubGrain(scrub.time) })
+recBandCanvas.addEventListener('pointermove', (e) => { if (!recBandDrag) return; scrubTo(recBandTimeAt(e.clientX)); playScrubGrain(scrub.time) })
+const recBandEnd = () => { recBandDrag = false; if (!scrub.busy && scrub.pending == null) scrub.time = null }
+recBandCanvas.addEventListener('pointerup', recBandEnd)
+recBandCanvas.addEventListener('pointercancel', recBandEnd)
+
 function renderRecTab() {
-  const noLines = !project.videoPath || !project.lines.length
-  $('recEmpty').classList.toggle('hidden', !noLines)
-  $('recMain').classList.toggle('hidden', noLines)
-  renderRecList()
+  const noChars = !project.videoPath || !project.characters.length
+  $('recEmpty').classList.toggle('hidden', !noChars)
+  $('recMain').classList.toggle('hidden', noChars)
+  if (noChars) return
+  resizeRecBand()
+  renderRecCharSel()
+  renderRecTracks()
   updateRecUI()
 }
 
-function renderRecList() {
-  const list = $('recList'); if (!list) return
-  const sel = singleSelected()
-  $('recBarHint').textContent = sel ? t('recTarget', (sel.words.map((w) => w.text).join(' ') || '…').slice(0, 60)) : t('recPickLine')
+// sélecteur du personnage ciblé par l'enregistrement
+function renderRecCharSel() {
+  const sel = $('recCharSel'); if (!sel) return
+  sel.innerHTML = ''
+  for (const c of project.characters) { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name; sel.appendChild(o) }
+  sel.value = recTargetId() || ''
+}
+
+// pistes d'enregistrement (une par personnage) : nb de clips, cible, mute, suppression
+function renderRecTracks() {
+  const list = $('recTracks'); if (!list) return
   list.innerHTML = ''
-  const lines = [...project.lines].sort((a, b) => lineStart(a) - lineStart(b))
-  for (const l of lines) {
-    const takes = l.takes || []
+  const target = recTargetId()
+  for (const c of project.characters) {
+    const clips = (project.recordings || []).filter((r) => r.characterId === c.id)
     const row = document.createElement('div')
-    row.className = 'rec-row' + (selectedIds.has(l.id) ? ' selected' : '') + (recorder.active && recorder.lineId === l.id ? ' recording' : '')
-    row.dataset.id = l.id
-    row.addEventListener('click', () => recSelectLine(l.id))
-
-    const ch = getChar(l.characterId)
-    const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = ch?.color || '#888'
-    const tc = document.createElement('span'); tc.className = 'rec-tc'; tc.textContent = formatTc(lineStart(l), project.fps)
-    const txt = document.createElement('span'); txt.className = 'rec-txt'; txt.textContent = l.words.map((w) => w.text).join(' ') || '…'
-
-    // prises : compteur + sélecteur de prise retenue (si plusieurs)
-    const takeWrap = document.createElement('span'); takeWrap.className = 'rec-takes'
-    if (!takes.length) { takeWrap.textContent = t('recNoTakes'); takeWrap.classList.add('none') }
-    else if (takes.length === 1) { takeWrap.textContent = t('recTakes', 1) + (takes[0].dur ? ` · ${takes[0].dur.toFixed(1)}s` : '') }
-    else {
-      const s = document.createElement('select'); s.className = 'rec-takesel'
-      takes.forEach((tk, i) => { const o = document.createElement('option'); o.value = tk.id; o.textContent = t('recTakeN', i + 1) + (tk.dur ? ` · ${tk.dur.toFixed(1)}s` : ''); s.appendChild(o) })
-      s.value = l.take || takes[takes.length - 1].id
-      s.addEventListener('click', (e) => e.stopPropagation())
-      s.addEventListener('change', () => { pushUndo(); l.take = s.value || null; markDirty(); preloadTakeAudios() })
-      takeWrap.appendChild(s)
-    }
-
-    const actions = document.createElement('span'); actions.className = 'rec-actions'
-    const mk = (cls, html, title, fn, disabled) => {
-      const b = document.createElement('button'); b.className = 'icon-btn ' + cls; b.innerHTML = html; b.title = title; b.disabled = !!disabled
-      b.addEventListener('click', (e) => { e.stopPropagation(); fn() })
-      return b
-    }
-    const recB = mk('rec-row-rec', SVG_REC, t('recRecThis'), () => toggleRecordLine(l.id))
-    if (recorder.active && recorder.lineId === l.id) recB.classList.add('recording')
-    actions.append(
-      recB,
-      mk('rec-row-play', SVG_PLAY, t('recPlay'), () => { recSelectLine(l.id); playRetainedTake() }, !takes.length),
-      mk('rec-row-del', SVG_TAKE_DEL, t('recDel'), () => { recSelectLine(l.id); deleteRetainedTake() }, !takes.length),
-    )
-
-    row.append(dot, tc, txt, takeWrap, actions)
+    row.className = 'rec-trk' + (c.id === target ? ' target' : '') + (isRecMuted(c.id) ? ' muted' : '')
+    row.addEventListener('click', () => { recTargetChar = c.id; renderRecTab() })
+    const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
+    const nm = document.createElement('span'); nm.className = 'rec-trk-name'; nm.textContent = c.name
+    const meta = document.createElement('span'); meta.className = 'rec-trk-meta'; meta.textContent = clips.length ? t('recTakes', clips.length) : t('recNoTakes')
+    const mute = document.createElement('button'); mute.className = 'trk-spk' + (isRecMuted(c.id) ? '' : ' on'); mute.innerHTML = isRecMuted(c.id) ? SPK_OFF_SVG : SPK_ON_SVG
+    mute.title = t('recMuteTrack'); mute.addEventListener('click', (e) => { e.stopPropagation(); toggleRecMute(c.id) })
+    const del = document.createElement('button'); del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('recDelTrack'); del.disabled = !clips.length
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteRecTrack(c.id) })
+    row.append(dot, nm, meta, mute, del)
     list.appendChild(row)
   }
 }
 
-$('recBigBtn').addEventListener('click', () => toggleRecordLine(null))
-$('recMonBtn').addEventListener('click', () => {
-  recorder.monitor = !recorder.monitor
-  $('recMonBtn').classList.toggle('active', recorder.monitor)
-  if (!recorder.monitor) stopAllTakeAudio()
-})
+$('recBigBtn').addEventListener('click', toggleRecord)
+$('recCharSel').addEventListener('change', () => { recTargetChar = $('recCharSel').value || null; renderRecTracks() })
 
 
 // ============================================================ transcription automatique
@@ -2068,7 +2051,7 @@ function refreshInspector() {
   ins.el.classList.toggle('empty', !line && !multi)
   ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
-  if (activeTab === 'rec') renderRecList() // la liste d'enregistrement suit la sélection
+  if (activeTab === 'rec') { renderRecCharSel(); renderRecTracks() } // suit l'ajout/retrait de personnages
   if (multi) { insShownId = null; refreshMultiInspector(selectedLines()); return }
   if (!line) {
     insShownId = null
@@ -6273,13 +6256,13 @@ async function runExport(outPathOverride) {
     exported: true,
     isDefault: true,
   }] : []
-  // prises voix retenues (S1) à mixer, calées sur la fenêtre d'export
+  // enregistrements actifs des pistes perso non coupées, calés sur la fenêtre d'export
   const takes = []
-  for (const line of project.lines) {
-    const tk = (line.takes || []).find((k) => k.id === line.take)
-    if (!tk) continue
-    if (tk.startTime + (tk.dur || 0) <= startT) continue // entièrement avant la fenêtre
-    takes.push({ name: tk.file, offset: Math.max(0, tk.startTime - startT) })
+  const recMutedSet = project.recMuted || []
+  for (const r of (project.recordings || [])) {
+    if (!r.active || recMutedSet.includes(r.characterId)) continue
+    if (r.startTime + (r.dur || 0) <= startT) continue // entièrement avant la fenêtre
+    takes.push({ name: r.file, offset: Math.max(0, r.startTime - startT) })
   }
   const noBand = exp.bandPos === 'none'
   const r = await window.api.exportStart({
@@ -6525,6 +6508,7 @@ function loop() {
     updatePlayerUI()
   } else {
     if (activeTab === 'tracks') drawTracks()
+    else if (activeTab === 'rec') drawRecBand()
     else draw()
     drawCuesEditor() // overlay des repères ADR sur la vidéo de l'éditeur
   }

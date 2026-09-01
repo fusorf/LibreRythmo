@@ -217,35 +217,31 @@ const TESTS = [
     const gone = await window.api.takeUrl(null, r.name)
     return ok && !gone
   })()`],
-  ['S1 take data model + onglet Enregistrement + persist', `(() => {
-    if (typeof renderRecList !== 'function') return true
+  ['Enregistrement : modèle recordings + onglet (pistes perso) + persist', `(() => {
+    if (typeof renderRecTab !== 'function') return true
     loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
-      characters: [{ id: 'a', name: 'A', color: '#ffffff' }],
-      lines: [{ id: 'l', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }],
-        takes: [{ id: 't1', file: 'x.webm', startTime: 1, dur: 1.2 }], take: 't1' }] }, null)
+      characters: [{ id: 'a', name: 'A', color: '#fff' }, { id: 'b', name: 'B', color: '#0af' }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'rec_a_1.webm', startTime: 1, dur: 1.2, active: true }], recMuted: [] }, null)
     project.videoPath = 'X:/fake.mp4'
     setTab('rec')
     const recViewShown = !document.getElementById('recView').classList.contains('hidden')
-    const row = document.querySelector('#recList .rec-row')
-    const playBtn = row && row.querySelector('.rec-row-play')
-    const okUI = recViewShown && !!row && row.dataset.id === 'l' && !!playBtn && !playBtn.disabled
+    const rows = document.querySelectorAll('#recTracks .rec-trk')
+    const okUI = recViewShown && rows.length === 2
     setTab('rythmo'); project.videoPath = null
     loadProjectData(JSON.parse(JSON.stringify(project)), null)
-    const l = project.lines[0]
-    return okUI && l.take === 't1' && l.takes.length === 1
+    return okUI && project.recordings.length === 1 && project.recordings[0].characterId === 'a'
   })()`],
-  ['Onglet Enregistrement : sélection cible via recSelectLine', `(() => {
-    if (typeof recSelectLine !== 'function') return true
+  ['Enregistrement : chevauchement→prises + mute par piste', `(() => {
+    if (typeof toggleRecMute !== 'function' || typeof recOverlap !== 'function') return true
     loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
-      characters: [{ id: 'a', name: 'A', color: '#fff' }],
-      lines: [{ id: 'l1', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }] },
-              { id: 'l2', characterId: 'a', track: 0, words: [{ text: 'y', start: 3, end: 4 }] }] }, null)
-    project.videoPath = 'X:/fake.mp4'
-    setTab('rec'); recSelectLine('l2')
-    const sel = document.querySelector('#recList .rec-row.selected')
-    const ok = !!sel && sel.dataset.id === 'l2' && selectedIds.has('l2') && selectedIds.size === 1
-    setTab('rythmo'); project.videoPath = null
-    return ok
+      characters: [{ id: 'a', name: 'A', color: '#fff' }], recordings: [], recMuted: [] }, null)
+    project.recordings.push({ id: 'r1', characterId: 'a', file: 'f1', startTime: 1, dur: 2, active: true })
+    const c2 = { id: 'r2', characterId: 'a', file: 'f2', startTime: 2, dur: 2, active: true }
+    for (const r of project.recordings) if (r.characterId === c2.characterId && recOverlap(r, c2)) r.active = false
+    project.recordings.push(c2)
+    const overlapOk = project.recordings[0].active === false && project.recordings[1].active === true
+    toggleRecMute('a'); const muted = isRecMuted('a'); toggleRecMute('a'); const unmuted = !isRecMuted('a')
+    return overlapOk && muted && unmuted
   })()`],
   // --- A4 transcription (sherpa-onnx; engine/models may be absent in test env) ---
   ['A4 engine status shape', `(async () => {

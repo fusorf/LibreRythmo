@@ -161,12 +161,12 @@
     </div>
     <div id="recMain">
       <div id="recBar">
-        <button id="recBigBtn" class="rec-big" title="Enregistrer une prise"><span class="rec-dot"></span><span id="recBigLabel">Enregistrer</span></button>
+        <button id="recBigBtn" class="rec-big" title="Enregistrer"><span class="rec-dot"></span><span id="recBigLabel">Enregistrer</span></button>
         <div id="recBigMeter" class="rec-big-meter"><div id="recBigMeterBar"></div></div>
-        <button id="recMonBtn" class="panel-toggle" title="Monitoring : écouter les prises retenues pendant la lecture">Monitoring</button>
-        <span id="recBarHint" class="rec-hint"></span>
+        <label class="rec-charlbl"><span id="recCharLabel">Personnage</span><select id="recCharSel"></select></label>
       </div>
-      <div id="recList"></div>
+      <div id="recBandWrap"><canvas id="recBand"></canvas></div>
+      <div id="recTracks"></div>
     </div>
   </div>
 
