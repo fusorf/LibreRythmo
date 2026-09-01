@@ -125,7 +125,7 @@ const TESTS = [
     const b = document.getElementById('curCharBadge')
     return !!b && b.textContent === getChar(selectedCharId).name
   })()`],
-  // --- Tier B: character merge + search ---
+  // --- Tier B: character merge ---
   ['B merge characters reassigns lines', `(() => {
     if (typeof mergeCharacter !== 'function') return true
     loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
@@ -134,14 +134,6 @@ const TESTS = [
               { id: 'y', characterId: 'b', track: 1, words: [{ text: 'deux', start: 1, end: 2 }] }] }, null)
     mergeCharacter('b', 'a')
     return project.characters.length === 1 && project.lines.every(l => l.characterId === 'a')
-  })()`],
-  ['B character search filters list', `(() => {
-    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
-      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }], lines: [] }, null)
-    charFilter = 'bob'; renderChars()
-    const n = document.getElementById('charList').children.length
-    charFilter = ''; renderChars()
-    return n === 1
   })()`],
   // --- Tier B: bookmarks ---
   ['B bookmark toggle + persist', `(() => {

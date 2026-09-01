@@ -563,7 +563,6 @@ function applyLang() {
   // panneau personnages + log des répliques
   $('panelTitle').textContent = t('panelTitle')
   $('btnAddChar').textContent = t('addChar')
-  $('charSearch').placeholder = t('charSearchPh')
   $('linesTitle').textContent = t('linesTitle')
   buildGuide()
 
@@ -704,7 +703,6 @@ function rowIconButton(kind, title, onClick) {
   return b
 }
 
-let charFilter = '' // Tier B : recherche rapide de personnage (filtre le panneau)
 
 // Tier B : fusion de personnages — toutes les répliques du source passent à la
 // cible, puis le source est supprimé (utile après un import où un rôle apparaît
@@ -741,9 +739,7 @@ function renderChars() {
 
   const list = $('charList')
   list.innerHTML = ''
-  const needle = charFilter.trim().toLowerCase()
   for (const c of project.characters) {
-    if (needle && !(c.name || '').toLowerCase().includes(needle)) continue
     const row = document.createElement('div')
     row.className = 'char-row' + (c.id === selectedCharId ? ' selected' : '')
     row.dataset.id = c.id
@@ -880,7 +876,6 @@ $('btnTogglePanel').addEventListener('click', () => {
   $('btnTogglePanel').classList.toggle('active', !panel.classList.contains('hidden'))
 })
 
-$('charSearch').addEventListener('input', (e) => { charFilter = e.target.value || ''; renderChars() })
 
 // ============================================================ Tier B — zoom sur l'image
 // Zoom/pan de la vidéo de l'éditeur (transitoire, non enregistré) : Ctrl+molette
