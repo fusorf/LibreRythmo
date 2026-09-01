@@ -1116,10 +1116,13 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
   const f = whisperModelFiles(opts.model || 'turbo')
   if (!f.enc || !f.dec || !f.tok || !fs.existsSync(vadModelPath())) return { error: 'no-model' }
   const src = opts.source; if (!src || !fs.existsSync(src)) return { error: 'no-source' }
-  // 1) extraction audio 16 kHz mono WAV
+  // 1) extraction audio 16 kHz mono WAV (piste ciblée le cas échéant)
   const wav = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.wav`)
   if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'extract' })
-  const okx = await new Promise((resolve) => { const p = spawn(ffmpegPath, ['-y', '-i', src, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { stdio: 'ignore' }); p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false)) })
+  const exArgs = ['-y', '-i', src]
+  if (opts.aIndex != null) exArgs.push('-map', `0:a:${opts.aIndex}`)
+  exArgs.push('-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav)
+  const okx = await new Promise((resolve) => { const p = spawn(ffmpegPath, exArgs, { stdio: 'ignore' }); p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false)) })
   if (!okx) return { error: 'extract-failed' }
   // 2) VAD + Whisper → SRT (script Python)
   const scriptPath = path.join(app.getPath('temp'), 'lr-whisper.py')

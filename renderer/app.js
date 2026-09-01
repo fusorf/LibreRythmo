@@ -468,6 +468,7 @@ function applyLang() {
   $('btnMonitor').title = t('recMonitor')
   $('trTitle').textContent = t('trTitle')
   $('trHint').textContent = t('trHint')
+  $('trInLabel').textContent = t('trInLabel')
   $('trModelLabel').textContent = t('trModelLabel')
   $('trLangLabel').textContent = t('trLangLabel')
   $('trOpenSettings').textContent = t('aiOpenSettings')
@@ -1214,11 +1215,21 @@ async function openTranscribeDialog() {
   $('trReady').classList.toggle('hidden', !ready)
   $('trGo').classList.toggle('hidden', !ready)
   if (!ready) { $('trNotReadyMsg').textContent = !engine ? t('trNeedEngine') : t('trNeedModel'); return }
+  // piste source
+  trTracks = audioSourceOptions()
+  const tsel = $('trInTrack'); tsel.innerHTML = ''
+  trTracks.forEach((o, i) => { const op = document.createElement('option'); op.value = String(i); op.textContent = o.label; tsel.appendChild(op) })
   // dropdown modèle (installés) — défaut = modèle actif
   const msel = $('trModel'); msel.innerHTML = ''
   for (const m of models) { const o = document.createElement('option'); o.value = m.model; o.textContent = `${m.model} (${fmtDlSize(m.sizeMB)})`; msel.appendChild(o) }
   msel.value = activeWhisper()
+  // langues en toutes lettres
+  const lsel = $('trLang'); const cur = lsel.value || 'auto'; lsel.innerHTML = ''
+  for (const [code, key] of TR_LANGS) { const o = document.createElement('option'); o.value = code; o.textContent = t(key); lsel.appendChild(o) }
+  lsel.value = cur
 }
+const TR_LANGS = [['auto', 'langAuto'], ['fr', 'langFr'], ['en', 'langEn'], ['es', 'langEs'], ['de', 'langDe'], ['it', 'langIt'], ['pt', 'langPt'], ['ja', 'langJa'], ['zh', 'langZh'], ['ru', 'langRu'], ['ar', 'langAr'], ['he', 'langHe']]
+let trTracks = []
 $('trModel').addEventListener('change', () => setActiveWhisper($('trModel').value))
 function closeTranscribe() { if (!trBusy) trModal.classList.add('hidden') }
 
@@ -1239,10 +1250,11 @@ async function runTranscribe() {
   const model = $('trModel').value || activeWhisper()
   if (!model) { toast(t('trNeedModel')); return }
   const lang = $('trLang').value
+  const tr = trTracks[Number($('trInTrack').value) || 0] || trTracks[0] || { source: project.videoPath, aIndex: 0 }
   trBusy = true; $('trGo').disabled = true; $('trClose').textContent = t('cancel')
   try {
     $('trStatus').textContent = t('trTranscribing', 0)
-    const r = await window.api.whisperTranscribe({ source: project.videoPath, model, language: lang })
+    const r = await window.api.whisperTranscribe({ source: tr.source, aIndex: tr.aIndex, model, language: lang })
     if (!r || r.error) {
       const map = { 'no-engine': 'trNeedEngine', 'no-model': 'trNeedModel', 'no-source': 'trNeedVideo' }
       toast(t(map[r && r.error] || 'trFailed'))
@@ -1421,8 +1433,8 @@ let sepTracks = []
 
 // pistes source possibles = les pistes audio du projet (les pistes embarquées
 // incluent déjà l'audio de la vidéo — pas de doublon). Repli sur l'audio vidéo si
-// aucune piste n'a encore été sondée.
-function sepTrackOptions() {
+// aucune piste n'a encore été sondée. Partagé par les modales séparation + transcription.
+function audioSourceOptions() {
   const tracks = project.audioTracks || []
   if (!tracks.length) return [{ label: t('sepTrackVideo'), source: project.videoPath, aIndex: 0 }]
   return tracks.map((a) => ({
@@ -1447,7 +1459,7 @@ async function openSeparateDialog() {
   const msel = $('sepRunModel'); msel.innerHTML = ''
   for (const m of models) { const o = document.createElement('option'); o.value = m.model; o.textContent = m.label || m.model; msel.appendChild(o) }
   msel.value = models.some((m) => m.model === activeSep()) ? activeSep() : models[0].model
-  sepTracks = sepTrackOptions()
+  sepTracks = audioSourceOptions()
   const tsel = $('sepInTrack'); tsel.innerHTML = ''
   sepTracks.forEach((o, i) => { const op = document.createElement('option'); op.value = String(i); op.textContent = o.label; tsel.appendChild(op) })
   $('sepOutName').value = t('sepTrackName')
