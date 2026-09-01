@@ -29,6 +29,14 @@ logiciel de fandub complet : vidéo → détection → texte → calage → enre
 - **Transcription assistée** (expérimental) : génère le texte depuis l'audio via
   whisper.cpp — modèle téléchargé à la demande, moteur fourni par l'utilisateur, rien
   n'est inclus dans l'application.
+- **Séparation de voix (IA)** : retire les voix d'une piste audio (produit un
+  instrumental ajouté comme nouvelle piste). Moteur local fourni par l'utilisateur
+  (Demucs recommandé), rien n'est inclus — bouton « Retirer les voix (IA) » dans
+  l'onglet Pistes.
+- **Fenêtre Paramètres** : sélecteur d'**interface et de périphérique de capture**
+  (Système/WASAPI, DirectSound/DirectShow, ASIO), et **gestion des modèles IA**
+  (installation/suppression à la demande, moteurs configurés depuis l'UI). L'IA est
+  entièrement optionnelle et pilotée depuis l'interface — rien n'est bundlé.
 - **Confort** : recherche rapide et **fusion de personnages**, **zoom sur l'image**
   (Ctrl+molette, glisser, double-clic pour réinitialiser), **signets** libres
   (Ctrl+B ; Ctrl+, / Ctrl+. pour naviguer) distincts des scènes et des plans.

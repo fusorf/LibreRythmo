@@ -18,12 +18,14 @@ Free, open-source rythmo band editor for dubbing — sync dialogue to picture fr
 - **Smooth playback** — a 720p H.264 proxy is generated in the background and cached, so 4K/HEVC sources scrub smoothly and play in any codec; the export always re-renders from the full-quality source.
 - **Fullscreen playback (F5)** — video + composited band with auto-hiding controls: play, scene jump, loop a scene, band zoom.
 - **Import / export** — DETX (Joker / Cappella), SRT / ASS / VTT in (corrected-subtitle re-import for SRT), PDF script and DETX out, MP4 composite with GPU encoding (NVENC / QuickSync / AMF, x264 fallback), an output frame-rate dropdown, and a choice of tracks, scenes and audio track.
-- **Voice recording** — record takes right on the scrolling band (input meter, pre-roll), keep several takes per line and pick the keeper, preview and monitor them in sync during playback; retained takes are mixed into the MP4 export. Takes are portable sidecar files next to the project (`takes/`).
+- **Voice recording** — record takes right on the scrolling band (input meter, pre-roll), keep several takes per line and pick the keeper, preview and monitor them in sync during playback; retained takes are mixed into the MP4 export. Takes are portable sidecar files next to the project (`takes/`). A **capture device selector** (WASAPI, DirectShow, ASIO) lives in Settings.
+- **Voice removal (AI)** — remove the voices from an audio track (produces an instrumental added as a new track) with a local engine (Demucs). Optional, user-provided engine — nothing bundled.
 - **Detection marks** — a palette of articulatory signs (labial, labiodental, rounded, open, dental, velar, nasal, glide) placed on syllables by click or key, drawn on the band (editor, export, fullscreen) — to learn and practise dubbing detection.
 - **ADR cues** — streamers (sweeping wipe) and punches (flash) over the picture, to cue the actor without lip-sync (voice-over, audio description, game localization).
 - **Work documents (PDF)** — a presence grid (characters × scenes) and a per-character line tally to organize a recording session.
 - **Right-to-left** — Arabic / Hebrew reading direction for the band text and editing fields.
 - **Assisted transcription** *(experimental)* — bootstrap the text from the audio with whisper.cpp; the model is downloaded on demand and the engine is user-provided — nothing is bundled.
+- **Settings** — a Settings window (View menu) with the capture device selector and an AI-model manager: installing/removing models and pointing to engines is entirely optional and done from the interface.
 - **Quality of life** — character quick-search and merge, image zoom (Ctrl+wheel), free bookmarks distinct from scenes/shots.
 - **Projects** — single-file `.rythmo` (JSON), autosave, recent projects, undo/redo, dark/light themes, English/French UI, optional Discord Rich Presence.
 
