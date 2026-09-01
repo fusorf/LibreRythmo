@@ -292,7 +292,7 @@ const MENU_STR = {
     clearProxies: 'Vider le cache vidéo',
     settings: 'Paramètres…',
     tools: 'Outils',
-    removeVoices: 'Retirer les voix…',
+    removeVoices: 'Suppresseur de voix…',
     language: 'Langue',
     fullscreen: 'Plein écran',
     help: 'Aide',
@@ -368,7 +368,7 @@ const MENU_STR = {
     clearProxies: 'Clear video cache',
     settings: 'Settings…',
     tools: 'Tools',
-    removeVoices: 'Remove voices…',
+    removeVoices: 'Voice remover…',
     language: 'Language',
     fullscreen: 'Full screen',
     help: 'Help',
@@ -937,9 +937,7 @@ function whisperDir() { const d = path.join(app.getPath('userData'), 'whisper-mo
 // extraction (pruneWhisperModel) — l'empreinte disque finale est ~2× plus petite.
 const WHISPER_MODELS = [
   { name: 'turbo', asset: 'sherpa-onnx-whisper-turbo.tar.bz2', estMB: 538, label: 'Whisper turbo (multilingue)' },
-  { name: 'small', asset: 'sherpa-onnx-whisper-small.tar.bz2', estMB: 610, label: 'Whisper small (multilingue)' },
   { name: 'base', asset: 'sherpa-onnx-whisper-base.tar.bz2', estMB: 198, label: 'Whisper base (multilingue)' },
-  { name: 'tiny', asset: 'sherpa-onnx-whisper-tiny.tar.bz2', estMB: 111, label: 'Whisper tiny (multilingue)' },
 ]
 const SHERPA_ASR_URL = (a) => `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${a}`
 const whisperModelDir = (name) => path.join(whisperDir(), String(name).replace(/[^a-z0-9.\-]/gi, ''))
@@ -1309,7 +1307,6 @@ ipcMain.handle('detect-python', async () => ({ python: await detectPython() }))
 
 function sepModelsDir() { const d = path.join(app.getPath('userData'), 'sep-models'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
 const SEP_MODELS = [
-  { file: 'UVR-MDX-NET-Inst_HQ_3.onnx', estMB: 66, label: 'MDX-Net Inst HQ 3' },
   { file: 'UVR-MDX-NET-Inst_HQ_4.onnx', estMB: 66, label: 'MDX-Net Inst HQ 4' },
   { file: 'UVR_MDXNET_KARA_2.onnx', estMB: 51, label: 'MDX-Net Karaoké 2' },
 ]
