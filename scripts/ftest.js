@@ -56,28 +56,6 @@ const TESTS = [
   ['draw() does not throw with marks', `(() => {
     try { draw(); return true } catch (e) { return 'ERR: ' + e.message }
   })()`],
-  // --- A3 RTL ---
-  ['A3 toggle sets project.rtl + input dir', `(() => {
-    if (typeof applyReadingDir !== 'function') return true
-    project.rtl = true; applyReadingDir()
-    const ok = document.getElementById('insText').dir === 'rtl' && document.getElementById('btnRtl').classList.contains('active')
-    project.rtl = false; applyReadingDir()
-    return ok && document.getElementById('insText').dir === 'ltr'
-  })()`],
-  ['A3 rtl persists through save/reload', `(() => {
-    if (typeof applyReadingDir !== 'function') return true
-    project.rtl = true
-    loadProjectData(JSON.parse(JSON.stringify(project)), null)
-    const ok = project.rtl === true
-    project.rtl = false; applyReadingDir()
-    return ok
-  })()`],
-  ['A3 draw() does not throw in rtl', `(() => {
-    project.rtl = true
-    let r; try { draw(); r = true } catch (e) { r = 'ERR: ' + e.message }
-    project.rtl = false
-    return r
-  })()`],
   // --- A5 work documents ---
   ['A5 presence grid HTML', `(() => {
     if (typeof buildPresenceHtml !== 'function') return true

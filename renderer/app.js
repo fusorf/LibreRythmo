@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], rtl: false, cues: [], bookmarks: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
@@ -460,8 +460,6 @@ function applyLang() {
   $('btnSymbols').textContent = t('symbolsBtn')
   $('btnSymbols').title = t('symbolsTitle')
   buildSymbolPop()
-  $('btnRtl').title = t('rtlTitle')
-  applyReadingDir()
   $('btnAdr').title = t('adrTitle')
   buildCuePop()
   updateRecUI()
@@ -2863,7 +2861,6 @@ function drawMouthMark(c, x, y, th, state, side, pal) {
 // opts: { ruler, wave, handles }
 function renderBand(c, now, W, H, pps, opts) {
   const pal = opts.theme || BAND_THEMES.dark
-  const rtl = !!project.rtl // A3 : sens de lecture RTL (arabe / hébreu)
   const rh = opts.ruler ? RULER_H : 0
   // opts.trackList : sous-ensemble de pistes à montrer, compacté en lanes contiguës
   // (export d'une sélection de pistes) ; sinon toutes les pistes affichées.
@@ -2992,14 +2989,9 @@ function renderBand(c, now, W, H, pps, opts) {
     const nameFont = Math.max(8, Math.round(th * 0.17))
     c.font = `bold ${nameFont}px "Segoe UI", sans-serif`
     c.fillStyle = color
+    c.textAlign = 'left'
     c.textBaseline = 'top'
-    if (rtl) {
-      c.textAlign = 'right'
-      c.fillText(char ? char.name : '?', Math.min(W - 2, x1 - 4), y + 2)
-    } else {
-      c.textAlign = 'left'
-      c.fillText(char ? char.name : '?', Math.max(2, x0 + 4), y + 2)
-    }
+    c.fillText(char ? char.name : '?', Math.max(2, x0 + 4), y + 2)
 
     // mots — élongation : chaque mot est étiré sur sa durée réelle
     const fontPx = Math.round(th * 0.52)
@@ -3018,16 +3010,7 @@ function renderBand(c, now, W, H, pps, opts) {
         const pad = Math.max(3, Math.min(th * 0.14, ww * 0.18))
         const scale = Math.max(0.2, (ww - pad * 2) / Math.max(1, natural))
         c.save()
-        // RTL : le texte de chaque syllabe est ancré à droite de sa case-durée et
-        // rendu en écriture droite→gauche (l'algorithme bidi ordonne/forme les
-        // glyphes arabes ou hébreux correctement). L'axe temporel reste inchangé.
-        if (rtl) {
-          c.direction = 'rtl'
-          c.textAlign = 'right'
-          c.translate(wx + ww - pad, y + th * 0.82)
-        } else {
-          c.translate(wx + pad, y + th * 0.82)
-        }
+        c.translate(wx + pad, y + th * 0.82)
         c.scale(scale, 1)
         c.fillStyle = color
         c.fillText(w.text, 0, 0)
@@ -3993,26 +3976,6 @@ document.addEventListener('click', (e) => {
 })
 
 
-// ============================================================ A3 — sens de lecture (RTL)
-// project.rtl inverse l'alignement/le sens du texte des répliques sur la bande
-// (rendu dans renderBand) et bascule les champs d'édition + l'incrustation
-// sous-titre en écriture droite→gauche. L'axe temporel de la bande reste
-// chronologique (gauche→droite) : la bande est une timeline, pas une page.
-function applyReadingDir() {
-  const rtl = !!project.rtl
-  const d = rtl ? 'rtl' : 'ltr'
-  const inp = $('insText'); if (inp) inp.dir = d
-  const sub = $('subOverlay'); if (sub) sub.dir = d
-  const btn = $('btnRtl'); if (btn) btn.classList.toggle('active', rtl)
-}
-
-$('btnRtl').addEventListener('click', () => {
-  project.rtl = !project.rtl
-  applyReadingDir()
-  markDirty()
-})
-
-
 // ============================================================ A6 — repères ADR (streamers / punches)
 // Repères de studio posés sur l'image pour lancer le comédien sans lip-sync
 // (voice-over, audiodescription, localisation de jeu). Un streamer est une barre
@@ -4427,7 +4390,6 @@ async function loadProjectData(data, path) {
   renderLinesLog()
   renderLoopsPanel()
   renderPlansPanel()
-  applyReadingDir()
   preloadTakeAudios()
   setClean()
   updateDiscordActivity()

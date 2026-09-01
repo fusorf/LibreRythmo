@@ -23,7 +23,6 @@ const CHECKS = [
   // v3 additions (guarded — only assert if present so baseline stays green)
   'typeof DET_SYMBOLS === "undefined" || Array.isArray(DET_SYMBOLS)',
   'typeof insertSymbol === "undefined" || typeof insertSymbol === "function"',
-  'typeof applyReadingDir === "undefined" || typeof applyReadingDir === "function"',
   'typeof recorder === "undefined" || typeof recorder === "object"',
 ]
 

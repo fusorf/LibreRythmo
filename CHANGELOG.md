@@ -20,8 +20,6 @@ logiciel de fandub complet : vidéo → détection → texte → calage → enre
   arrondie, ouverture, dentale, vélaire, nasale, semi-voyelle) posés sur les syllabes
   au clic ou au clavier ; rendus sur la bande (éditeur, export, plein écran). Pensé pour
   se former à la détection.
-- **Sens de lecture RTL** (arabe, hébreu) : texte des répliques rendu droite→gauche,
-  champs d'édition et incrustation sous-titre bascule en RTL.
 - **Documents de travail (PDF)** : grille de présence (personnages × scènes) et relevé
   de lignes par personnage, pour organiser une session d'enregistrement.
 - **Repères ADR** : streamers (barre de balayage) et punches (flash) posés sur l'image,
