@@ -2751,6 +2751,7 @@ function setTab(name) {
   $('recView').classList.toggle('hidden', !onRec)
   if (onTracks) { hideSubOverlay(); renderTracks() }
   if (onRec) { hideSubOverlay(); renderRecTab() }
+  $('btnDub').classList.toggle('hidden', !dubVoicelessTrack()) // gating piste sans-voix (tous onglets)
   applyBandHeight() // hauteur du dock constante entre onglets + dimensionne le canvas visible
 }
 $('tabRythmo').addEventListener('click', () => setTab('rythmo'))
