@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], rtl: false }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], rtl: false, cues: [] }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
@@ -373,7 +373,7 @@ let undoStack = []
 let redoStack = []
 let undoCoalesce = false // les pushUndo d'une même opération (même tick) ne comptent qu'une fois
 
-const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, plans: project.plans, audioTracks: project.audioTracks, defaultFont: project.defaultFont })
+const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, plans: project.plans, audioTracks: project.audioTracks, defaultFont: project.defaultFont, cues: project.cues })
 
 function pushUndo() {
   if (undoCoalesce) return
@@ -402,6 +402,7 @@ function restoreState(snap) {
   project.lines = d.lines
   project.loops = d.loops || []
   project.plans = d.plans || []
+  project.cues = d.cues || []
   if (d.audioTracks) project.audioTracks = d.audioTracks
   project.defaultFont = d.defaultFont || null
   waveOffset = (activeAudioTrack()?.offset) || 0 // suit l'offset restauré de la piste active
@@ -461,6 +462,8 @@ function applyLang() {
   buildSymbolPop()
   $('btnRtl').title = t('rtlTitle')
   applyReadingDir()
+  $('btnAdr').title = t('adrTitle')
+  buildCuePop()
   $('btnTogglePanel').textContent = t('panelToggle')
   $('btnTogglePanel').title = t('panelToggleTitle')
   $('btnToggleLines').textContent = t('linesTitle')
@@ -3415,6 +3418,130 @@ $('btnRtl').addEventListener('click', () => {
 })
 
 
+// ============================================================ A6 — repères ADR (streamers / punches)
+// Repères de studio posés sur l'image pour lancer le comédien sans lip-sync
+// (voice-over, audiodescription, localisation de jeu). Un streamer est une barre
+// verticale qui balaie l'image et atteint le bord au top de départ ; un punch est
+// un flash circulaire au top. project.cues = [{ id, type, time, lead? }].
+const STREAMER_LEAD = 3 // s : durée du balayage du streamer avant le top
+const cuePop = $('cuePop')
+
+function drawPunchRing(c, r) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2
+  const rad = Math.min(r.w, r.h) * 0.09
+  c.save()
+  c.lineWidth = Math.max(3, rad * 0.22)
+  c.strokeStyle = 'rgba(255,255,255,0.95)'
+  c.fillStyle = 'rgba(255,255,255,0.28)'
+  c.beginPath(); c.arc(cx, cy, rad, 0, Math.PI * 2); c.fill()
+  c.beginPath(); c.arc(cx, cy, rad, 0, Math.PI * 2); c.stroke()
+  c.restore()
+}
+
+// dessine les repères actifs à l'instant `now` dans le rectangle image `r` (x,y,w,h)
+function drawCues(c, r, now) {
+  const cues = project.cues || []
+  if (!cues.length) return
+  const fps = project.fps || 25
+  const flash = Math.max(2 / fps, 0.08) // fenêtre d'affichage d'un flash de punch
+  for (const q of cues) {
+    if (q.type === 'streamer') {
+      const lead = q.lead || STREAMER_LEAD
+      const t0 = q.time - lead
+      if (now >= t0 && now <= q.time + flash) {
+        const p = clamp((now - t0) / lead, 0, 1)
+        const x = r.x + p * r.w
+        c.save()
+        c.strokeStyle = 'rgba(255,228,80,0.95)'
+        c.lineWidth = Math.max(2, r.w * 0.005)
+        c.beginPath(); c.moveTo(x, r.y); c.lineTo(x, r.y + r.h); c.stroke()
+        c.restore()
+      }
+      if (Math.abs(now - q.time) <= flash) drawPunchRing(c, r) // top de fin
+    } else if (q.type === 'punch') {
+      if (Math.abs(now - q.time) <= flash) drawPunchRing(c, r)
+    }
+  }
+}
+
+// overlay ADR de l'éditeur : un canvas calé sur le rectangle vidéo affiché
+function drawCuesEditor() {
+  const ov = $('cueOverlay')
+  if (!ov) return
+  if (!(video.videoWidth > 0) || !(project.cues || []).length) { if (!ov.hidden) ov.hidden = true; return }
+  const vr = video.getBoundingClientRect()
+  const wr = $('videoWrap').getBoundingClientRect()
+  const w = Math.round(vr.width), h = Math.round(vr.height)
+  if (w < 2 || h < 2) { ov.hidden = true; return }
+  ov.hidden = false
+  ov.style.left = (vr.left - wr.left) + 'px'
+  ov.style.top = (vr.top - wr.top) + 'px'
+  ov.style.width = w + 'px'
+  ov.style.height = h + 'px'
+  const dpr = window.devicePixelRatio || 1
+  if (ov.width !== Math.round(w * dpr) || ov.height !== Math.round(h * dpr)) { ov.width = Math.round(w * dpr); ov.height = Math.round(h * dpr) }
+  const c = ov.getContext('2d')
+  c.setTransform(dpr, 0, 0, dpr, 0, 0)
+  c.clearRect(0, 0, w, h)
+  drawCues(c, { x: 0, y: 0, w, h }, effectiveTime())
+}
+
+function addCue(type) {
+  pushUndo()
+  if (!project.cues) project.cues = []
+  const time = Math.max(0, effectiveTime())
+  const cue = { id: uid(), type, time }
+  if (type === 'streamer') cue.lead = STREAMER_LEAD
+  project.cues.push(cue)
+  markDirty()
+  toast(t(type === 'streamer' ? 'cueStreamerAdded' : 'cuePunchAdded'))
+}
+
+function removeNearestCue() {
+  const cues = project.cues || []
+  if (!cues.length) { toast(t('cueNone')); return }
+  const now = effectiveTime()
+  let bi = -1, bd = Infinity
+  for (let i = 0; i < cues.length; i++) { const d = Math.abs(cues[i].time - now); if (d < bd) { bd = d; bi = i } }
+  if (bi >= 0) { pushUndo(); cues.splice(bi, 1); markDirty(); toast(t('cueRemoved')) }
+}
+
+function clearCues() {
+  if (!(project.cues || []).length) { toast(t('cueNone')); return }
+  pushUndo(); project.cues = []; markDirty(); toast(t('cuesCleared'))
+}
+
+function buildCuePop() {
+  cuePop.innerHTML = ''
+  const mk = (label, fn) => {
+    const b = document.createElement('button')
+    b.className = 'cue-item'
+    b.textContent = label
+    b.addEventListener('click', () => { fn(); cuePop.classList.add('hidden') })
+    cuePop.appendChild(b)
+  }
+  mk(t('cueAddStreamer'), () => addCue('streamer'))
+  mk(t('cueAddPunch'), () => addCue('punch'))
+  mk(t('cueRemoveNear'), removeNearestCue)
+  mk(t('cueClearAll'), clearCues)
+}
+buildCuePop()
+
+$('btnAdr').addEventListener('click', (e) => {
+  e.stopPropagation()
+  if (!cuePop.classList.contains('hidden')) { cuePop.classList.add('hidden'); return }
+  const r = e.currentTarget.getBoundingClientRect()
+  cuePop.style.left = `${r.left}px`
+  cuePop.style.bottom = `${window.innerHeight - r.top + 6}px`
+  cuePop.classList.remove('hidden')
+})
+document.addEventListener('click', (e) => {
+  if (!cuePop.classList.contains('hidden') && !cuePop.contains(e.target) && e.target !== $('btnAdr')) {
+    cuePop.classList.add('hidden')
+  }
+})
+
+
 // ============================================================ keyboard
 document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase()
@@ -4928,6 +5055,7 @@ function drawPlayer() {
   pctx.beginPath(); pctx.rect(0, 0, L.band.w, L.band.h); pctx.clip()
   renderBand(pctx, effectiveTime(), L.band.w, L.band.h, L.band.w / winSec, { ruler: false, wave: false, handles: false, theme: bandPal(), trackList: [...playerTracks].sort((a, b) => a - b) })
   pctx.restore()
+  drawCues(pctx, L.video, effectiveTime()) // repères ADR sur l'image
 }
 
 // scène (boucle) contenant le point de lecture courant
@@ -5040,8 +5168,11 @@ function loop() {
     }
     drawPlayer()
     updatePlayerUI()
-  } else if (activeTab === 'tracks') drawTracks()
-  else draw()
+  } else {
+    if (activeTab === 'tracks') drawTracks()
+    else draw()
+    drawCuesEditor() // overlay des repères ADR sur la vidéo de l'éditeur
+  }
   requestAnimationFrame(loop)
 }
 

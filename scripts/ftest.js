@@ -89,6 +89,29 @@ const TESTS = [
     const h = buildTallyHtml()
     return h.includes('Bonjour toi') && h.includes('Salut') && h.includes('ALICE')
   })()`],
+  // --- A6 ADR cues ---
+  ['A6 addCue streamer + punch', `(() => {
+    if (typeof addCue !== 'function') return true
+    project.cues = []; scrub.time = 5
+    addCue('streamer'); addCue('punch')
+    return project.cues.length === 2 && project.cues[0].type === 'streamer' && project.cues[0].lead > 0 && project.cues[1].type === 'punch'
+  })()`],
+  ['A6 cues persist + drawCues no throw', `(() => {
+    if (typeof drawCues !== 'function') return true
+    loadProjectData(JSON.parse(JSON.stringify(project)), null)
+    if ((project.cues || []).length !== 2) return 'lost cues on reload'
+    const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180
+    const cx = cv.getContext('2d')
+    try { drawCues(cx, { x: 0, y: 0, w: 320, h: 180 }, 4); drawCues(cx, { x: 0, y: 0, w: 320, h: 180 }, 5); return true }
+    catch (e) { return 'ERR: ' + e.message }
+  })()`],
+  ['A6 remove nearest + clear', `(() => {
+    if (typeof clearCues !== 'function') return true
+    scrub.time = 5; removeNearestCue()
+    const afterRemove = project.cues.length
+    clearCues()
+    return afterRemove === 1 && project.cues.length === 0
+  })()`],
 ]
 
 function getJson() {

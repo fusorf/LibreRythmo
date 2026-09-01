@@ -26,6 +26,7 @@
     </aside>
     <main id="videoWrap">
       <video id="video"></video>
+      <canvas id="cueOverlay" class="cue-overlay" hidden></canvas>
       <div id="subOverlay" class="sub-overlay" hidden></div>
       <div id="dropHint">
         <span id="dropHintMain">Glisse une vidéo ici</span>
@@ -98,6 +99,9 @@
     </button>
     <button id="btnRtl" class="icon-btn rythmo-ctl" title="Sens de lecture RTL (arabe, hébreu)">
       <svg viewBox="0 0 16 16"><path d="M10.5 2v12H12V2h-1.5zM7.5 2v12H9V2H7.5zM5.2 5 2 8l3.2 3v-2H13V7H5.2V5z"/></svg>
+    </button>
+    <button id="btnAdr" class="icon-btn rythmo-ctl" title="Repères ADR (streamers / punches)">
+      <svg viewBox="0 0 16 16"><path d="M8 1v14M2 8h1.5M12.5 8H14" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
     </button>
     <button id="btnImportAudio" class="tracks-ctl">+ Importer un audio…</button>
     <div class="sep"></div>
@@ -286,6 +290,7 @@
 
   <div id="onomaPop" class="hidden"></div>
   <div id="symbolPop" class="hidden"></div>
+  <div id="cuePop" class="hidden"></div>
 
   <div id="playerMode" class="hidden">
     <canvas id="playerCanvas"></canvas>
