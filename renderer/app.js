@@ -1398,7 +1398,7 @@ $('setClose').addEventListener('click', () => setModal.classList.add('hidden'))
 window.api.onWhisperProgress((p) => {
   if (!p || $('setProgress').classList.contains('hidden')) return
   if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
-  else if (p.phase === 'extract') { $('setStatus').textContent = t('trPhaseExtract') }
+  else if (p.phase === 'unpack') { $('setStatus').textContent = t('mdlUnpacking') }
   else if (p.phase === 'install') { $('setStatus').textContent = p.text || t('engInstalling') }
 })
 window.api.onSepProgress((p) => {

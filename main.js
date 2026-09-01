@@ -932,11 +932,14 @@ ipcMain.handle('delete-take', (e, projectPath, name) => {
 let whisperProc = null
 let whisperAbort = null
 function whisperDir() { const d = path.join(app.getPath('userData'), 'whisper-models'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
+// estMB = taille du téléchargement (.tar.bz2) d'après les releases sherpa-onnx.
+// L'archive contient les variantes fp32 ET int8 ; on n'garde que l'int8 après
+// extraction (pruneWhisperModel) — l'empreinte disque finale est ~2× plus petite.
 const WHISPER_MODELS = [
   { name: 'turbo', asset: 'sherpa-onnx-whisper-turbo.tar.bz2', estMB: 538, label: 'Whisper turbo (multilingue)' },
-  { name: 'small', asset: 'sherpa-onnx-whisper-small.tar.bz2', estMB: 484, label: 'Whisper small (multilingue)' },
-  { name: 'base', asset: 'sherpa-onnx-whisper-base.tar.bz2', estMB: 160, label: 'Whisper base (multilingue)' },
-  { name: 'tiny', asset: 'sherpa-onnx-whisper-tiny.tar.bz2', estMB: 105, label: 'Whisper tiny (multilingue)' },
+  { name: 'small', asset: 'sherpa-onnx-whisper-small.tar.bz2', estMB: 610, label: 'Whisper small (multilingue)' },
+  { name: 'base', asset: 'sherpa-onnx-whisper-base.tar.bz2', estMB: 198, label: 'Whisper base (multilingue)' },
+  { name: 'tiny', asset: 'sherpa-onnx-whisper-tiny.tar.bz2', estMB: 111, label: 'Whisper tiny (multilingue)' },
 ]
 const SHERPA_ASR_URL = (a) => `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${a}`
 const whisperModelDir = (name) => path.join(whisperDir(), String(name).replace(/[^a-z0-9.\-]/gi, ''))
@@ -950,6 +953,23 @@ function whisperModelFiles(name) {
   return { enc, dec, tok }
 }
 function whisperModelPresent(name) { const f = whisperModelFiles(name); return !!(f.enc && f.dec && f.tok) }
+// n'garde que l'int8 (utilisé au run) : supprime les gros .onnx fp32 et les test_wavs
+// → empreinte disque ~2× plus petite que l'archive extraite telle quelle
+function pruneWhisperModel(dir) {
+  const encInt8 = findFileRec(dir, /encoder\.int8\.onnx$/i)
+  const decInt8 = findFileRec(dir, /decoder\.int8\.onnx$/i)
+  const walk = (d) => {
+    let ents = []
+    try { ents = fs.readdirSync(d, { withFileTypes: true }) } catch { return }
+    for (const f of ents) {
+      const p = path.join(d, f.name)
+      if (f.isDirectory()) { if (/test_wavs/i.test(f.name)) { try { fs.rmSync(p, { recursive: true, force: true }) } catch {} } else walk(p) }
+      else if (encInt8 && /encoder\.onnx$/i.test(f.name)) { try { fs.unlinkSync(p) } catch {} }
+      else if (decInt8 && /decoder\.onnx$/i.test(f.name)) { try { fs.unlinkSync(p) } catch {} }
+    }
+  }
+  walk(dir)
+}
 
 // vérifie qu'un module Python est importable / lance pip en streamant les lignes
 function pyImportable(py, mod) {
@@ -1011,11 +1031,12 @@ ipcMain.handle('whisper-install-model', async (e, name) => {
     const dir = whisperModelDir(name)
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch {}
     fs.mkdirSync(dir, { recursive: true })
-    if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'extract' })
+    if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'unpack' })
     const inv = pythonInvoke(py)
     const okx = await new Promise((res) => { const p = spawn(inv[0], [...inv.slice(1), '-c', 'import sys,tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])', tarball, dir], { stdio: 'ignore' }); p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
     try { fs.unlinkSync(tarball) } catch {}
     if (!okx || !whisperModelPresent(name)) return { error: 'extract-failed' }
+    try { pruneWhisperModel(dir) } catch {} // ne garde que l'int8 → disque ~2× plus léger
     if (!fs.existsSync(vadModelPath())) { try { await downloadTo(SHERPA_ASR_URL('silero_vad.onnx'), vadModelPath(), 'download') } catch {} }
     return { ok: true }
   } catch (err) { whisperAbort = null; return { error: String((err && err.message) || err) } }
