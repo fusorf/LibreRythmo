@@ -24,6 +24,8 @@ logiciel de fandub complet : vidéo → détection → texte → calage → enre
   de lignes par personnage, pour organiser une session d'enregistrement.
 - **Repères ADR** : streamers (barre de balayage) et punches (flash) posés sur l'image,
   pour lancer le comédien sans lip-sync (voice-over, audiodescription, localisation).
+  Visibles sur la timeline (bande) et **sélectionnables, déplaçables (glisser) et
+  supprimables (Suppr)**.
 - **Transcription assistée** (expérimental) : génère le texte depuis l'audio via
   whisper.cpp — modèle téléchargé à la demande, moteur fourni par l'utilisateur, rien
   n'est inclus dans l'application.
