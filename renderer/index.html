@@ -124,6 +124,7 @@
     <div class="tab-group">
       <button id="tabRythmo" class="tab active">Rythmo</button>
       <button id="tabTracks" class="tab">Audio</button>
+      <button id="tabRec" class="tab">Enregistrement</button>
     </div>
     <div class="spacer"></div>
     <button id="btnToggleLoops" class="panel-toggle" title="Afficher / masquer le panneau Scènes">Scènes</button>
@@ -150,6 +151,25 @@
     </div>
   </div>
 
+  <div id="recView" class="hidden">
+    <div id="recEmpty" class="hidden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/>
+      </svg>
+      <span id="recEmptyMain">Aucune réplique à enregistrer</span>
+      <span id="recEmptySub">Crée des répliques dans l'onglet Rythmo</span>
+    </div>
+    <div id="recMain">
+      <div id="recBar">
+        <button id="recBigBtn" class="rec-big" title="Enregistrer une prise"><span class="rec-dot"></span><span id="recBigLabel">Enregistrer</span></button>
+        <div id="recBigMeter" class="rec-big-meter"><div id="recBigMeterBar"></div></div>
+        <button id="recMonBtn" class="panel-toggle" title="Monitoring : écouter les prises retenues pendant la lecture">Monitoring</button>
+        <span id="recBarHint" class="rec-hint"></span>
+      </div>
+      <div id="recList"></div>
+    </div>
+  </div>
+
   <div id="inspector" class="empty">
     <span id="insEmpty">Aucune réplique sélectionnée · appuyez sur F1 pour l'aide</span>
     <select id="insChar" title="Personnage de la réplique"></select>
@@ -173,21 +193,6 @@
     <button id="insDel" class="icon-btn" title="Supprimer la réplique (Suppr)">
       <svg viewBox="0 0 16 16"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5ZM11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1H11Zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916Zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5Z"/></svg>
     </button>
-    <span id="insRec" class="ins-rec" title="Enregistrement voix">
-      <button id="btnRec" class="icon-btn rec-btn" title="Enregistrer une prise (voix)">
-        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></svg>
-      </button>
-      <select id="takeSel" title="Prise retenue"></select>
-      <button id="btnPlayTake" class="icon-btn" title="Écouter la prise retenue">
-        <svg viewBox="0 0 16 16"><path d="M4.5 2.5l8.5 5.5-8.5 5.5V2.5z"/></svg>
-      </button>
-      <button id="btnDelTake" class="icon-btn" title="Supprimer la prise retenue">
-        <svg viewBox="0 0 16 16"><path d="M3 4h10v1H3zM5 6h1v7H5zM7.5 6h1v7h-1zM10 6h1v7h-1zM6 2h4v1H6z"/></svg>
-      </button>
-      <button id="btnMonitor" class="icon-btn" title="Monitoring : écouter les prises pendant la lecture">
-        <svg viewBox="0 0 16 16"><path d="M2 6v4h3l4 3.5v-11L5 6H2zM11 5.2a3.4 3.4 0 010 5.6V5.2z"/></svg>
-      </button>
-    </span>
     <div id="insMulti">
       <span id="insMultiCount"></span>
       <select id="insMultiChar" title="Personnage"></select>

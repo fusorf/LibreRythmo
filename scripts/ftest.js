@@ -217,18 +217,35 @@ const TESTS = [
     const gone = await window.api.takeUrl(null, r.name)
     return ok && !gone
   })()`],
-  ['S1 take data model + inspector + persist', `(() => {
-    if (typeof refreshRecInspector !== 'function') return true
+  ['S1 take data model + onglet Enregistrement + persist', `(() => {
+    if (typeof renderRecList !== 'function') return true
     loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
       characters: [{ id: 'a', name: 'A', color: '#ffffff' }],
       lines: [{ id: 'l', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }],
         takes: [{ id: 't1', file: 'x.webm', startTime: 1, dur: 1.2 }], take: 't1' }] }, null)
-    selectedIds = new Set(['l']); refreshInspector()
-    const sel = document.getElementById('takeSel')
-    const okUI = sel.options.length === 1 && sel.value === 't1' && !document.getElementById('btnPlayTake').disabled
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec')
+    const recViewShown = !document.getElementById('recView').classList.contains('hidden')
+    const row = document.querySelector('#recList .rec-row')
+    const playBtn = row && row.querySelector('.rec-row-play')
+    const okUI = recViewShown && !!row && row.dataset.id === 'l' && !!playBtn && !playBtn.disabled
+    setTab('rythmo'); project.videoPath = null
     loadProjectData(JSON.parse(JSON.stringify(project)), null)
     const l = project.lines[0]
     return okUI && l.take === 't1' && l.takes.length === 1
+  })()`],
+  ['Onglet Enregistrement : sélection cible via recSelectLine', `(() => {
+    if (typeof recSelectLine !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#fff' }],
+      lines: [{ id: 'l1', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }] },
+              { id: 'l2', characterId: 'a', track: 0, words: [{ text: 'y', start: 3, end: 4 }] }] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec'); recSelectLine('l2')
+    const sel = document.querySelector('#recList .rec-row.selected')
+    const ok = !!sel && sel.dataset.id === 'l2' && selectedIds.has('l2') && selectedIds.size === 1
+    setTab('rythmo'); project.videoPath = null
+    return ok
   })()`],
   // --- A4 transcription (sherpa-onnx; engine/models may be absent in test env) ---
   ['A4 engine status shape', `(async () => {

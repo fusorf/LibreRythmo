@@ -478,9 +478,6 @@ function applyLang() {
   $('btnAdr').title = t('adrTitle')
   buildCuePop()
   updateRecUI()
-  $('btnPlayTake').title = t('recPlay')
-  $('btnDelTake').title = t('recDel')
-  $('btnMonitor').title = t('recMonitor')
   $('trTitle').textContent = t('trTitle')
   $('trHint').textContent = t('trHint')
   $('trInLabel').textContent = t('trInLabel')
@@ -539,6 +536,11 @@ function applyLang() {
   // onglets + vue Pistes
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
+  $('tabRec').textContent = t('tabRec')
+  $('recMonBtn').textContent = t('recMonBtn')
+  $('recEmptyMain').textContent = t('recEmptyMain')
+  $('recEmptySub').textContent = t('recEmptySub')
+  if (activeTab === 'rec') renderRecTab()
   $('btnImportAudio').textContent = t('importAudio')
   $('btnDubLabel').textContent = t('dubBtn')
   $('btnDub').title = t('dubBtnTitle')
@@ -1153,11 +1155,25 @@ function meterLoop() {
   recorder.raf = requestAnimationFrame(meterLoop)
 }
 function updateRecMeter(level) {
-  const bar = $('recMeterBar'); if (bar) bar.style.width = Math.min(100, Math.round(level * 140)) + '%'
+  const w = Math.min(100, Math.round(level * 140)) + '%'
+  const bar = $('recMeterBar'); if (bar) bar.style.width = w
+  const bar2 = $('recBigMeterBar'); if (bar2) bar2.style.width = w
 }
 function updateRecUI() {
-  const b = $('btnRec'); if (b) { b.classList.toggle('recording', recorder.active); b.title = t(recorder.active ? 'recStop' : 'recStart') }
   const m = $('recMeter'); if (m) m.hidden = !recorder.active
+  const big = $('recBigBtn')
+  if (big) {
+    big.classList.toggle('recording', recorder.active)
+    big.title = t(recorder.active ? 'recStop' : 'recBtnLabel')
+    const lbl = $('recBigLabel'); if (lbl) lbl.textContent = t(recorder.active ? 'recStopLabel' : 'recBtnLabel')
+  }
+  const mon = $('recMonBtn'); if (mon) mon.classList.toggle('active', recorder.monitor)
+  // surligne la ligne en cours d'enregistrement dans la liste
+  if (activeTab === 'rec') {
+    for (const row of document.querySelectorAll('#recList .rec-row')) {
+      row.classList.toggle('recording', recorder.active && row.dataset.id === recorder.lineId)
+    }
+  }
 }
 
 // précharge les <audio> des prises retenues (lecture/monitoring sans latence) et
@@ -1197,38 +1213,87 @@ function syncTakesMonitor() {
   }
 }
 
-function refreshRecInspector(line) {
-  const sel = $('takeSel')
-  if (!sel) return
-  sel.innerHTML = ''
-  const takes = line.takes || []
-  if (!takes.length) {
-    const o = document.createElement('option'); o.value = ''; o.textContent = t('recNoTakes'); sel.appendChild(o)
-    sel.disabled = true
-  } else {
-    sel.disabled = false
-    takes.forEach((tk, i) => {
-      const o = document.createElement('option')
-      o.value = tk.id
-      o.textContent = t('recTakeN', i + 1) + (tk.dur ? ` · ${tk.dur.toFixed(1)}s` : '')
-      sel.appendChild(o)
-    })
-    sel.value = line.take || takes[takes.length - 1].id
-  }
-  $('btnPlayTake').disabled = !takes.length
-  $('btnDelTake').disabled = !takes.length
+// ---------- onglet Enregistrement : liste des répliques + prises ----------
+const SVG_PLAY = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.5l8.5 5.5-8.5 5.5V2.5z"/></svg>'
+const SVG_TAKE_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/></svg>'
+const SVG_REC = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg>'
+
+// sélectionne une réplique (cible d'enregistrement) et rafraîchit l'UI
+function recSelectLine(id) {
+  selectedIds = new Set([id])
+  refreshInspector() // met aussi à jour la liste (voir crochet dans refreshInspector)
+  updateRecUI()
+}
+// bascule enregistrement sur une réplique donnée (ou la sélection courante si id absent)
+function toggleRecordLine(id) {
+  if (recorder.active) { stopRecording(); return }
+  if (id && !selectedIds.has(id)) recSelectLine(id)
+  else if (!id && !singleSelected()) { toast(t('recNeedLine')); return }
+  startRecording()
 }
 
-$('btnRec').addEventListener('click', () => { recorder.active ? stopRecording() : startRecording() })
-$('btnPlayTake').addEventListener('click', playRetainedTake)
-$('btnDelTake').addEventListener('click', deleteRetainedTake)
-$('takeSel').addEventListener('change', () => {
-  const l = singleSelected(); if (!l) return
-  pushUndo(); l.take = $('takeSel').value || null; markDirty(); preloadTakeAudios()
-})
-$('btnMonitor').addEventListener('click', () => {
+function renderRecTab() {
+  const noLines = !project.videoPath || !project.lines.length
+  $('recEmpty').classList.toggle('hidden', !noLines)
+  $('recMain').classList.toggle('hidden', noLines)
+  renderRecList()
+  updateRecUI()
+}
+
+function renderRecList() {
+  const list = $('recList'); if (!list) return
+  const sel = singleSelected()
+  $('recBarHint').textContent = sel ? t('recTarget', (sel.words.map((w) => w.text).join(' ') || '…').slice(0, 60)) : t('recPickLine')
+  list.innerHTML = ''
+  const lines = [...project.lines].sort((a, b) => lineStart(a) - lineStart(b))
+  for (const l of lines) {
+    const takes = l.takes || []
+    const row = document.createElement('div')
+    row.className = 'rec-row' + (selectedIds.has(l.id) ? ' selected' : '') + (recorder.active && recorder.lineId === l.id ? ' recording' : '')
+    row.dataset.id = l.id
+    row.addEventListener('click', () => recSelectLine(l.id))
+
+    const ch = getChar(l.characterId)
+    const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = ch?.color || '#888'
+    const tc = document.createElement('span'); tc.className = 'rec-tc'; tc.textContent = formatTc(lineStart(l), project.fps)
+    const txt = document.createElement('span'); txt.className = 'rec-txt'; txt.textContent = l.words.map((w) => w.text).join(' ') || '…'
+
+    // prises : compteur + sélecteur de prise retenue (si plusieurs)
+    const takeWrap = document.createElement('span'); takeWrap.className = 'rec-takes'
+    if (!takes.length) { takeWrap.textContent = t('recNoTakes'); takeWrap.classList.add('none') }
+    else if (takes.length === 1) { takeWrap.textContent = t('recTakes', 1) + (takes[0].dur ? ` · ${takes[0].dur.toFixed(1)}s` : '') }
+    else {
+      const s = document.createElement('select'); s.className = 'rec-takesel'
+      takes.forEach((tk, i) => { const o = document.createElement('option'); o.value = tk.id; o.textContent = t('recTakeN', i + 1) + (tk.dur ? ` · ${tk.dur.toFixed(1)}s` : ''); s.appendChild(o) })
+      s.value = l.take || takes[takes.length - 1].id
+      s.addEventListener('click', (e) => e.stopPropagation())
+      s.addEventListener('change', () => { pushUndo(); l.take = s.value || null; markDirty(); preloadTakeAudios() })
+      takeWrap.appendChild(s)
+    }
+
+    const actions = document.createElement('span'); actions.className = 'rec-actions'
+    const mk = (cls, html, title, fn, disabled) => {
+      const b = document.createElement('button'); b.className = 'icon-btn ' + cls; b.innerHTML = html; b.title = title; b.disabled = !!disabled
+      b.addEventListener('click', (e) => { e.stopPropagation(); fn() })
+      return b
+    }
+    const recB = mk('rec-row-rec', SVG_REC, t('recRecThis'), () => toggleRecordLine(l.id))
+    if (recorder.active && recorder.lineId === l.id) recB.classList.add('recording')
+    actions.append(
+      recB,
+      mk('rec-row-play', SVG_PLAY, t('recPlay'), () => { recSelectLine(l.id); playRetainedTake() }, !takes.length),
+      mk('rec-row-del', SVG_TAKE_DEL, t('recDel'), () => { recSelectLine(l.id); deleteRetainedTake() }, !takes.length),
+    )
+
+    row.append(dot, tc, txt, takeWrap, actions)
+    list.appendChild(row)
+  }
+}
+
+$('recBigBtn').addEventListener('click', () => toggleRecordLine(null))
+$('recMonBtn').addEventListener('click', () => {
   recorder.monitor = !recorder.monitor
-  $('btnMonitor').classList.toggle('active', recorder.monitor)
+  $('recMonBtn').classList.toggle('active', recorder.monitor)
   if (!recorder.monitor) stopAllTakeAudio()
 })
 
@@ -2003,6 +2068,7 @@ function refreshInspector() {
   ins.el.classList.toggle('empty', !line && !multi)
   ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
+  if (activeTab === 'rec') renderRecList() // la liste d'enregistrement suit la sélection
   if (multi) { insShownId = null; refreshMultiInspector(selectedLines()); return }
   if (!line) {
     insShownId = null
@@ -2027,7 +2093,6 @@ function refreshInspector() {
   if (changed || document.activeElement !== ins.text) ins.text.value = line.words.map((w) => w.text).join(' ')
   if (changed || document.activeElement !== ins.start) ins.start.value = formatTc(lineStart(line), project.fps)
   if (changed || document.activeElement !== ins.end) ins.end.value = formatTc(lineEnd(line), project.fps)
-  refreshRecInspector(line)
 }
 
 ins.char.addEventListener('change', () => {
@@ -2689,19 +2754,25 @@ $('tracksPlayhead').style.left = '0px' // repositionnée chaque frame par drawTr
 let tcw = 0, tch = 0
 
 function setTab(name) {
-  activeTab = name === 'tracks' ? 'tracks' : 'rythmo'
+  activeTab = (name === 'tracks' || name === 'rec') ? name : 'rythmo'
   const onTracks = activeTab === 'tracks'
+  const onRec = activeTab === 'rec'
   document.body.classList.toggle('on-tracks', onTracks) // cache les contrôles rythmo, montre l'import audio
-  $('tabRythmo').classList.toggle('active', !onTracks)
+  document.body.classList.toggle('on-rec', onRec)
+  $('tabRythmo').classList.toggle('active', activeTab === 'rythmo')
   $('tabTracks').classList.toggle('active', onTracks)
-  $('bandWrap').classList.toggle('hidden', onTracks)
-  $('inspector').classList.toggle('hidden', onTracks)
+  $('tabRec').classList.toggle('active', onRec)
+  $('bandWrap').classList.toggle('hidden', onTracks || onRec)
+  $('inspector').classList.toggle('hidden', onTracks || onRec)
   $('tracksView').classList.toggle('hidden', !onTracks)
+  $('recView').classList.toggle('hidden', !onRec)
   if (onTracks) { hideSubOverlay(); renderTracks() }
+  if (onRec) { hideSubOverlay(); renderRecTab() }
   applyBandHeight() // hauteur du dock constante entre onglets + dimensionne le canvas visible
 }
 $('tabRythmo').addEventListener('click', () => setTab('rythmo'))
 $('tabTracks').addEventListener('click', () => setTab('tracks'))
+$('tabRec').addEventListener('click', () => setTab('rec'))
 
 // lanes affichées : vidéo (référence) puis pistes audio
 const trackLanes = () => [{ id: '__video__', kind: 'video' }, ...(project.audioTracks || [])]

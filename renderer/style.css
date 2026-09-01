@@ -867,6 +867,43 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 .tracks-ctl { display: none; }
 body.on-tracks .rythmo-ctl { display: none; }
 body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
+body.on-rec .rythmo-ctl, body.on-rec .tracks-ctl { display: none; }
+
+/* ---------- onglet Enregistrement ---------- */
+#recView { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--panel2); border-top: 1px solid var(--border); }
+#recView.hidden { display: none; }
+#recEmpty { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--dim); }
+#recEmpty.hidden { display: none; }
+#recEmpty svg { width: 40px; height: 40px; opacity: .5; }
+#recEmptyMain { font-size: 15px; font-weight: 600; color: var(--text); }
+#recEmptySub { font-size: 12px; max-width: 360px; text-align: center; }
+#recMain { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#recMain.hidden { display: none; }
+#recBar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.rec-big { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; border-radius: 6px; border: 1px solid var(--border); background: var(--inset); color: var(--text); cursor: pointer; }
+.rec-big .rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #e0453a; flex: 0 0 auto; }
+.rec-big:hover { border-color: var(--toggle-border); }
+.rec-big.recording { background: #e0453a; color: #fff; border-color: #e0453a; }
+.rec-big.recording .rec-dot { background: #fff; animation: recPulse 1s ease-in-out infinite; }
+@keyframes recPulse { 50% { opacity: .35; } }
+.rec-big-meter { flex: 1 1 auto; max-width: 260px; height: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+#recBigMeterBar { height: 100%; width: 0%; background: linear-gradient(90deg, #3fae5a 0%, #d8c53a 70%, #e0533a 100%); transition: width .05s linear; }
+.rec-hint { flex: 0 1 auto; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#recList { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.rec-row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.rec-row:hover { background: var(--row-hover); }
+.rec-row.selected { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--toggle-text); }
+.rec-row.recording { background: color-mix(in srgb, #e0453a 15%, transparent); }
+.rec-dot-c { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; }
+.rec-tc { flex: 0 0 auto; font: 12px Consolas, monospace; color: var(--dim); min-width: 62px; }
+.rec-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; }
+.rec-takes { flex: 0 0 auto; font-size: 11px; color: var(--dim); min-width: 76px; text-align: right; }
+.rec-takes.none { opacity: .55; }
+.rec-actions { flex: 0 0 auto; display: inline-flex; gap: 4px; }
+.rec-actions .icon-btn { width: 28px; height: 28px; padding: 5px; }
+.rec-actions .rec-row-rec { color: #e0453a; }
+.rec-actions .rec-row-rec.recording { color: #fff; background: #e0453a; border-radius: 5px; }
+.rec-actions button:disabled { opacity: .3; cursor: default; }
 
 /* ---------- vue Pistes (timeline façon montage) ---------- */
 #tracksView { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--panel2); border-top: 1px solid var(--border); }
