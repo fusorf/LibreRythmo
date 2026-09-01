@@ -1598,13 +1598,15 @@ ipcMain.handle('export-start', async (e, opts) => {
   const enc = opts.encoder === 'cpu' ? 'libx264' : await probeEncoder()
   const { W, H, fps, duration, layout } = opts
   const ev = (n) => Math.max(2, Math.round(n / 2) * 2) // dimensions paires
+  const hasBand = !opts.noBand // « Aucune » : export sans bande rythmo (entrée 0 = vidéo)
   const vid = layout.video
   const band = layout.band
+  const vIn = hasBand ? 1 : 0 // index d'entrée de la vidéo (0 = bande pipe si présente)
   const filter = [
     `color=black:size=${W}x${H}:rate=${fps}:d=${duration.toFixed(3)}[bg]`,
-    `[1:v]scale=${ev(vid.w)}:${ev(vid.h)}[vid]`,
-    `[bg][vid]overlay=${Math.round(vid.x)}:${Math.round(vid.y)}[base]`,
-    `[base][0:v]overlay=${Math.round(band.x)}:${Math.round(band.y)}[outv]`,
+    `[${vIn}:v]scale=${ev(vid.w)}:${ev(vid.h)}[vid]`,
+    `[bg][vid]overlay=${Math.round(vid.x)}:${Math.round(vid.y)}${hasBand ? '[base]' : '[outv]'}`,
+    ...(hasBand ? [`[base][0:v]overlay=${Math.round(band.x)}:${Math.round(band.y)}[outv]`] : []),
     `[outv]fps=${fps}[out]`, // verrouille la cadence de sortie
   ].join(';')
   // entrées : 0 = bande (RGBA brut via pipe), 1 = vidéo. Les pistes audio
@@ -1617,8 +1619,10 @@ ipcMain.handle('export-start', async (e, opts) => {
   const ss = Math.max(0, Number(opts.startTime) || 0)
   const seek = ss > 0 ? ['-accurate_seek', '-ss', ss.toFixed(3)] : []
   const inputs = [
-    '-f', 'rawvideo', '-pixel_format', 'rgba',
-    '-video_size', `${opts.bandW}x${opts.bandH}`, '-framerate', String(fps), '-i', 'pipe:0',
+    ...(hasBand ? [
+      '-f', 'rawvideo', '-pixel_format', 'rgba',
+      '-video_size', `${opts.bandW}x${opts.bandH}`, '-framerate', String(fps), '-i', 'pipe:0',
+    ] : []),
     ...seek, '-hwaccel', 'auto', '-i', opts.videoPath,
   ]
   const maps = ['-map', '[out]']
@@ -1635,7 +1639,7 @@ ipcMain.handle('export-start', async (e, opts) => {
     // → un unique flux [aout] via amix (normalize=0 conserve les niveaux d'origine).
     const audioFilters = []
     const labels = []
-    let idx = 2
+    let idx = vIn + 1
     const base = sel[0]
     if (base) {
       inputs.push(...seek, '-itsoffset', (Number(base.offset) || 0).toFixed(3), '-i', base.path)
@@ -1654,14 +1658,14 @@ ipcMain.handle('export-start', async (e, opts) => {
     maps.push('-map', '[aout]')
   } else if (sel.length) {
     sel.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)) // piste par défaut en premier
-    let idx = 2
+    let idx = vIn + 1
     for (const a of sel) {
       inputs.push(...seek, '-itsoffset', (Number(a.offset) || 0).toFixed(3), '-i', a.path)
       maps.push('-map', `${idx}:a:${a.aIndex || 0}`)
       idx++
     }
   } else {
-    maps.push('-map', '1:a?') // repli : comportement historique (première piste audio)
+    maps.push('-map', `${vIn}:a?`) // repli : comportement historique (première piste audio)
   }
   const args = [
     '-y',

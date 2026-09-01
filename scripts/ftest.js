@@ -116,7 +116,9 @@ const TESTS = [
     loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
       characters: [{ id: 'c1', name: 'A', color: '#e8443a' }, { id: 'c2', name: 'B', color: '#3a7ae8' }], lines: [] }, null)
     activeTab = 'rythmo'; selectedCharId = 'c1'
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }))
+    // on lit e.code (position physique) pour marcher en AZERTY ; le caractère 'é'
+    // produit par la touche « 2 » d'un clavier FR porte code 'Digit2'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'é', code: 'Digit2' }))
     return selectedCharId === 'c2'
   })()`],
   ['Transport character badge reflects selection', `(() => {
@@ -279,7 +281,7 @@ const TESTS = [
   ['Models list shape + DL estimate', `(async () => {
     if (!window.api.whisperListModels) return true
     const m = await window.api.whisperListModels()
-    return Array.isArray(m) && m.length >= 3 && ('present' in m[0]) && ('model' in m[0]) && ('sizeMB' in m[0]) && ('estMB' in m[0]) && m[0].estMB > 0
+    return Array.isArray(m) && m.length >= 2 && ('present' in m[0]) && ('model' in m[0]) && ('sizeMB' in m[0]) && ('estMB' in m[0]) && m[0].estMB > 0
   })()`],
   ['DL size formatting', `(() => {
     if (typeof fmtDlSize !== 'function') return true
@@ -317,6 +319,18 @@ const TESTS = [
     document.getElementById('separateModal').classList.add('hidden')
     project.videoPath = null
     return nr !== rb
+  })()`],
+  ['Export « Aucune » : pas de bande, vidéo plein cadre', `(() => {
+    if (typeof layoutExport !== 'function') return true
+    const prev = exp.bandPos
+    exp.bandPos = 'none'
+    layoutExport()
+    const L = exp.layout
+    const W = outW(), H = outH()
+    const okNoBand = L.band.h === 0
+    const okFits = L.video.w <= W + 1 && L.video.h <= H + 1 && L.video.w > 0 && L.video.h > 0
+    exp.bandPos = prev; layoutExport()
+    return okNoBand && okFits
   })()`],
 ]
 

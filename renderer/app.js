@@ -619,6 +619,7 @@ function applyLang() {
   $('lblBandPos').textContent = t('lblBandPos')
   $('optBandBottom').textContent = t('optBandBottom')
   $('optBandTop').textContent = t('optBandTop')
+  $('optBandNone').textContent = t('optBandNone')
   $('lblEnc').textContent = t('lblEnc')
   $('lblSpeed').textContent = t('lblSpeed')
   $('lblSpeedWrap').title = t('speedTitle')
@@ -5438,6 +5439,18 @@ function syncFpsModeUI() {
 function layoutExport() {
   const W = outW()
   const H = outH()
+  const ar0 = (video.videoWidth || 16) / (video.videoHeight || 9)
+  if (exp.bandPos === 'none') {
+    // pas de bande : la vidéo occupe tout le cadre (letterbox centré)
+    let vw = W
+    let vh = vw / ar0
+    if (vh > H) { vh = H; vw = vh * ar0 }
+    exp.layout = {
+      video: { x: (W - vw) / 2, y: (H - vh) / 2, w: vw, h: vh },
+      band: { x: 0, y: 0, w: W, h: 0 },
+    }
+    return
+  }
   const bandH = clamp(Math.round(H * exp.bandFrac), 24, H - 24)
   const regionH = H - bandH
   const ar = (video.videoWidth || 16) / (video.videoHeight || 9)
@@ -5668,7 +5681,8 @@ $('expW').addEventListener('change', () => { sizeExportPreview(); resetExportLay
 $('expH').addEventListener('change', () => { sizeExportPreview(); resetExportLayout() })
 $('expReset').addEventListener('click', resetExportLayout)
 $('expBandPos').addEventListener('change', () => {
-  exp.bandPos = $('expBandPos').value === 'top' ? 'top' : 'bottom'
+  const v = $('expBandPos').value
+  exp.bandPos = v === 'top' || v === 'none' ? v : 'bottom'
   layoutExport()
 })
 $('expClose').addEventListener('click', () => {
@@ -5694,17 +5708,19 @@ function exportPreviewLoop() {
   expCtx.drawImage(video, L.video.x * s, L.video.y * s, L.video.w * s, L.video.h * s)
 
   const winSec = Math.max(1, exp.winSec)
-  expCtx.save()
-  expCtx.translate(L.band.x * s, L.band.y * s)
-  expCtx.beginPath()
-  expCtx.rect(0, 0, L.band.w * s, L.band.h * s)
-  expCtx.clip()
-  const previewTrackList = exp.tracks ? [...exp.tracks].sort((a, b) => a - b) : null
-  renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList: previewTrackList })
-  expCtx.restore()
+  if (exp.bandPos !== 'none') {
+    expCtx.save()
+    expCtx.translate(L.band.x * s, L.band.y * s)
+    expCtx.beginPath()
+    expCtx.rect(0, 0, L.band.w * s, L.band.h * s)
+    expCtx.clip()
+    const previewTrackList = exp.tracks ? [...exp.tracks].sort((a, b) => a - b) : null
+    renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList: previewTrackList })
+    expCtx.restore()
+  }
 
   // barre de séparation glissable entre la vidéo et la bande (masquée pendant l'export)
-  if (!exp.running) {
+  if (!exp.running && exp.bandPos !== 'none') {
     const dy = dividerOutY() * s
     expCtx.strokeStyle = '#ffffffcc'
     expCtx.lineWidth = 2
@@ -5732,6 +5748,7 @@ function expPointerOutY(e) {
   return rc.height ? ((e.clientY - rc.top) / rc.height) * outH() : 0
 }
 function nearDivider(e) {
+  if (exp.bandPos === 'none') return false
   const rc = expCanvas.getBoundingClientRect()
   const dividerCssY = (dividerOutY() / outH()) * rc.height
   return Math.abs((e.clientY - rc.top) - dividerCssY) < 10
@@ -5818,9 +5835,10 @@ async function runExport(outPathOverride) {
     if (tk.startTime + (tk.dur || 0) <= startT) continue // entièrement avant la fenêtre
     takes.push({ name: tk.file, offset: Math.max(0, tk.startTime - startT) })
   }
+  const noBand = exp.bandPos === 'none'
   const r = await window.api.exportStart({
     fps, W, H, duration: dur, startTime: startT, layout: L, bandW: bw, bandH: bh,
-    videoPath: project.videoPath, outPath, audio, takes, projectPath,
+    videoPath: project.videoPath, outPath, audio, takes, projectPath, noBand,
     encoder: $('expEnc').value === 'cpu' ? 'cpu' : 'gpu',
   })
   if (r.error) {
@@ -5848,7 +5866,8 @@ async function runExport(outPathOverride) {
   const closed = new Promise((res) => { exp.closedResolve = res })
 
   let ok = true
-  for (let i = 0; i < total; i++) {
+  // « Aucune » : pas de bande à envoyer, ffmpeg encode seul (aucune entrée pipe)
+  for (let i = 0; !noBand && i < total; i++) {
     if (exp.cancelled) { ok = false; break }
     const tt = startT + i / fps
     renderBand(octx, tt, bw, bh, bw / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList })
