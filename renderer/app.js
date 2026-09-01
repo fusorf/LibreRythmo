@@ -2675,6 +2675,7 @@ const TRK_LANE_H = 56
 // icônes monochromes (haut-parleur actif / muet) — remplacent les emoji 🔊/🔈
 const SPK_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a4 4 0 0 1 0 7"/><path d="M18.7 6a7 7 0 0 1 0 12"/></svg>'
 const SPK_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9.5l4.5 5M21.5 9.5l-4.5 5"/></svg>'
+const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></svg>'
 const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
 const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + ' ch' : '')
 
@@ -2799,7 +2800,7 @@ function renderTrackHeads() {
       row.append(spk, txt)
       if (tr.type === 'file') {
         const del = document.createElement('button')
-        del.className = 'trk-del'; del.textContent = '🗑'; del.title = t('trackDelete')
+        del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('trackDelete')
         del.addEventListener('click', (e) => { e.stopPropagation(); deleteTrack(tr.id) })
         row.appendChild(del)
       }
@@ -2945,7 +2946,12 @@ function drawTracks() {
   tctx.lineWidth = 1
 
   // ligne de lecture : overlay DOM pleine hauteur, positionné ici (le canvas ne défile plus)
-  $('tracksPlayhead').style.left = tXAt(now) + 'px'
+  const phx = tXAt(now)
+  $('tracksPlayhead').style.left = phx + 'px'
+  // flèche rouge en tête de la ligne de lecture (comme l'onglet rythmo)
+  const aw = 5
+  tctx.fillStyle = pal.playhead
+  tctx.beginPath(); tctx.moveTo(phx - aw, 0); tctx.lineTo(phx + aw, 0); tctx.lineTo(phx, aw * 1.7); tctx.closePath(); tctx.fill()
 }
 
 // ---------- interactions souris : clic/glisser = seek (position absolue), glisser piste = offset ----------

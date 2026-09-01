@@ -919,7 +919,12 @@ body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
 .trk-spk svg { width: 16px; height: 16px; display: block; }
 .trk-spk:hover { opacity: .9; }
 .trk-spk.on { opacity: 1; border-color: var(--toggle-border); background: color-mix(in srgb, var(--toggle-text) 16%, transparent); }
-.trk-head .trk-del { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; font-size: 13px; }
+.trk-head .trk-del {
+  flex: 0 0 auto; width: 26px; height: 26px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--dim);
+}
+.trk-head .trk-del svg { width: 15px; height: 15px; display: block; }
+.trk-head .trk-del:hover { color: var(--text); }
 /* fond sombre = couleur de la timeline : l'espace sous la dernière piste reste cohérent */
 #tracksCanvasWrap { position: relative; flex: 1 1 auto; min-width: 0; background: var(--band-bg); }
 #tracksCanvas { display: block; width: 100%; cursor: default; }
