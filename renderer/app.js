@@ -4134,6 +4134,7 @@ $('btnOnoma').addEventListener('click', (e) => {
     onomaPop.classList.add('hidden')
     return
   }
+  symbolPop.classList.add('hidden'); cuePop.classList.add('hidden') // un seul popup ouvert à la fois
   const r = e.currentTarget.getBoundingClientRect()
   onomaPop.style.left = `${r.left}px`
   onomaPop.style.bottom = `${window.innerHeight - r.top + 6}px`
@@ -4219,6 +4220,7 @@ buildSymbolPop()
 $('btnSymbols').addEventListener('click', (e) => {
   e.stopPropagation()
   if (!symbolPop.classList.contains('hidden')) { symbolPop.classList.add('hidden'); return }
+  onomaPop.classList.add('hidden'); cuePop.classList.add('hidden') // un seul popup ouvert à la fois
   const r = e.currentTarget.getBoundingClientRect()
   symbolPop.style.left = `${r.left}px`
   symbolPop.style.bottom = `${window.innerHeight - r.top + 6}px`
@@ -4404,6 +4406,7 @@ buildCuePop()
 $('btnAdr').addEventListener('click', (e) => {
   e.stopPropagation()
   if (!cuePop.classList.contains('hidden')) { cuePop.classList.add('hidden'); return }
+  onomaPop.classList.add('hidden'); symbolPop.classList.add('hidden') // un seul popup ouvert à la fois
   const r = e.currentTarget.getBoundingClientRect()
   cuePop.style.left = `${r.left}px`
   cuePop.style.bottom = `${window.innerHeight - r.top + 6}px`

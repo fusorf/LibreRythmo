@@ -292,6 +292,16 @@ const TESTS = [
     const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'UVR-MDX-NET-Inst_HQ_3.onnx' })
     return r && r.error === 'no-model'
   })()`],
+  ['Popups mutually exclusive (reaction xor prononciation)', `(() => {
+    const clk = (id) => document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const hidden = (id) => document.getElementById(id).classList.contains('hidden')
+    clk('btnOnoma')
+    const step1 = !hidden('onomaPop') && hidden('symbolPop')
+    clk('btnSymbols')
+    const step2 = !hidden('symbolPop') && hidden('onomaPop')
+    document.getElementById('symbolPop').classList.add('hidden')
+    return step1 && step2
+  })()`],
   ['Sep modal opens with coherent state', `(async () => {
     if (typeof openSeparateDialog !== 'function') return true
     project.videoPath = 'X:/fake.mp4'
