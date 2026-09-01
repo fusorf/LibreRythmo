@@ -503,6 +503,9 @@ function applyLang() {
   $('setCapLegend').textContent = t('setCapLegend')
   $('setCapApiLabel').textContent = t('setCapApiLabel')
   $('setCapDevLabel').textContent = t('setCapDevLabel')
+  $('setOutLegend').textContent = t('setOutLegend')
+  $('setOutDevLabel').textContent = t('setOutDevLabel')
+  $('outTest').textContent = t(outTestState ? 'outTestStop' : 'outTestBtn')
   $('capAsioFfmpeg').textContent = t('capAsioBtn')
   $('setTrLegend').textContent = t('setTrLegend')
   $('setTrActiveLabel').textContent = t('setActiveLabel')
@@ -959,7 +962,7 @@ const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture / monito
 const retainedTake = (line) => (line.takes || []).find((k) => k.id === line.take) || null
 
 // config capture (persistée côté main : audio-config.json)
-const audioCfg = { api: 'system', device: null, asioFfmpeg: null }
+const audioCfg = { api: 'system', device: null, output: null, asioFfmpeg: null }
 
 function resetMic() {
   try { if (recorder.stream) recorder.stream.getTracks().forEach((t2) => t2.stop()) } catch {}
@@ -969,10 +972,17 @@ function resetMic() {
 
 async function ensureMic() {
   if (recorder.stream) return recorder.stream
-  const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  if (audioCfg.device) audio.deviceId = { ideal: audioCfg.device } // périphérique choisi (Système)
+  const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  const getAudio = (c) => navigator.mediaDevices.getUserMedia({ audio: c })
   try {
-    recorder.stream = await navigator.mediaDevices.getUserMedia({ audio })
+    if (audioCfg.device) {
+      // deviceId exact → on capture vraiment le périphérique choisi ; repli sur le
+      // défaut si celui-ci a été débranché (évite l'échec silencieux de « ideal »)
+      try { recorder.stream = await getAudio({ ...base, deviceId: { exact: audioCfg.device } }) }
+      catch { recorder.stream = await getAudio(base) }
+    } else {
+      recorder.stream = await getAudio(base)
+    }
   } catch (e) { toast(t('recMicDenied')); return null }
   try {
     recorder.ac = new (window.AudioContext || window.webkitAudioContext)()
@@ -1383,7 +1393,7 @@ function fmtDlSize(mb) {
   if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang === 'fr') s = s.replace('.', ','); return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
   return Math.round(mb) + ' ' + t('unitMB')
 }
-function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, asioFfmpeg: audioCfg.asioFfmpeg }) }
+function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, output: audioCfg.output, asioFfmpeg: audioCfg.asioFfmpeg }) }
 
 async function fillCaptureDevices() {
   const api = $('capApi').value
@@ -1407,6 +1417,70 @@ async function fillCaptureDevices() {
     devSel.value = devs.includes(audioCfg.device) ? audioCfg.device : (devs[0] || '')
     audioCfg.device = devSel.value || null
   }
+}
+
+// ---- sortie audio : sélection du périphérique de lecture + test (retour audio + visuel) ----
+async function fillOutputDevices() {
+  const sel = $('outDevice')
+  sel.innerHTML = ''
+  let devs = []
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput') } catch {}
+  $('outNote').textContent = devs.some((d) => d.label) ? '' : t('capGrantMic')
+  const def = document.createElement('option'); def.value = ''; def.textContent = t('capDefault'); sel.appendChild(def)
+  for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); sel.appendChild(o) }
+  sel.value = devs.some((d) => d.deviceId === audioCfg.output) ? audioCfg.output : ''
+  if (!sel.value) audioCfg.output = null
+}
+
+// route la lecture vidéo vers le périphérique de sortie choisi (défaut si vide)
+async function applyOutputSink() {
+  if (!video || typeof video.setSinkId !== 'function') return
+  try { await video.setSinkId(audioCfg.output || '') } catch {}
+}
+
+let outTestState = null
+function stopOutputTest() {
+  if (!outTestState) return
+  cancelAnimationFrame(outTestState.raf)
+  clearTimeout(outTestState.timer)
+  try { outTestState.audioEl.pause() } catch {}
+  try { outTestState.ac.close() } catch {}
+  $('outMeterFill').style.width = '0%'
+  $('outTest').textContent = t('outTestBtn')
+  outTestState = null
+}
+// test « à la Discord » : joue un petit accord sur la sortie choisie et anime un vumètre
+async function toggleOutputTest() {
+  if (outTestState) { stopOutputTest(); return }
+  const AC = window.AudioContext || window.webkitAudioContext
+  if (!AC) return
+  const ac = new AC()
+  const analyser = ac.createAnalyser(); analyser.fftSize = 512
+  const dest = ac.createMediaStreamDestination()
+  const bus = ac.createGain(); bus.gain.value = 0.9
+  bus.connect(analyser); analyser.connect(dest)
+  const t0 = ac.currentTime + 0.02
+  ;[523.25, 659.25, 783.99].forEach((f, i) => { // do–mi–sol
+    const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f
+    const g = ac.createGain(); const s = t0 + i * 0.16
+    g.gain.setValueAtTime(0.0001, s)
+    g.gain.exponentialRampToValueAtTime(0.3, s + 0.02)
+    g.gain.exponentialRampToValueAtTime(0.0001, s + 0.5)
+    o.connect(g); g.connect(bus); o.start(s); o.stop(s + 0.55)
+  })
+  const audioEl = new Audio(); audioEl.srcObject = dest.stream
+  try { if (audioEl.setSinkId && audioCfg.output) await audioEl.setSinkId(audioCfg.output) } catch {}
+  try { await audioEl.play() } catch {}
+  const buf = new Uint8Array(analyser.frequencyBinCount)
+  const fill = $('outMeterFill')
+  const tick = () => {
+    analyser.getByteTimeDomainData(buf)
+    let peak = 0; for (const v of buf) { const d = Math.abs(v - 128); if (d > peak) peak = d }
+    fill.style.width = Math.min(100, (peak / 128) * 160) + '%'
+    outTestState.raf = requestAnimationFrame(tick)
+  }
+  outTestState = { ac, audioEl, raf: requestAnimationFrame(tick), timer: setTimeout(stopOutputTest, 1500) }
+  $('outTest').textContent = t('outTestStop')
 }
 
 // ---- modèles actifs (persistés localement), dropdowns qui ne montrent que l'installé ----
@@ -1494,16 +1568,19 @@ function openSettings() {
   setModal.classList.remove('hidden')
   $('capApi').value = audioCfg.api || 'system'
   setDl(false, '')
-  fillCaptureDevices(); renderTrModels(); renderSepModels()
+  fillCaptureDevices(); fillOutputDevices(); renderTrModels(); renderSepModels()
 }
 
 $('capApi').addEventListener('change', () => { audioCfg.api = $('capApi').value; audioCfg.device = null; saveAudioCfg(); resetMic(); fillCaptureDevices() })
 $('capDevice').addEventListener('change', () => { audioCfg.device = $('capDevice').value || null; saveAudioCfg(); resetMic() })
 $('capRefresh').addEventListener('click', fillCaptureDevices)
+$('outDevice').addEventListener('change', () => { audioCfg.output = $('outDevice').value || null; saveAudioCfg(); applyOutputSink() })
+$('outRefresh').addEventListener('click', fillOutputDevices)
+$('outTest').addEventListener('click', toggleOutputTest)
 $('capAsioFfmpeg').addEventListener('click', async () => { const p = await window.api.pickExecutable(); if (p) { audioCfg.asioFfmpeg = p; saveAudioCfg(); fillCaptureDevices() } })
 $('trActive').addEventListener('change', () => setActiveWhisper($('trActive').value))
 $('sepActive').addEventListener('change', () => setActiveSep($('sepActive').value))
-$('setClose').addEventListener('click', () => setModal.classList.add('hidden'))
+$('setClose').addEventListener('click', () => { stopOutputTest(); setModal.classList.add('hidden') })
 window.api.onWhisperProgress((p) => {
   if (!p || $('setProgress').classList.contains('hidden')) return
   if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
@@ -6089,7 +6166,8 @@ function loop() {
 // principal — qui a déjà construit le menu avec les mêmes valeurs.
 ;(async () => {
   const st = await window.api.getSettings()
-  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.asioFfmpeg = ac.asioFfmpeg || null } } catch {}
+  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.output = ac.output || null; audioCfg.asioFfmpeg = ac.asioFfmpeg || null } } catch {}
+  applyOutputSink()
   lang = st.lang === 'en' ? 'en' : 'fr'
   autosaveOn = !!st.autosave
   autofocusText = st.autofocus !== false

@@ -320,6 +320,13 @@ const TESTS = [
     project.videoPath = null
     return nr !== rb
   })()`],
+  ['Sortie audio : liste peuplée + test dispo', `(async () => {
+    if (typeof fillOutputDevices !== 'function' || typeof toggleOutputTest !== 'function') return true
+    await fillOutputDevices()
+    const sel = document.getElementById('outDevice')
+    // au minimum l'option « périphérique par défaut »
+    return !!sel && sel.options.length >= 1 && sel.options[0].value === '' && sel.options[0].textContent.length > 0
+  })()`],
   ['Export « Aucune » : pas de bande, vidéo plein cadre', `(() => {
     if (typeof layoutExport !== 'function') return true
     const prev = exp.bandPos

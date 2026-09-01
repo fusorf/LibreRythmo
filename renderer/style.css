@@ -1241,6 +1241,10 @@ button.primary:disabled { opacity: .45; cursor: default; }
 .set-block > label > span:first-child { min-width: 96px; color: var(--dim); }
 .cap-dev-wrap select { flex: 1; min-width: 0; }
 .cap-refresh { flex: 0 0 auto; padding: 4px 8px; line-height: 1; }
+.out-test-row { display: flex; align-items: center; gap: 10px; }
+.out-test-btn { flex: 0 0 auto; }
+.out-meter { flex: 1 1 auto; height: 10px; min-width: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+#outMeterFill { height: 100%; width: 0%; background: linear-gradient(90deg, #3fae5a 0%, #d8c53a 70%, #e0533a 100%); transition: width .05s linear; }
 .set-row { display: flex; align-items: center; gap: 8px; }
 .set-note { font-size: 12px; }
 #setProgress { width: 220px; height: 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
