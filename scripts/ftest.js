@@ -78,6 +78,17 @@ const TESTS = [
     project.rtl = false
     return r
   })()`],
+  // --- A5 work documents ---
+  ['A5 presence grid HTML', `(() => {
+    if (typeof buildPresenceHtml !== 'function') return true
+    const h = buildPresenceHtml()
+    return h.includes('Alice') && h.includes('Bob') && h.includes('<table') && h.includes('Total')
+  })()`],
+  ['A5 line tally HTML', `(() => {
+    if (typeof buildTallyHtml !== 'function') return true
+    const h = buildTallyHtml()
+    return h.includes('Bonjour toi') && h.includes('Salut') && h.includes('ALICE')
+  })()`],
 ]
 
 function getJson() {

@@ -4111,6 +4111,101 @@ async function exportPdfDialog() {
   if (r) toast(t('pdfExported', r.replace(/^.*[\\/]/, '')))
 }
 
+// ============================================================ A5 — documents de travail
+// Deux documents PDF pour organiser une session d'enregistrement (mêmes rouages
+// que le script : HTML → printToPDF côté process principal via window.api.exportPdf).
+//   · grille de présence : personnages × scènes, qui parle où (nb de répliques)
+//   · relevé de lignes : par personnage, ses répliques (TC + texte) + case cochée
+const DOC_CSS = `* { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; color: #111; margin: 0; }
+  .title { font-size: 17pt; font-weight: bold; margin: 0 0 3pt; }
+  .meta { color: #777; font-size: 9pt; margin-bottom: 14pt; text-transform: uppercase; letter-spacing: .5pt; }
+  .rule { border-bottom: 1.5px solid #111; margin-bottom: 16pt; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #bbb; padding: 4pt 6pt; text-align: center; font-size: 9pt; }
+  thead th { background: #f0f0f0; }
+  th.nm { text-align: left; white-space: nowrap; }
+  td.p { background: #e9f2ff; font-weight: bold; }
+  td.tot, th.tot { background: #f7f7f7; font-weight: bold; }
+  tr.totals td, tr.totals th { background: #f0f0f0; font-weight: bold; }
+  .dot { width: 8pt; height: 8pt; border-radius: 50%; display: inline-block; margin-right: 5pt; transform: translateY(1pt); }
+  h2.grp { font-size: 12pt; margin: 16pt 0 4pt; page-break-after: avoid; }
+  h2.grp .dot { width: 10pt; height: 10pt; }
+  table.tally td.tc { color: #555; width: 88pt; white-space: nowrap; text-align: left; }
+  table.tally td.d { text-align: left; }
+  table.tally td.rec { width: 34pt; }
+  table.tally td.n { width: 26pt; color: #777; }`
+
+function docHead(title, sub, count, unit) {
+  let date = ''
+  try { date = new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) } catch {}
+  return `<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><style>${DOC_CSS}</style></head><body>` +
+    `<div class="title">${xmlEsc(title)}</div>` +
+    `<div class="meta">${xmlEsc(sub)}${date ? ' · ' + xmlEsc(date) : ''} · ${count} ${xmlEsc(unit)}</div>` +
+    `<div class="rule"></div>`
+}
+
+function docScenes() {
+  const scenes = [...project.loops].sort((a, b) => a.start - b.start)
+  if (scenes.length) return scenes
+  const maxEnd = project.lines.reduce((m, l) => Math.max(m, lineEnd(l)), 0)
+  return [{ id: 'all', name: t('docAllScenes'), start: 0, end: maxEnd || 1 }]
+}
+
+function buildPresenceHtml() {
+  const chars = project.characters.slice()
+  const scenes = docScenes()
+  const inScene = (l, sc) => { const m = (lineStart(l) + lineEnd(l)) / 2; return m >= sc.start && m < sc.end }
+  const header = scenes.map((sc) => `<th>${xmlEsc(sc.name)}</th>`).join('')
+  let body = ''
+  const perScene = scenes.map(() => 0)
+  for (const c of chars) {
+    const lines = project.lines.filter((l) => l.characterId === c.id && l.words.length)
+    const cells = scenes.map((sc, i) => {
+      const n = lines.filter((l) => inScene(l, sc)).length
+      perScene[i] += n
+      return `<td class="${n ? 'p' : ''}">${n ? '●' + (n > 1 ? ' ' + n : '') : ''}</td>`
+    }).join('')
+    body += `<tr><th class="nm"><span class="dot" style="background:${xmlEsc(c.color)}"></span>${xmlEsc(c.name)}</th>${cells}<td class="tot">${lines.length}</td></tr>`
+  }
+  const totals = `<tr class="totals"><th class="nm">${xmlEsc(t('docTotal'))}</th>` +
+    perScene.map((n) => `<td>${n || ''}</td>`).join('') +
+    `<td class="tot">${project.lines.filter((l) => l.words.length).length}</td></tr>`
+  return docHead(scriptTitle(), t('docPresenceSub'), chars.length, t('docCharsUnit')) +
+    `<table><thead><tr><th class="nm">${xmlEsc(t('docCharacter'))}</th>${header}<th class="tot">${xmlEsc(t('docTotal'))}</th></tr></thead>` +
+    `<tbody>${body}${totals}</tbody></table></body></html>`
+}
+
+function buildTallyHtml() {
+  const chars = project.characters.slice()
+  let body = ''
+  let grand = 0
+  for (const c of chars) {
+    const lines = project.lines.filter((l) => l.characterId === c.id && l.words.length)
+      .sort((a, b) => lineStart(a) - lineStart(b))
+    if (!lines.length) continue
+    grand += lines.length
+    const rows = lines.map((l, i) => {
+      const tc = formatTc(lineStart(l), project.fps)
+      const text = l.words.map((w) => w.text).filter((w) => w !== '_').join(' ')
+      return `<tr><td class="n">${i + 1}</td><td class="tc">${xmlEsc(tc)}</td><td class="d">${xmlEsc(text)}</td><td class="rec">☐</td></tr>`
+    }).join('')
+    body += `<h2 class="grp"><span class="dot" style="background:${xmlEsc(c.color)}"></span>${xmlEsc(c.name.toUpperCase())} · ${lines.length}</h2>` +
+      `<table class="tally"><thead><tr><th class="n">#</th><th class="tc">TC</th><th class="d">${xmlEsc(t('docLine'))}</th><th class="rec">${xmlEsc(t('docRec'))}</th></tr></thead><tbody>${rows}</tbody></table>`
+  }
+  return docHead(scriptTitle(), t('docTallySub'), grand, t('docLinesUnit')) + body + `</body></html>`
+}
+
+async function exportWorkDoc(kind) {
+  if (!project.lines.length) { toast(t('noLinesToExport')); return }
+  const base = (projectPath || project.videoPath || 'librerythmo').replace(/\.rythmo(\.json)?$/i, '').replace(/\.\w+$/, '')
+  const suffix = kind === 'presence' ? '-presence' : '-releve'
+  const html = kind === 'presence' ? buildPresenceHtml() : buildTallyHtml()
+  const r = await window.api.exportPdf(html, base + suffix + '.pdf')
+  if (r && r.error) { toast(t('pdfFailed')); console.error('workdoc:', r.error); return }
+  if (r) toast(t('pdfExported', r.replace(/^.*[\\/]/, '')))
+}
+
 // menu natif → actions
 window.api.onMenu((action, arg) => {
   if (action === 'new-project') newProjectAction()
@@ -4125,6 +4220,8 @@ window.api.onMenu((action, arg) => {
   else if (action === 'import-detx-roles') importDetxRolesDialog()
   else if (action === 'export-detx') exportDetxDialog()
   else if (action === 'export-pdf') exportPdfDialog()
+  else if (action === 'export-presence') exportWorkDoc('presence')
+  else if (action === 'export-tally') exportWorkDoc('tally')
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
   else if (action === 'set-lang') setLanguage(arg)
