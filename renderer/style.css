@@ -1213,7 +1213,7 @@ body.detached { background: #000; }
   z-index: 20;
 }
 #exportModal.hidden, #takesModal.hidden, #ytModal.hidden { display: none; }
-#ytModal .modal-panel { width: 560px; max-width: 92vw; }
+#ytModal .modal-panel { width: 640px; max-width: 92vw; }
 #ytUrl { flex: 1 1 auto; min-width: 0; }
 /* rognage début / fin (apparaît une fois le téléchargement terminé) */
 #ytTrimSec.hidden { display: none; }
