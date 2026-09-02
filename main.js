@@ -283,6 +283,7 @@ const MENU_STR = {
     file: 'Fichier',
     newProject: 'Nouveau projet',
     openVideo: 'Ouvrir une vidéo…',
+    importYt: 'Importer depuis YouTube…',
     subtitles: 'Sous-titres',
     importSrt: 'Importer (SRT/VTT/ASS)…',
     exportSrt: 'Exporter (SRT)…',
@@ -361,6 +362,7 @@ const MENU_STR = {
     file: 'File',
     newProject: 'New project',
     openVideo: 'Open a video…',
+    importYt: 'Import from YouTube…',
     subtitles: 'Subtitles',
     importSrt: 'Import (SRT/VTT/ASS)…',
     exportSrt: 'Export (SRT)…',
@@ -439,6 +441,7 @@ const MENU_STR = {
     file: 'Archivo',
     newProject: 'Nuevo proyecto',
     openVideo: 'Abrir un vídeo…',
+    importYt: 'Importar desde YouTube…',
     subtitles: 'Subtítulos',
     importSrt: 'Importar (SRT/VTT/ASS)…',
     exportSrt: 'Exportar (SRT)…',
@@ -543,6 +546,7 @@ function buildMenu() {
         { label: s.newProject, accelerator: 'CmdOrCtrl+N', click: () => send('new-project') },
         { type: 'separator' },
         { label: s.openVideo, accelerator: 'CmdOrCtrl+O', click: () => send('open-video') },
+        { label: s.importYt, click: () => send('import-youtube') },
         { label: s.openProject, accelerator: 'CmdOrCtrl+Shift+O', click: () => send('open-project') },
         { label: s.recentProjects, submenu: recentItems },
         { type: 'separator' },
@@ -1866,6 +1870,98 @@ const runFfQuiet = (args) => new Promise((res) => {
 })
 const zipSafeName = (s) => String(s || 'perso').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'perso'
 const tcFileName = (sec) => { const m = Math.floor(sec / 60), s = sec % 60; return `${String(m).padStart(2, '0')}m${String(Math.floor(s)).padStart(2, '0')}s${Math.round((s % 1) * 10)}` }
+
+// ============================================================ import YouTube (yt-dlp)
+// yt-dlp est embarqué avec l'appli : binaire cherché dans assets/bin (dépôt/paquet,
+// récupéré par scripts/fetch-ytdlp.js au npm install) puis resources/bin, puis
+// userData/bin — téléchargé automatiquement depuis les releases officielles au
+// premier usage s'il manque (licence Unlicense, compatible GPL).
+const YTDLP_ASSET = process.platform === 'win32' ? 'yt-dlp.exe' : process.platform === 'darwin' ? 'yt-dlp_macos' : 'yt-dlp'
+const YTDLP_BIN = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
+function ytDlpPath() {
+  const cands = [
+    path.join(__dirname, 'assets', 'bin', YTDLP_BIN),
+    path.join(process.resourcesPath || __dirname, 'bin', YTDLP_BIN),
+    path.join(app.getPath('userData'), 'bin', YTDLP_BIN),
+  ]
+  return cands.find((p) => { try { return fs.existsSync(p) } catch { return false } }) || null
+}
+const ytProg = (payload) => { if (win && !win.isDestroyed()) win.webContents.send('yt-progress', payload) }
+async function ensureYtDlp() {
+  const found = ytDlpPath()
+  if (found) return found
+  const dest = path.join(app.getPath('userData'), 'bin', YTDLP_BIN)
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  const res = await fetch('https://github.com/yt-dlp/yt-dlp/releases/latest/download/' + YTDLP_ASSET, { headers: { 'User-Agent': 'LibreRythmo' }, redirect: 'follow' })
+  if (!res.ok || !res.body) throw new Error('yt-dlp HTTP ' + res.status)
+  const total = Number(res.headers.get('content-length')) || 0
+  const ws = fs.createWriteStream(dest + '.part'); const rd = res.body.getReader(); let got = 0
+  for (;;) { const { done, value } = await rd.read(); if (done) break; ws.write(Buffer.from(value)); got += value.length; ytProg({ phase: 'ytdlp', pct: total ? Math.round((got / total) * 100) : 0 }) }
+  await new Promise((r2, rj) => { ws.end(() => r2()); ws.on('error', rj) })
+  fs.renameSync(dest + '.part', dest)
+  if (process.platform !== 'win32') { try { fs.chmodSync(dest, 0o755) } catch {} }
+  return dest
+}
+const ytSafeName = (s) => String(s || 'video').replace(/[\\/:*?"<>|#%&{}$!'@+`=]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70) || 'video'
+ipcMain.handle('yt-default-dir', () => { const d = path.join(app.getPath('videos'), 'LibreRythmo-YtDl'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d })
+let ytProc = null
+// sonde la vidéo : titre, durée, hauteurs disponibles (pour le sélecteur de qualité)
+ipcMain.handle('yt-probe', async (e, url) => {
+  try {
+    const bin = await ensureYtDlp()
+    ytProg({ phase: 'probe' })
+    const out = await new Promise((resolve, reject) => {
+      let buf = '', err = ''
+      const p = spawn(bin, ['-J', '--no-playlist', url], { stdio: ['ignore', 'pipe', 'pipe'] })
+      p.stdout.on('data', (d) => (buf += d))
+      p.stderr.on('data', (d) => (err = (err + d).slice(-400)))
+      p.on('close', (c) => (c === 0 ? resolve(buf) : reject(new Error(err || 'probe failed'))))
+      p.on('error', reject)
+      setTimeout(() => { try { p.kill() } catch {} }, 45000)
+    })
+    const j = JSON.parse(out)
+    const heights = [...new Set((j.formats || []).map((f) => f.height).filter((h) => h && h >= 240))].sort((a, b) => a - b)
+    return { ok: true, title: j.title || 'video', id: j.id || 'x', duration: Number(j.duration) || 0, heights }
+  } catch (err) { return { error: String((err && err.message) || err).slice(0, 300) } }
+})
+ipcMain.handle('yt-download', async (e, opts) => {
+  if (ytProc) return { error: 'busy' }
+  try {
+    const bin = await ensureYtDlp()
+    fs.mkdirSync(opts.destDir, { recursive: true })
+    const out = path.join(opts.destDir, `${ytSafeName(opts.title)}-${opts.id}.mp4`)
+    try { fs.unlinkSync(out) } catch {}
+    const h = Number(opts.height) || 1080
+    const args = ['--no-playlist', '--newline', '-f', `bv*[height<=${h}]+ba/b[height<=${h}]`, '--merge-output-format', 'mp4', '-o', out]
+    if (ffmpegPath) args.push('--ffmpeg-location', path.dirname(ffmpegPath))
+    args.push(opts.url)
+    const code = await new Promise((resolve) => {
+      ytProc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+      const onData = (d) => { const m = String(d).match(/\[download\]\s+([\d.]+)%/); if (m) ytProg({ phase: 'download', pct: Math.round(parseFloat(m[1])) }) }
+      ytProc.stdout.on('data', onData); ytProc.stderr.on('data', onData)
+      ytProc.on('close', (c) => { ytProc = null; resolve(c) })
+      ytProc.on('error', () => { ytProc = null; resolve(-1) })
+    })
+    if (code !== 0) return { error: 'download failed (' + code + ')' }
+    if (!fs.existsSync(out)) return { error: 'output missing' }
+    return { ok: true, path: out }
+  } catch (err) { ytProc = null; return { error: String((err && err.message) || err).slice(0, 300) } }
+})
+ipcMain.handle('yt-cancel', () => { if (ytProc) { try { ytProc.kill('SIGKILL') } catch {}; ytProc = null } return true })
+// rognage début/fin : copie sans ré-encodage (démarrage calé sur l'image-clé précédente)
+ipcMain.handle('yt-trim', async (e, opts) => {
+  if (!ffmpegPath) return { error: 'no-ffmpeg' }
+  const start = Math.max(0, Number(opts.start) || 0)
+  const dur = Math.max(0.5, (Number(opts.end) || 0) - start)
+  const out = String(opts.path).replace(/\.mp4$/i, '') + '.cut.mp4'
+  ytProg({ phase: 'trim' })
+  const ok = await new Promise((resolve) => {
+    const p = spawn(ffmpegPath, ['-y', '-ss', start.toFixed(3), '-i', opts.path, '-t', dur.toFixed(3), '-c', 'copy', out], { stdio: 'ignore' })
+    p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false))
+  })
+  if (!ok || !fs.existsSync(out)) return { error: 'trim failed' }
+  return { ok: true, path: out }
+})
 
 ipcMain.handle('takes-export-pick', async (e, suggested) => {
   const r = await dialog.showSaveDialog(win, { title: S().dlgTakesZip, defaultPath: suggested || 'prises.zip', filters: [{ name: 'ZIP', extensions: ['zip'] }] })

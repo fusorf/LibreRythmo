@@ -8,6 +8,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "postinstall": "node scripts/fetch-ytdlp.js",
     "package": "node scripts/make-buildinfo.js && electron-packager . LibreRythmo --platform=win32 --arch=x64 --out=dist --icon=assets/icon.ico --overwrite --no-asar --ignore=\"^/media($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/scripts($|/)\"",
     "dist": "node scripts/make-buildinfo.js && electron-builder --publish never"
   },

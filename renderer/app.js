@@ -462,6 +462,16 @@ function applyLang() {
   document.documentElement.lang = lang
   $('dropHintMain').textContent = t('dropMain')
   $('dropHintSub').textContent = t('dropSub')
+  $('dropBrowseLbl').textContent = t('dropBrowseLbl')
+  $('ytTitle').textContent = t('ytTitle')
+  $('ytGrpSrc').textContent = t('ytGrpSrc')
+  $('ytLblUrl').textContent = t('ytLblUrl')
+  $('ytLblQuality').textContent = t('ytLblQuality')
+  $('ytLblDest').textContent = t('lblDest')
+  $('ytLblTrim').textContent = t('ytLblTrim')
+  $('ytBrowse').textContent = t('expBrowse')
+  $('ytClose').textContent = t('close')
+  if (ytSt.phase !== 'trim') $('ytGo').textContent = t('ytGoImport')
 
   // transport
   $('tStart').title = t('tStart')
@@ -5684,6 +5694,113 @@ async function openVideoDialog() {
   if (r) setVideo(r.path, r.url)
 }
 
+// ============================================================ import YouTube (yt-dlp)
+// URL collée → sonde auto (titre, durée, qualités DISPONIBLES) → téléchargement →
+// la modale s'élargit en bas avec un rognage début/fin → Valider charge la vidéo.
+const ytModal = $('ytModal')
+const ytSt = { busy: false, meta: null, file: null, probeTimer: 0, probedUrl: null, phase: 'idle' }
+const YT_RUNGS = [720, 1080, 1440, 2160]
+const ytFmtTc = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+async function openYtModal() {
+  ytModal.classList.remove('hidden')
+  ytSt.phase = 'idle'; ytSt.meta = null; ytSt.file = null; ytSt.probedUrl = null
+  $('ytBar').style.width = '0%'; $('ytStatus').textContent = ''
+  $('ytTrimSec').classList.add('hidden')
+  $('ytQuality').innerHTML = ''; $('ytQuality').disabled = true
+  $('ytInfo').textContent = ''
+  $('ytUrl').value = ''; $('ytUrl').disabled = false
+  $('ytGo').textContent = t('ytGoImport'); $('ytGo').disabled = false
+  if (!$('ytDir').value) $('ytDir').value = await window.api.ytDefaultDir()
+  $('ytUrl').focus()
+}
+// sélecteur de qualité : uniquement les paliers réellement disponibles
+function ytFillQuality(heights) {
+  const maxH = Math.max(0, ...heights)
+  const sel = $('ytQuality'); sel.innerHTML = ''
+  const rungs = YT_RUNGS.filter((h) => maxH >= h - 66)
+  if (!rungs.length && maxH) rungs.push(maxH)
+  for (const h of rungs) {
+    const o = document.createElement('option'); o.value = String(h)
+    o.textContent = h >= 2160 ? '2160p (4K)' : h >= 1440 ? '1440p (2K)' : `${h}p`
+    sel.appendChild(o)
+  }
+  sel.value = String(rungs.includes(1080) ? 1080 : rungs[rungs.length - 1] || 1080)
+  sel.disabled = !rungs.length
+}
+async function ytDoProbe() {
+  const url = $('ytUrl').value.trim()
+  if (!/^https?:\/\//i.test(url)) { toast(t('ytBadUrl')); return null }
+  if (ytSt.meta && ytSt.probedUrl === url) return ytSt.meta
+  ytSt.busy = true; $('ytGo').disabled = true
+  $('ytStatus').textContent = t('ytPhProbe')
+  const r = await window.api.ytProbe(url)
+  ytSt.busy = false; $('ytGo').disabled = false
+  if (!r || r.error) { $('ytStatus').textContent = t('ytFail') + (r && r.error ? ' — ' + String(r.error).slice(0, 80) : ''); return null }
+  ytSt.meta = r; ytSt.probedUrl = url
+  ytFillQuality(r.heights || [])
+  $('ytInfo').textContent = `${r.title.slice(0, 46)} · ${ytFmtTc(r.duration)}`
+  $('ytStatus').textContent = ''
+  return r
+}
+$('ytUrl').addEventListener('input', () => {
+  clearTimeout(ytSt.probeTimer)
+  ytSt.meta = null
+  if (/^https?:\/\/\S+$/i.test($('ytUrl').value.trim())) ytSt.probeTimer = setTimeout(ytDoProbe, 700)
+})
+$('ytBrowse').addEventListener('click', async () => { const p = await window.api.pickDirectory($('ytDir').value || undefined); if (p) $('ytDir').value = p })
+window.api.onYtProgress((p) => {
+  if (!p || ytModal.classList.contains('hidden')) return
+  if (p.phase === 'ytdlp') { $('ytBar').style.width = (p.pct || 0) + '%'; $('ytStatus').textContent = t('ytPhYtdlp', p.pct || 0) }
+  else if (p.phase === 'probe') $('ytStatus').textContent = t('ytPhProbe')
+  else if (p.phase === 'download') { $('ytBar').style.width = (p.pct || 0) + '%'; $('ytStatus').textContent = t('ytPhDl', p.pct || 0) }
+  else if (p.phase === 'trim') $('ytStatus').textContent = t('ytPhTrim')
+})
+function ytSyncTrimLabels() {
+  const dur = ytSt.meta ? ytSt.meta.duration : 0
+  $('ytStartVal').textContent = ytFmtTc((Number($('ytStart').value) / 1000) * dur)
+  $('ytEndVal').textContent = ytFmtTc((Number($('ytEnd').value) / 1000) * dur)
+}
+$('ytStart').addEventListener('input', () => { if (Number($('ytStart').value) > Number($('ytEnd').value) - 10) $('ytStart').value = String(Number($('ytEnd').value) - 10); ytSyncTrimLabels() })
+$('ytEnd').addEventListener('input', () => { if (Number($('ytEnd').value) < Number($('ytStart').value) + 10) $('ytEnd').value = String(Number($('ytStart').value) + 10); ytSyncTrimLabels() })
+async function ytGoClick() {
+  if (ytSt.busy) return
+  if (ytSt.phase === 'trim') {
+    // Valider : rognage éventuel (copie sans ré-encodage) puis chargement de la vidéo
+    const dur = ytSt.meta ? ytSt.meta.duration : 0
+    const s = (Number($('ytStart').value) / 1000) * dur
+    const e2 = (Number($('ytEnd').value) / 1000) * dur
+    ytSt.busy = true; $('ytGo').disabled = true
+    let file = ytSt.file
+    if (dur && (s > 0.2 || e2 < dur - 0.2)) {
+      const r = await window.api.ytTrim({ path: file, start: s, end: e2 })
+      if (!r || r.error) { $('ytStatus').textContent = t('ytFail'); ytSt.busy = false; $('ytGo').disabled = false; return }
+      file = r.path
+    }
+    ytSt.busy = false; $('ytGo').disabled = false
+    ytModal.classList.add('hidden')
+    const url = await window.api.fileUrl(file)
+    if (url) setVideo(file, url)
+    toast(t('ytDone'))
+    return
+  }
+  const meta = await ytDoProbe(); if (!meta) return
+  ytSt.busy = true; $('ytGo').disabled = true; $('ytUrl').disabled = true; $('ytQuality').disabled = true
+  const r = await window.api.ytDownload({ url: ytSt.probedUrl, height: Number($('ytQuality').value) || 1080, destDir: $('ytDir').value.trim(), title: meta.title, id: meta.id })
+  ytSt.busy = false; $('ytGo').disabled = false; $('ytUrl').disabled = false; $('ytQuality').disabled = false
+  if (!r || r.error) { $('ytStatus').textContent = t('ytFail') + (r && r.error ? ' — ' + String(r.error).slice(0, 90) : ''); return }
+  ytSt.file = r.path
+  ytSt.phase = 'trim'
+  $('ytBar').style.width = '100%'
+  $('ytStatus').textContent = t('ytDlDone')
+  $('ytTrimSec').classList.remove('hidden') // la modale s'élargit en bas : rognage début/fin
+  $('ytStart').value = '0'; $('ytEnd').value = '1000'; ytSyncTrimLabels()
+  $('ytGo').textContent = t('ytGoApply')
+}
+$('ytGo').addEventListener('click', ytGoClick)
+$('ytClose').addEventListener('click', () => { if (!ytSt.busy) { window.api.ytCancel(); ytModal.classList.add('hidden') } })
+$('dropBrowse').addEventListener('click', openVideoDialog)
+$('dropYt').addEventListener('click', openYtModal)
+
 // sérialise le projet en estampillant la position de lecture courante, pour reprendre
 // au même timecode à la réouverture du projet
 function projectJson() {
@@ -6254,6 +6371,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
   else if (action === 'export-takes') openTakesExport()
+  else if (action === 'import-youtube') openYtModal()
   else if (action === 'set-lang') setLanguage(arg)
   else if (action === 'show-guide') openGuide()
   else if (action === 'undo') undo()

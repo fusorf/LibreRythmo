@@ -290,6 +290,21 @@ const TESTS = [
     // le canvas des takes remplit au moins l'espace restant (barre rouge jusqu'en bas)
     return bandH === 96 && clipsH >= 44 && clipsH >= wrapH - 1
   })()`],
+  ['YouTube : modale + qualités disponibles + dossier par défaut', `(async () => {
+    if (typeof openYtModal !== 'function') return true
+    const dir = await window.api.ytDefaultDir()
+    const okDir = typeof dir === 'string' && dir.indexOf('LibreRythmo-YtDl') >= 0
+    ytFillQuality([360, 720, 1080])
+    const q1 = [...document.getElementById('ytQuality').options].map((o) => o.value).join(',')
+    ytFillQuality([720, 1080, 1440, 2160])
+    const q2 = [...document.getElementById('ytQuality').options].map((o) => o.value).join(',')
+    ytFillQuality([480])
+    const q3 = [...document.getElementById('ytQuality').options].map((o) => o.value).join(',')
+    await openYtModal()
+    const open = !ytModal.classList.contains('hidden') && document.getElementById('ytTrimSec').classList.contains('hidden')
+    ytModal.classList.add('hidden')
+    return okDir && q1 === '720,1080' && q2 === '720,1080,1440,2160' && q3 === '480' && open
+  })()`],
   ['Espagnol : dictionnaire complet + bascule + lexiques', `(() => {
     if (!I18N.es) return 'pas de dict es'
     // complétude : chaque clé FR existe en ES (le repli fr ne doit servir qu'en secours)

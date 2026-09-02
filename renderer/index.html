@@ -32,6 +32,16 @@
       <div id="dropHint">
         <span id="dropHintMain">Glisse une vidéo ici</span>
         <span id="dropHintSub">ou Fichier → Ouvrir une vidéo…</span>
+        <div class="drop-actions">
+          <button id="dropBrowse" class="drop-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+            <span id="dropBrowseLbl">Parcourir</span>
+          </button>
+          <button id="dropYt" class="drop-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+            <span>YouTube</span>
+          </button>
+        </div>
       </div>
       <div id="videoInfo" class="hidden"></div>
     </main>
@@ -294,6 +304,47 @@
         <div class="spacer"></div>
         <button id="expClose">Fermer</button>
         <button id="expGo" class="primary">Exporter…</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ytModal" class="hidden">
+    <div class="modal-panel">
+      <h2 id="ytTitle">Importer depuis YouTube</h2>
+      <div class="opt-groups">
+        <fieldset class="opt-group set-block">
+          <legend id="ytGrpSrc">Vidéo</legend>
+          <label><span id="ytLblUrl">URL</span>
+            <input id="ytUrl" type="text" placeholder="https://www.youtube.com/watch?v=…" spellcheck="false">
+          </label>
+          <label><span id="ytLblQuality">Qualité</span>
+            <select id="ytQuality" disabled></select>
+            <span id="ytInfo" class="dim-val"></span>
+          </label>
+        </fieldset>
+      </div>
+      <div class="export-row">
+        <label for="ytDir" id="ytLblDest">Destination</label>
+        <input id="ytDir" type="text" spellcheck="false">
+        <button id="ytBrowse">Parcourir…</button>
+      </div>
+      <div id="ytTrimSec" class="hidden">
+        <hr class="modal-sep">
+        <div class="yt-trim-row">
+          <span id="ytLblTrim">Rognage</span>
+          <span id="ytStartVal" class="dim-val tc-val">00:00</span>
+          <input id="ytStart" type="range" min="0" max="1000" value="0">
+          <input id="ytEnd" type="range" min="0" max="1000" value="1000">
+          <span id="ytEndVal" class="dim-val tc-val">00:00</span>
+        </div>
+      </div>
+      <hr class="modal-sep">
+      <div class="export-row">
+        <div id="ytProgress"><div id="ytBar"></div></div>
+        <span id="ytStatus"></span>
+        <div class="spacer"></div>
+        <button id="ytClose">Fermer</button>
+        <button id="ytGo" class="primary">Importer</button>
       </div>
     </div>
   </div>
