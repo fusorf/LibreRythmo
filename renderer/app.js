@@ -2025,7 +2025,8 @@ function setDl(on, msg) {
 // estimation de taille de téléchargement lisible (Mo / Go) selon la langue
 function fmtDlSize(mb) {
   if (!mb) return '?'
-  if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang === 'fr') s = s.replace('.', ','); return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
+  if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang !== 'en') s = s.replace('.', ',') // virgule décimale (fr/es)
+    return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
   return Math.round(mb) + ' ' + t('unitMB')
 }
 function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, deviceLabel: audioCfg.deviceLabel, output: audioCfg.output, outputLabel: audioCfg.outputLabel, recOffsetMs: audioCfg.recOffsetMs || 0 }) }
@@ -5113,7 +5114,7 @@ const REAC_DUR = 0.2 // durée par défaut d'une réac insérée (1/4 de 0,8 s)
 const onomaPop = $('onomaPop')
 
 // token écrit dans le projet/DETX, dans la langue courante
-const reacToken = (r) => (lang === 'en' ? r.en : r.fr)
+const reacToken = (r) => r[lang] || r.fr
 
 function insertReac(r) {
   pushUndo()
@@ -5220,13 +5221,13 @@ function buildSymbolPop() {
   for (const s of DET_SYMBOLS) {
     const b = document.createElement('button')
     b.className = 'sym-chip'
-    b.title = t('symChipTitle', lang === 'en' ? s.en : s.fr, s.hint, s.key)
+    b.title = t('symChipTitle', s[lang] || s.fr, s.hint, s.key)
     const g = document.createElement('span')
     g.className = 'g'
     g.textContent = s.glyph
     const nm = document.createElement('span')
     nm.className = 'nm'
-    nm.textContent = lang === 'en' ? s.en : s.fr
+    nm.textContent = s[lang] || s.fr
     const k = document.createElement('span')
     k.className = 'k'
     k.textContent = s.key
@@ -6164,7 +6165,7 @@ const DOC_CSS = `* { box-sizing: border-box; }
 
 function docHead(title, sub, count, unit) {
   let date = ''
-  try { date = new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) } catch {}
+  try { date = new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : lang === 'es' ? 'es-ES' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) } catch {}
   return `<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><style>${DOC_CSS}</style></head><body>` +
     `<div class="title">${xmlEsc(title)}</div>` +
     `<div class="meta">${xmlEsc(sub)}${date ? ' · ' + xmlEsc(date) : ''} · ${count} ${xmlEsc(unit)}</div>` +
@@ -7197,7 +7198,7 @@ function loop() {
   try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.deviceLabel = ac.deviceLabel || null; audioCfg.output = ac.output || null; audioCfg.outputLabel = ac.outputLabel || null; audioCfg.recOffsetMs = Number(ac.recOffsetMs) || 0 } } catch {}
   applyOutputSink()
   if (!DETACHED) preloadSettings() // débloque les noms de périphériques + précharge les listes (Paramètres instantanés)
-  lang = st.lang === 'en' ? 'en' : 'fr'
+  lang = ['en', 'es'].includes(st.lang) ? st.lang : 'fr'
   autosaveOn = !!st.autosave
   autofocusText = st.autofocus !== false
   showSeekBar = st.seekbar !== false

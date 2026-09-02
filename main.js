@@ -74,7 +74,7 @@ function loadSettings() {
       const k = line.slice(0, eq).trim()
       const v = line.slice(eq + 1).trim()
       if (sec === 'ui') {
-        if (k === 'lang' && ['fr', 'en'].includes(v)) settings.lang = v
+        if (k === 'lang' && ['fr', 'en', 'es'].includes(v)) settings.lang = v
         else if (k === 'theme' && ['dark', 'light'].includes(v)) settings.theme = v
         else if (k === 'autosave') settings.autosave = v === '1'
         else if (k === 'wave') settings.wave = v === '1'
@@ -435,8 +435,86 @@ const MENU_STR = {
     dlgExport: 'Export video',
     dlgExportFilter: 'MP4 video',
   },
+  es: {
+    file: 'Archivo',
+    newProject: 'Nuevo proyecto',
+    openVideo: 'Abrir un vídeo…',
+    subtitles: 'Subtítulos',
+    importSrt: 'Importar (SRT/VTT/ASS)…',
+    exportSrt: 'Exportar (SRT)…',
+    updateSrt: 'Actualizar desde un SRT corregido…',
+    detx: 'DETX',
+    importDetx: 'Importar…',
+    importDetxRoles: 'Importar los personajes…',
+    exportDetx: 'Exportar…',
+    openProject: 'Abrir un proyecto…',
+    recentProjects: 'Proyectos recientes',
+    noRecent: '(ningún proyecto reciente)',
+    saveProject: 'Guardar el proyecto',
+    saveProjectAs: 'Guardar como…',
+    autosave: 'Guardado automático',
+    exportVideo: 'Exportar el vídeo…',
+    exportTakes: 'Exportar las tomas…',
+    dlgTakesZip: 'Exportar las tomas (ZIP)',
+    workDocs: 'Documentos de trabajo (PDF)',
+    docPresence: 'Cuadro de presencia…',
+    docTally: 'Recuento de líneas…',
+    transcribe: 'Transcripción automática…',
+    quit: 'Salir',
+    edit: 'Edición',
+    undo: 'Deshacer',
+    redo: 'Rehacer',
+    view: 'Ver',
+    autofocusText: 'Autofoco del texto',
+    seekbar: 'Barra de progreso',
+    wave: 'Forma de onda',
+    videoInfo: 'Información del vídeo',
+    subs: 'Subtítulos',
+    lightMode: 'Modo claro',
+    discord: 'Discord Rich Presence',
+    clearProxies: 'Vaciar la caché de vídeo',
+    settings: 'Ajustes…',
+    tools: 'Herramientas',
+    removeVoices: 'Supresor de voces…',
+    language: 'Idioma',
+    fullscreen: 'Pantalla completa',
+    help: 'Ayuda',
+    guide: 'Guía',
+    about: 'Acerca de',
+    aboutDetail: 'Banda rítmica libre para el doblaje.\n\n{version}\n© 2026 fusorf - licencia GPL-3.0-or-later\n\nConstruido con:\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binario incluido vía ffmpeg-static) - ffmpeg.org\n•  Chromium & Node.js, incluidos por Electron\n\nEl código fuente de LibreRythmo es libre (GPL v3).\nEl binario FFmpeg incluido conserva su propia licencia (GPL v3); se invoca como programa externo.',
+    confirmQuitTitle: 'Cambios sin guardar',
+    confirmQuitMsg: 'El proyecto contiene cambios sin guardar.',
+    confirmQuitDetail: '¿Salir sin guardar?',
+    btnQuit: 'Salir sin guardar',
+    btnCancel: 'Cancelar',
+    confirmNewDetail: '¿Guardar los cambios antes de continuar?',
+    btnSave: 'Guardar',
+    btnDontSave: 'No guardar',
+    btnClose: 'Cerrar',
+    updateAvail: 'Nueva versión disponible: v{v}',
+    dlgSrtSave: 'Exportar los subtítulos',
+    dlgVideo: 'Abrir un vídeo',
+    dlgVideoFilter: 'Vídeo',
+    dlgAudio: 'Importar un archivo de audio',
+    dlgAudioFilter: 'Audio',
+    dlgProject: 'Abrir un proyecto',
+    dlgProjectFilter: 'Proyecto rythmo',
+    dlgSave: 'Guardar el proyecto',
+    dlgSrt: 'Importar subtítulos SRT',
+    dlgSubs: 'Importar subtítulos',
+    dlgSrtFilter: 'Subtítulos',
+    dlgFont: 'Cargar una fuente',
+    dlgFontFilter: 'Fuente (TTF/OTF)',
+    dlgDetx: 'Importar un DETX',
+    dlgDetxSave: 'Exportar a DETX',
+    dlgDetxFilter: 'Banda rítmica DETX',
+    dlgPdf: 'Exportar el PDF',
+    dlgPdfFilter: 'Documento PDF',
+    dlgExport: 'Exportar el vídeo',
+    dlgExportFilter: 'Vídeo MP4',
+  },
 }
-const S = () => MENU_STR[settings.lang]
+const S = () => MENU_STR[settings.lang] || MENU_STR.fr
 
 let undoState = { undo: false, redo: false } // conservé entre les reconstructions du menu
 ipcMain.handle('set-undo-state', (e, st) => {
@@ -538,6 +616,7 @@ function buildMenu() {
           submenu: [
             { label: 'Français', type: 'checkbox', checked: settings.lang === 'fr', click: () => send('set-lang', 'fr') },
             { label: 'English', type: 'checkbox', checked: settings.lang === 'en', click: () => send('set-lang', 'en') },
+            { label: 'Español', type: 'checkbox', checked: settings.lang === 'es', click: () => send('set-lang', 'es') },
           ],
         },
         { type: 'separator' },
@@ -575,7 +654,7 @@ function buildMenu() {
 
 // le renderer pousse tous ses réglages ici : persistance + reconstruction du menu
 ipcMain.handle('set-lang', (e, o) => {
-  settings.lang = o.lang === 'en' ? 'en' : 'fr'
+  settings.lang = ['en', 'es'].includes(o.lang) ? o.lang : 'fr'
   settings.theme = o.theme === 'light' ? 'light' : 'dark'
   settings.wave = !!o.wave
   settings.info = !!o.info
@@ -596,7 +675,9 @@ ipcMain.handle('set-lang', (e, o) => {
 app.whenReady().then(() => {
   // langue par défaut : français si l'OS est en français, anglais sinon
   // (écrasée par la valeur de settings.ini si l'utilisateur a déjà choisi)
-  settings.lang = app.getLocale().toLowerCase().startsWith('fr') ? 'fr' : 'en'
+  // premier démarrage (pas de config) : langue système si français ou espagnol, sinon anglais
+  const sysLoc = app.getLocale().toLowerCase()
+  settings.lang = sysLoc.startsWith('fr') ? 'fr' : sysLoc.startsWith('es') ? 'es' : 'en'
   loadSettings()
   createWindow()
   if (settings.discord) discordConnect()

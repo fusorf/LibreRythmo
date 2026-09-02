@@ -16,14 +16,14 @@
 // et la labio-dentale (F V, lèvre sur les dents) : mouvements de bouche
 // non ambigus qu'il faut absolument respecter.
 const DET_SYMBOLS = [
-  { key: 'p', glyph: '●', fr: 'Labiale (lèvres fermées)', en: 'Labial (lips closed)', hint: 'P B M' },
-  { key: 'f', glyph: '◗', fr: 'Labio-dentale', en: 'Labiodental', hint: 'F V' },
-  { key: 'o', glyph: '○', fr: 'Arrondie / avancée', en: 'Rounded / protruded', hint: 'CH J OU O U' },
-  { key: 'a', glyph: '△', fr: 'Ouverture', en: 'Open vowel', hint: 'A È' },
-  { key: 'd', glyph: '│', fr: "Dentale (point d'appui)", en: 'Dental (support)', hint: 'T D N L S Z' },
-  { key: 'k', glyph: '⌒', fr: 'Vélaire (gutturale)', en: 'Velar (guttural)', hint: 'K G R' },
-  { key: 'n', glyph: '~', fr: 'Nasale', en: 'Nasal', hint: 'AN ON IN' },
-  { key: 'y', glyph: '‿', fr: 'Semi-voyelle / liaison', en: 'Glide / liaison', hint: 'Y W' },
+  { key: 'p', glyph: '●', fr: 'Labiale (lèvres fermées)', en: 'Labial (lips closed)', es: 'Labial (labios cerrados)', hint: 'P B M' },
+  { key: 'f', glyph: '◗', fr: 'Labio-dentale', en: 'Labiodental', es: 'Labiodental', hint: 'F V' },
+  { key: 'o', glyph: '○', fr: 'Arrondie / avancée', en: 'Rounded / protruded', es: 'Redondeada / adelantada', hint: 'CH J OU O U' },
+  { key: 'a', glyph: '△', fr: 'Ouverture', en: 'Open vowel', es: 'Abertura', hint: 'A È' },
+  { key: 'd', glyph: '│', fr: "Dentale (point d'appui)", en: 'Dental (support)', es: 'Dental (apoyo)', hint: 'T D N L S Z' },
+  { key: 'k', glyph: '⌒', fr: 'Vélaire (gutturale)', en: 'Velar (guttural)', es: 'Velar (gutural)', hint: 'K G R' },
+  { key: 'n', glyph: '~', fr: 'Nasale', en: 'Nasal', es: 'Nasal', hint: 'AN ON IN' },
+  { key: 'y', glyph: '‿', fr: 'Semi-voyelle / liaison', en: 'Glide / liaison', es: 'Semivocal / enlace', hint: 'Y W' },
 ]
 
 // touche → signe (la casse compte) ; glyphe → signe (relecture / info-bulle)

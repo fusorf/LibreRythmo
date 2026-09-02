@@ -290,6 +290,18 @@ const TESTS = [
     // le canvas des takes remplit au moins l'espace restant (barre rouge jusqu'en bas)
     return bandH === 96 && clipsH >= 44 && clipsH >= wrapH - 1
   })()`],
+  ['Espagnol : dictionnaire complet + bascule + lexiques', `(() => {
+    if (!I18N.es) return 'pas de dict es'
+    // complétude : chaque clé FR existe en ES (le repli fr ne doit servir qu'en secours)
+    const missing = Object.keys(I18N.fr).filter((k) => !(k in I18N.es))
+    if (missing.length) return 'manquantes: ' + missing.slice(0, 5).join(',')
+    const prev = lang
+    lang = 'es'
+    const ok = t('setTitle') === 'Ajustes' && t('tabRec') === 'Grabación' && t('recTakeN', 2) === 'Toma 2'
+      && reacToken(REAC_BY_KEY.get('i')) === '(risa)' && (DET_BY_KEY.get('p').es || '').includes('Labial')
+    lang = prev
+    return ok
+  })()`],
   ['Export prises : mix ffmpeg + ZIP (roundtrip réel)', `(async () => {
     if (!window.api.exportTakes || typeof encodeWav16 !== 'function') return true
     // petite prise réelle : 0,3 s de sinus, encodée avec l'encodeur WAV maison
