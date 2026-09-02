@@ -1,7 +1,7 @@
 {
   "name": "librerythmo",
   "productName": "LibreRythmo",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "LibreRythmo — bande rythmo libre pour le doublage",
   "author": "fusorf",
   "license": "GPL-3.0-or-later",
@@ -43,7 +43,10 @@
       "!.gitignore"
     ],
     "win": {
-      "target": ["nsis", "zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "icon": "assets/icon.ico"
     },
     "nsis": {
@@ -53,7 +56,9 @@
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "build/icon.png",
       "identity": null,
       "category": "public.app-category.video",
@@ -63,7 +68,11 @@
       "writeUpdateInfo": false
     },
     "linux": {
-      "target": ["AppImage", "deb", "pacman"],
+      "target": [
+        "AppImage",
+        "deb",
+        "pacman"
+      ],
       "icon": "build/icon.png",
       "category": "AudioVideo",
       "synopsis": "Bande rythmo libre pour le doublage",
