@@ -235,7 +235,32 @@ function createWindow() {
 }
 
 let rendererDirty = false
-ipcMain.handle('set-dirty', (e, d) => { rendererDirty = !!d })
+// seul le renderer principal pilote le flag « modifications non enregistrées »
+// (la fenêtre détachée charge aussi un projet et ne doit pas l'écraser)
+ipcMain.handle('set-dirty', (e, d) => { if (win && e.sender === win.webContents) rendererDirty = !!d })
+
+// ---------- fenêtre détachée (aperçu du rendu sur un 2e écran) ----------
+// Fenêtre normale redimensionnable chargeant index.html?detached=1 (mode « rendu seul »).
+// La fenêtre principale reste maîtresse : elle relaie l'état projet + la synchro de
+// lecture via detached-send → detached-msg. F11 dans la fenêtre = plein écran sur
+// l'écran où elle se trouve.
+let detachedWin = null
+ipcMain.handle('detached-open', () => {
+  if (detachedWin && !detachedWin.isDestroyed()) { detachedWin.focus(); return true }
+  detachedWin = new BrowserWindow({
+    width: 960, height: 580, minWidth: 480, minHeight: 300,
+    backgroundColor: '#000000', title: 'LibreRythmo - Aperçu',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    webPreferences: { preload: path.join(__dirname, 'preload.js') },
+  })
+  detachedWin.setMenuBarVisibility(false)
+  detachedWin.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { detached: '1' } })
+  detachedWin.on('closed', () => { detachedWin = null; if (win && !win.isDestroyed()) win.webContents.send('detached-closed') })
+  return true
+})
+ipcMain.handle('detached-send', (e, payload) => { if (detachedWin && !detachedWin.isDestroyed()) detachedWin.webContents.send('detached-msg', payload); return true })
+ipcMain.handle('detached-ready', () => { if (win && !win.isDestroyed()) win.webContents.send('detached-ready'); return true })
+ipcMain.handle('detached-fullscreen', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setFullScreen(!w.isFullScreen()); return true })
 
 // dialogue standard avant d'écraser le projet courant (Fichier → Nouveau projet)
 ipcMain.handle('confirm-unsaved', () => {

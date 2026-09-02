@@ -274,6 +274,13 @@ const TESTS = [
     // >= 0,23 s (150 ms + 80 ms + latence d'entrée éventuelle), < 0,8 s (borne de santé)
     return comp >= 0.229 && comp < 0.8
   })()`],
+  ['Fenêtre détachée : bouton aperçu grisé quand ouverte', `(() => {
+    if (typeof updateDetachedUI !== 'function') return true
+    detachedOpenFlag = true; updateDetachedUI()
+    const dis = document.getElementById('btnPlayer').disabled
+    detachedOpenFlag = false; updateDetachedUI()
+    return dis === true && document.getElementById('btnPlayer').disabled === false
+  })()`],
   ['Enregistrement : bande de clips dessinée sans erreur', `(() => {
     if (typeof drawRecClips !== 'function') return true
     loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],

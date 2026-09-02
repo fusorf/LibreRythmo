@@ -96,6 +96,10 @@ function newProject() {
 const LOOP_OUT_MIN_SEC = 30
 const LOOP_DEFAULT_SEC = 40 // longueur par défaut d'une nouvelle boucle
 
+// fenêtre détachée (index.html?detached=1) : mode « rendu seul » piloté par la
+// fenêtre principale via IPC — pas d'audio, pas de forme d'onde, pas d'édition
+const DETACHED = new URLSearchParams(location.search).has('detached')
+
 let project = newProject()
 let projectPath = null
 let dirty = false
@@ -349,6 +353,7 @@ function updateDiscordActivity() {
 }
 
 function markDirty() {
+  detachedQueueState() // la fenêtre détachée suit les modifications du projet
   if (!dirty) window.api.setDirty(true)
   dirty = true
   updateTitle()
@@ -551,6 +556,7 @@ function applyLang() {
   // mode lecture plein écran
   $('btnPlayer').title = t('playerBtn')
   $('pcExit').title = t('pcExitTitle')
+  $('pcDetach').title = t('pcDetachTitle')
   $('pcPlay').title = t('pcPlayTitle')
   $('pcPrev').title = t('pcPrevTitle')
   $('pcNext').title = t('pcNextTitle')
@@ -3128,7 +3134,7 @@ function embeddedTrackLabel(p) {
 // (re)synchronise les pistes embarquées avec le sondage ffmpeg (offset conservé par
 // index), garde les pistes importées, choisit une piste active par défaut.
 async function probeAndSyncAudio() {
-  if (!project.videoPath) return
+  if (DETACHED || !project.videoPath) return
   const probed = (await window.api.probeAudioTracks(project.videoPath)) || []
   const externals = (project.audioTracks || []).filter((tr) => tr.type === 'file')
   const prev = new Map((project.audioTracks || []).filter((tr) => tr.type === 'embedded').map((tr) => [tr.index, tr]))
@@ -3566,6 +3572,7 @@ let scrubCtx = null
 let scrubBuf = null // audio mono décodé, pour entendre le son pendant le scrub
 
 async function buildWaveform() {
+  if (DETACHED) return // pas de forme d'onde dans la fenêtre de rendu
   wave = null
   scrubBuf = null
   const token = ++waveToken
@@ -3656,6 +3663,7 @@ let playAActive = false // le son passe par playA (sinon : audio natif de la vid
 let playAOffset = 0 // décalage (s) de la piste active, appliqué à la position de lecture
 
 function applyVolume() {
+  if (DETACHED) { video.volume = 0; video.muted = true; return } // le son sort de la fenêtre principale
   const vol = Number($('volume').value)
   if (dub.on) { // monitoring doublage : le son passe par le mix WebAudio
     video.volume = 0
@@ -3683,6 +3691,7 @@ function syncPlayAPosition(hard) {
 
 // choisit la source de playA selon la piste active (mêmes règles que buildWaveform)
 async function syncPlaybackAudio() {
+  if (DETACHED) { applyVolume(); return }
   const token = ++playAToken
   // mode monitoring doublage : mix V / sans-voix (prioritaire sur le chemin mono-piste)
   if (dubEnabled()) {
@@ -6790,6 +6799,7 @@ function updatePlayerUI() {
 }
 
 function openPlayer() {
+  if (detachedOpenFlag) return // aperçu local indisponible tant que la fenêtre détachée est ouverte
   if (!project.videoPath || !video.videoWidth) { toast(t('loadVideoFirst')); return }
   player.open = true
   hideSubOverlay() // l'overlay sous-titres reste réservé à l'aperçu éditeur
@@ -6814,6 +6824,80 @@ function closePlayer() {
 
 $('btnPlayer').addEventListener('click', openPlayer)
 $('pcExit').addEventListener('click', closePlayer)
+
+// ============================================================ fenêtre détachée (2e écran)
+// La fenêtre principale est maîtresse : elle envoie l'état (projet + source vidéo +
+// réglages du player) et la synchro de lecture ; la fenêtre détachée suit, muette.
+let detachedOpenFlag = false
+let detachedStateTimer = 0
+function detachedState() {
+  return {
+    kind: 'state',
+    project: JSON.parse(projectJson()),
+    src: video.currentSrc || video.src || null,
+    winSec: player.winSec, bandFrac: player.bandFrac, bandPos: player.bandPos,
+    tracks: [...playerTracks],
+  }
+}
+function detachedSendState() { if (detachedOpenFlag) window.api.detachedSend(detachedState()) }
+// état renvoyé (throttlé) à chaque modification du projet → la bande suit l'édition
+function detachedQueueState() {
+  if (!detachedOpenFlag || DETACHED || detachedStateTimer) return
+  detachedStateTimer = setTimeout(() => { detachedStateTimer = 0; detachedSendState() }, 800)
+}
+function detachedSync() {
+  if (detachedOpenFlag) window.api.detachedSend({ kind: 'sync', t: effectiveTime(), paused: video.paused, rate: video.playbackRate })
+}
+function updateDetachedUI() {
+  $('btnPlayer').disabled = detachedOpenFlag // l'aperçu plein écran local est grisé tant que la fenêtre est ouverte
+}
+function openDetached() {
+  if (!project.videoPath || !video.videoWidth) { toast(t('loadVideoFirst')); return }
+  closePlayer()
+  window.api.detachedOpen()
+}
+if (!DETACHED) {
+  window.api.onDetachedReady(() => { detachedOpenFlag = true; updateDetachedUI(); detachedSendState(); detachedSync() })
+  window.api.onDetachedClosed(() => { detachedOpenFlag = false; updateDetachedUI() })
+  video.addEventListener('play', detachedSync)
+  video.addEventListener('pause', detachedSync)
+  video.addEventListener('seeked', detachedSync)
+  video.addEventListener('ratechange', detachedSync)
+  $('pcDetach').addEventListener('click', (e) => { e.stopPropagation(); openDetached() })
+}
+
+// ---- côté fenêtre détachée : rendu seul, piloté par les messages de la principale ----
+async function handleDetachedMsg(m) {
+  if (!m) return
+  if (m.kind === 'state') {
+    if (m.winSec) player.winSec = m.winSec
+    if (m.bandFrac) player.bandFrac = m.bandFrac
+    if (m.bandPos) player.bandPos = m.bandPos
+    if (m.tracks) playerTracks = new Set(m.tracks)
+    if (m.project) await loadProjectData(m.project, null)
+    if (m.src && video.src !== m.src) video.src = m.src
+    applyVolume() // muette (le son sort de la fenêtre principale)
+  } else if (m.kind === 'sync') {
+    if (video.src && Math.abs(video.currentTime - m.t) > 0.1) { try { video.currentTime = m.t } catch {} }
+    if (video.playbackRate !== m.rate) video.playbackRate = m.rate
+    if (m.paused && !video.paused) video.pause()
+    else if (!m.paused && video.paused) video.play().catch(() => {})
+  }
+}
+if (DETACHED) {
+  document.body.classList.add('detached')
+  player.open = true
+  $('playerMode').classList.remove('hidden')
+  // F11 = plein écran sur l'écran de la fenêtre ; Échap = sortir du plein écran / fermer ;
+  // tout autre raccourci de l'appli est neutralisé (la principale garde le contrôle)
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F11') { e.preventDefault(); window.api.detachedToggleFullscreen() }
+    else if (e.key === 'Escape') { window.close() }
+    e.stopImmediatePropagation()
+  }, true)
+  window.api.onDetachedMsg(handleDetachedMsg)
+  window.api.detachedReadySignal()
+}
 $('pcPlay').addEventListener('click', (e) => { e.stopPropagation(); togglePlay(); showPlayerControls() })
 $('pcPrev').addEventListener('click', (e) => { e.stopPropagation(); gotoLoop(-1); showPlayerControls() })
 $('pcNext').addEventListener('click', (e) => { e.stopPropagation(); gotoLoop(1); showPlayerControls() })
@@ -6836,7 +6920,10 @@ $('playerMode').addEventListener('mousemove', showPlayerControls)
 document.addEventListener('fullscreenchange', () => { if (player.open && !document.fullscreenElement) closePlayer() })
 
 // ============================================================ main loop
+let loopN = 0
 function loop() {
+  loopN++
+  if (detachedOpenFlag && loopN % 15 === 0) detachedSync() // synchro périodique (~4 Hz)
   $('timecode').textContent = formatTc(effectiveTime(), project.fps)
   btnPlay.classList.toggle('playing', !video.paused)
   drawSeekBar()
@@ -6866,7 +6953,7 @@ function loop() {
   const st = await window.api.getSettings()
   try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.deviceLabel = ac.deviceLabel || null; audioCfg.output = ac.output || null; audioCfg.outputLabel = ac.outputLabel || null; audioCfg.recOffsetMs = Number(ac.recOffsetMs) || 0 } } catch {}
   applyOutputSink()
-  preloadSettings() // débloque les noms de périphériques + précharge les listes (Paramètres instantanés)
+  if (!DETACHED) preloadSettings() // débloque les noms de périphériques + précharge les listes (Paramètres instantanés)
   lang = st.lang === 'en' ? 'en' : 'fr'
   autosaveOn = !!st.autosave
   autofocusText = st.autofocus !== false

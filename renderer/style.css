@@ -1010,6 +1010,10 @@ body.on-tracks .dub-ctl, body.on-rec .dub-ctl { display: inline-flex; }
 /* ---------- mode lecture plein écran ---------- */
 #playerMode { position: fixed; inset: 0; z-index: 100; background: #000; }
 #playerMode.hidden { display: none; }
+/* fenêtre détachée : rendu seul — tout le chrome de l'appli est masqué */
+body.detached > :not(#playerMode) { display: none !important; }
+body.detached #playerControls { display: none !important; }
+body.detached { background: #000; }
 #playerMode.cursor-hidden { cursor: none; }
 #playerCanvas { display: block; width: 100%; height: 100%; }
 #playerControls {
