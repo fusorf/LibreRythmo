@@ -637,6 +637,17 @@ function applyLang() {
   $('lblSpeedWrap').title = t('speedTitle')
   $('expReset').textContent = t('expReset')
   $('lblDest').textContent = t('lblDest')
+  $('tkTitle').textContent = t('tkTitle')
+  $('tkGrpSrc').textContent = t('tkGrpSrc')
+  $('tkLblSource').textContent = t('tkLblSource')
+  $('tkOptRaw').textContent = t('tkOptRaw')
+  $('tkOptFx').textContent = t('tkOptFx')
+  $('tkLblDetached').textContent = t('tkLblDetached')
+  $('tkLblDest').textContent = t('lblDest')
+  $('tkPath').placeholder = t('tkPathPh')
+  $('tkBrowse').textContent = t('expBrowse')
+  $('tkClose').textContent = t('close')
+  $('tkGo').textContent = t('tkGoBtn')
   $('expPath').placeholder = t('expPathPh')
   $('expBrowse').textContent = t('expBrowse')
   $('expGo').textContent = t('expGo')
@@ -1731,6 +1742,64 @@ async function fxProcessClip(r) {
     return true
   } catch { return false }
 }
+
+// ============================================================ export des prises (ZIP)
+// Même UX que l'export vidéo : options, destination, barre de progression.
+// Mix complet par personnage (prises actives, timeline respectée) + option prises
+// détachées horodatées — le tout dans un ZIP, source brute ou traitée (FX).
+const tkModal = $('takesModal')
+let tkBusy = false
+function openTakesExport() {
+  if (!(project.recordings || []).length) { toast(t('tkNone')); return }
+  tkModal.classList.remove('hidden')
+  $('tkBar').style.width = '0%'
+  $('tkStatus').textContent = ''
+  $('tkSource').value = project.voiceFxOn ? 'fx' : 'raw'
+}
+const tkSuggestedName = () => (projectPath ? baseName(projectPath).replace(/\.[^.]+$/, '') : baseName(project.videoPath || 'prises').replace(/\.[^.]+$/, '')) + '-prises.zip'
+$('tkBrowse').addEventListener('click', async () => {
+  const p = await window.api.takesExportPick(tkSuggestedName())
+  if (p) $('tkPath').value = p
+})
+$('tkClose').addEventListener('click', () => { if (!tkBusy) tkModal.classList.add('hidden') })
+window.api.onTakesProgress((p) => {
+  if (!p || tkModal.classList.contains('hidden')) return
+  $('tkBar').style.width = `${Math.round(((p.i || 0) / Math.max(1, p.n || 1)) * 100)}%`
+  $('tkStatus').textContent = p.label === 'zip' ? t('tkPhaseZip') : t('tkPhaseMix', p.label)
+})
+async function runTakesExport() {
+  if (tkBusy) return
+  let outPath = $('tkPath').value.trim()
+  if (!outPath) { const p = await window.api.takesExportPick(tkSuggestedName()); if (!p) return; outPath = p; $('tkPath').value = p }
+  if (!/\.zip$/i.test(outPath)) { outPath += '.zip'; $('tkPath').value = outPath }
+  const useFx = $('tkSource').value === 'fx'
+  const pick = (r) => (useFx && r.fxFile) ? r.fxFile : r.file
+  const clipInfo = (r) => ({ name: pick(r), trimStart: r.trimStart || 0, effDur: recEffDur(r), offset: r.startTime, takeN: (r.lane || 0) + 1 })
+  const chars = project.characters
+    .map((c) => {
+      const all = (project.recordings || []).filter((r) => r.characterId === c.id && recEffDur(r) > 0)
+      return { name: c.name, active: all.filter((r) => r.active).map(clipInfo), all: all.map(clipInfo) }
+    })
+    .filter((c) => c.all.length)
+  tkBusy = true
+  $('tkGo').disabled = true
+  $('tkStatus').textContent = t('tkPhaseMix', '…')
+  const r = await window.api.exportTakes({
+    outPath, projectPath, includeDetached: $('tkDetached').checked, chars,
+    videoDur: (isFinite(video.duration) && video.duration > 0) ? video.duration
+      : Math.max(1, ...(project.recordings || []).map((k) => k.startTime + recEffDur(k))),
+  })
+  tkBusy = false
+  $('tkGo').disabled = false
+  if (r && r.ok) {
+    $('tkBar').style.width = '100%'
+    $('tkStatus').textContent = t('tkDone', r.count)
+    toast(t('tkDone', r.count))
+  } else {
+    $('tkStatus').textContent = t('tkFail') + (r && r.error ? ' — ' + String(r.error).slice(0, 120) : '')
+  }
+}
+$('tkGo').addEventListener('click', runTakesExport)
 
 // bouton « chaîne voix » : traite toutes les takes actives qui ne le sont pas encore
 async function toggleVoiceFx() {
@@ -6183,6 +6252,7 @@ window.api.onMenu((action, arg) => {
   else if (action === 'open-settings') openSettings()
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
+  else if (action === 'export-takes') openTakesExport()
   else if (action === 'set-lang') setLanguage(arg)
   else if (action === 'show-guide') openGuide()
   else if (action === 'undo') undo()

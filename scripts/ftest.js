@@ -290,6 +290,26 @@ const TESTS = [
     // le canvas des takes remplit au moins l'espace restant (barre rouge jusqu'en bas)
     return bandH === 96 && clipsH >= 44 && clipsH >= wrapH - 1
   })()`],
+  ['Export prises : mix ffmpeg + ZIP (roundtrip réel)', `(async () => {
+    if (!window.api.exportTakes || typeof encodeWav16 !== 'function') return true
+    // petite prise réelle : 0,3 s de sinus, encodée avec l'encodeur WAV maison
+    const oac = new OfflineAudioContext(1, 4800, 16000)
+    const b = oac.createBuffer(1, 4800, 16000)
+    const d = b.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = 0.25 * Math.sin(2 * Math.PI * 440 * i / 16000)
+    const sv = await window.api.saveTake(null, 'tk_test_in.wav', encodeWav16(b))
+    if (!sv || sv.error) return 'save fail'
+    const url = await window.api.takeUrl(null, sv.name)
+    const p = decodeURIComponent(url.slice(8)) // retire 'file:///'
+    const outPath = p.slice(0, p.lastIndexOf('/')) + '/tk_test_out.zip'
+    const info = { name: sv.name, trimStart: 0, effDur: 0.3, offset: 0.5, takeN: 1 }
+    const r = await window.api.exportTakes({ outPath, projectPath: null, includeDetached: true, videoDur: 2,
+      chars: [{ name: 'Test', active: [info], all: [info] }] })
+    const st = r && r.ok ? await window.api.statFile(outPath) : null
+    await window.api.deleteTake(null, sv.name)
+    await window.api.deleteTake(null, 'tk_test_out.zip')
+    return !!(r && r.ok && r.count === 2 && st && st.size > 1000)
+  })()`],
   ['Chaîne voix : analyse cohérente + WAV + bascule de fichier', `(async () => {
     if (typeof analyzeVoice !== 'function') return true
     const ac = new OfflineAudioContext(1, 16000, 16000)

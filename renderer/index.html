@@ -298,6 +298,37 @@
     </div>
   </div>
 
+  <div id="takesModal" class="hidden">
+    <div class="modal-panel">
+      <h2 id="tkTitle">Exporter les prises</h2>
+      <div class="opt-groups">
+        <fieldset class="opt-group">
+          <legend id="tkGrpSrc">Prises</legend>
+          <label><span id="tkLblSource">Source</span>
+            <select id="tkSource">
+              <option value="raw" id="tkOptRaw">Brut</option>
+              <option value="fx" id="tkOptFx">Avec FX</option>
+            </select>
+          </label>
+          <label class="tk-check"><input id="tkDetached" type="checkbox"> <span id="tkLblDetached">Inclure les prises détachées</span></label>
+        </fieldset>
+      </div>
+      <div class="export-row">
+        <label for="tkPath" id="tkLblDest">Destination</label>
+        <input id="tkPath" type="text" placeholder="Choisis un fichier .zip…" spellcheck="false">
+        <button id="tkBrowse">Parcourir…</button>
+      </div>
+      <hr class="modal-sep">
+      <div class="export-row">
+        <div id="tkProgress"><div id="tkBar"></div></div>
+        <span id="tkStatus"></span>
+        <div class="spacer"></div>
+        <button id="tkClose">Fermer</button>
+        <button id="tkGo" class="primary">Exporter…</button>
+      </div>
+    </div>
+  </div>
+
   <div id="guideModal" class="hidden">
     <div class="modal-panel guide-panel">
       <h2 id="guideTitle">Guide</h2>

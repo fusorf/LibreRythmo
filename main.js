@@ -298,6 +298,8 @@ const MENU_STR = {
     saveProjectAs: 'Enregistrer sous…',
     autosave: 'Enregistrement automatique',
     exportVideo: 'Exporter la vidéo…',
+    exportTakes: 'Exporter les prises…',
+    dlgTakesZip: 'Exporter les prises (ZIP)',
     workDocs: 'Documents de travail (PDF)',
     docPresence: 'Grille de présence…',
     docTally: 'Relevé de lignes…',
@@ -374,6 +376,8 @@ const MENU_STR = {
     saveProjectAs: 'Save As…',
     autosave: 'Autosave',
     exportVideo: 'Export video…',
+    exportTakes: 'Export takes…',
+    dlgTakesZip: 'Export takes (ZIP)',
     workDocs: 'Work documents (PDF)',
     docPresence: 'Presence grid…',
     docTally: 'Line tally…',
@@ -469,6 +473,7 @@ function buildMenu() {
         { label: s.autosave, type: 'checkbox', checked: settings.autosave, click: (item) => send('toggle-autosave', item.checked) },
         { type: 'separator' },
         { label: s.exportVideo, accelerator: 'CmdOrCtrl+E', click: () => send('export-video') },
+        { label: s.exportTakes, click: () => send('export-takes') },
         {
           label: s.subtitles,
           submenu: [
@@ -1733,4 +1738,104 @@ ipcMain.handle('export-cancel', () => {
     exportProc = null
   }
   return true
+})
+
+// ============================================================ export des prises (ZIP)
+// Mix complet par personnage (prises actives calées sur la timeline via adelay, puis
+// silence apad jusqu'à la durée vidéo) + prises détachées horodatées en option.
+// ZIP écrit sans dépendance (entrées STORE + CRC32 maison — le WAV ne se compresse pas).
+let CRC_T = null
+function crc32(buf) {
+  if (!CRC_T) { CRC_T = new Int32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); CRC_T[n] = c } }
+  let c = -1
+  for (let i = 0; i < buf.length; i++) c = CRC_T[(c ^ buf[i]) & 0xFF] ^ (c >>> 8)
+  return (c ^ -1) >>> 0
+}
+function zipStore(files, outPath) {
+  const chunks = [], central = []
+  let offset = 0
+  for (const f of files) {
+    const data = fs.readFileSync(f.path)
+    const nameB = Buffer.from(f.name, 'utf8')
+    const crc = crc32(data)
+    const lh = Buffer.alloc(30)
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6) // flag UTF-8
+    lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22)
+    lh.writeUInt16LE(nameB.length, 26)
+    chunks.push(lh, nameB, data)
+    const ch = Buffer.alloc(46)
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0x0800, 8)
+    ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24)
+    ch.writeUInt16LE(nameB.length, 28); ch.writeUInt32LE(offset, 42)
+    central.push(Buffer.concat([ch, nameB]))
+    offset += 30 + nameB.length + data.length
+  }
+  const cd = Buffer.concat(central)
+  const eocd = Buffer.alloc(22)
+  eocd.writeUInt32LE(0x06054b50, 0)
+  eocd.writeUInt16LE(files.length, 8); eocd.writeUInt16LE(files.length, 10)
+  eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(offset, 16)
+  fs.writeFileSync(outPath, Buffer.concat([...chunks, cd, eocd]))
+}
+const runFfQuiet = (args) => new Promise((res) => {
+  let p
+  try { p = spawn(ffmpegPath, args, { stdio: 'ignore' }) } catch { return res(false) }
+  p.on('close', (code) => res(code === 0))
+  p.on('error', () => res(false))
+})
+const zipSafeName = (s) => String(s || 'perso').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'perso'
+const tcFileName = (sec) => { const m = Math.floor(sec / 60), s = sec % 60; return `${String(m).padStart(2, '0')}m${String(Math.floor(s)).padStart(2, '0')}s${Math.round((s % 1) * 10)}` }
+
+ipcMain.handle('takes-export-pick', async (e, suggested) => {
+  const r = await dialog.showSaveDialog(win, { title: S().dlgTakesZip, defaultPath: suggested || 'prises.zip', filters: [{ name: 'ZIP', extensions: ['zip'] }] })
+  return r.canceled || !r.filePath ? null : r.filePath
+})
+
+ipcMain.handle('export-takes', async (e, opts) => {
+  if (!ffmpegPath) return { error: 'no-ffmpeg' }
+  const td = takesDir(opts.projectPath)
+  const tmp = fs.mkdtempSync(path.join(app.getPath('temp'), 'lr-takes-'))
+  const prog = (label, i, n) => { if (win && !win.isDestroyed()) win.webContents.send('takes-export-progress', { label, i, n }) }
+  const files = []
+  try {
+    const chars = opts.chars || []
+    const steps = chars.filter((c) => c.active.length).length + (opts.includeDetached ? chars.reduce((a, c) => a + c.all.length, 0) : 0) + 1
+    let done = 0
+    // 1 fichier complet par personnage : prises actives calées, silence ailleurs
+    for (const c of chars) {
+      if (!c.active.length) continue
+      prog(c.name, done, steps)
+      const inputs = [], parts = [], labels = []
+      c.active.forEach((k, i) => {
+        inputs.push('-ss', (k.trimStart || 0).toFixed(3), '-t', Math.max(0.05, k.effDur).toFixed(3), '-i', path.join(td, path.basename(k.name)))
+        parts.push(`[${i}:a]aresample=48000,adelay=${Math.max(0, Math.round(k.offset * 1000))}:all=1[a${i}]`)
+        labels.push(`[a${i}]`)
+      })
+      const mix = c.active.length > 1 ? `${labels.join('')}amix=inputs=${c.active.length}:normalize=0[m]` : '[a0]anull[m]'
+      const out = path.join(tmp, `c${done}.wav`)
+      const ok = await runFfQuiet(['-y', ...inputs, '-filter_complex', parts.concat([mix, '[m]apad[mp]']).join(';'), '-map', '[mp]', '-t', Math.max(1, Number(opts.videoDur) || 60).toFixed(3), '-ac', '2', '-c:a', 'pcm_s16le', out])
+      if (!ok) return { error: 'mix: ' + c.name }
+      files.push({ name: zipSafeName(c.name) + '.wav', path: out })
+      done++
+    }
+    // prises détachées : une par take, timing dans le nom, sous prises/
+    if (opts.includeDetached) {
+      for (const c of chars) {
+        for (const k of c.all) {
+          prog(`${c.name} · take ${k.takeN}`, done, steps)
+          const out = path.join(tmp, `d${done}.wav`)
+          const ok = await runFfQuiet(['-y', '-ss', (k.trimStart || 0).toFixed(3), '-t', Math.max(0.05, k.effDur).toFixed(3), '-i', path.join(td, path.basename(k.name)), '-c:a', 'pcm_s16le', out])
+          if (ok) files.push({ name: `prises/${zipSafeName(c.name)}_prise${k.takeN}_${tcFileName(k.offset)}.wav`, path: out })
+          done++
+        }
+      }
+    }
+    prog('zip', done, steps)
+    zipStore(files, opts.outPath)
+    return { ok: true, count: files.length }
+  } catch (err) {
+    return { error: String((err && err.message) || err) }
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }) } catch {}
+  }
 })
