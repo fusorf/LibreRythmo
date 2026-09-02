@@ -6672,7 +6672,7 @@ const exp = {
 
 const expCanvas = $('exportPreview')
 const expCtx = expCanvas.getContext('2d')
-const PREVIEW_W = 780
+const PREVIEW_W = 560 // largeur de la preview = largeur de la modale (voir #exportModal .modal-panel) : contenue pour garder une fenêtre basse
 
 const outW = () => Math.max(320, Math.floor(Number($('expW').value) / 2) * 2)
 const outH = () => Math.max(180, Math.floor(Number($('expH').value) / 2) * 2)
@@ -6687,12 +6687,12 @@ function effectiveExportFps() {
   if (m === 'custom') return clamp(Number($('expFps').value) || project.fps, 10, 120)
   return clamp(Number(m) || 60, 10, 120)
 }
-// rafraîchit le libellé « Source (25) » et l'affichage du champ manuel (Custom)
+// rafraîchit le libellé « Source (25) » et l'affichage du champ manuel (Custom).
+// display (et non visibility) : le champ ne réserve aucune place masqué — la largeur
+// de la modale est fixée par la preview, le groupe se contente de replier ses rangées
 function syncFpsModeUI() {
   $('optFpsSource').textContent = `${t('optFpsSource')} (${sourceFps()})`
-  // visibility (et non display) : la place du champ reste réservée même masqué, pour
-  // que passer en « Personnalisée » ne change pas la taille de la modale
-  $('expFps').style.visibility = exp.fpsMode === 'custom' ? 'visible' : 'hidden'
+  $('expFps').style.display = exp.fpsMode === 'custom' ? '' : 'none'
 }
 
 // dispose vidéo + bande à partir de la position (haut/bas) et de la fraction de
@@ -6744,9 +6744,17 @@ function sizeExportPreview() {
   expCanvas.height = Math.round((PREVIEW_W * outH()) / outW())
 }
 
+// masque les réglages sans objet quand la bande est « Aucune » (compacité du groupe)
+function syncBandUI() {
+  const none = exp.bandPos === 'none'
+  for (const id of ['lblThemeWrap', 'lblSpeedWrap', 'expReset']) $(id).style.display = none ? 'none' : ''
+}
+
 function applyExpPreset() {
   const v = $('expPreset').value
   const custom = v === 'custom'
+  // champs L × H visibles seulement en résolution « Personnalisée » (compacité du groupe)
+  for (const id of ['expW', 'expXsep', 'expH']) $(id).style.display = custom ? '' : 'none'
   $('expW').disabled = !custom
   $('expH').disabled = !custom
   if (!custom) {
@@ -6889,6 +6897,7 @@ function openExportModal() {
   buildExportContent()
   exp.open = true
   $('expBandPos').value = exp.bandPos
+  syncBandUI()
   exp.theme = theme // thème de la bande exportée : celui de l'UI par défaut
   $('expTheme').value = exp.theme
   populateEncoderSelect()
@@ -6958,6 +6967,7 @@ $('expReset').addEventListener('click', resetExportLayout)
 $('expBandPos').addEventListener('change', () => {
   const v = $('expBandPos').value
   exp.bandPos = v === 'top' || v === 'none' ? v : 'bottom'
+  syncBandUI()
   layoutExport()
 })
 $('expClose').addEventListener('click', () => {

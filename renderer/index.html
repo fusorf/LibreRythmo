@@ -248,7 +248,7 @@
             </select>
           </label>
           <input id="expW" type="number" min="320" max="7680" value="1920" disabled>
-          <span class="arrow">×</span>
+          <span class="arrow" id="expXsep">×</span>
           <input id="expH" type="number" min="180" max="4320" value="1080" disabled>
           <label><span id="lblFps">Images/s</span>
             <select id="expFpsMode">
@@ -271,14 +271,13 @@
               <option value="none" id="optBandNone">Aucune</option>
             </select>
           </label>
-          <label><span id="lblTheme">Couleur</span>
+          <label id="lblThemeWrap"><span id="lblTheme">Couleur</span>
             <select id="expTheme">
               <option value="dark" id="optThemeDark">Sombre</option>
               <option value="light" id="optThemeLight">Clair</option>
             </select>
           </label>
           <label id="lblSpeedWrap"><span id="lblSpeed">Zoom</span> <input id="expWin" type="range" min="0" max="1" step="0.001" value="0.58"> <span id="expWinVal" class="dim-val">5 s visibles</span></label>
-          <div class="spacer"></div>
           <button id="expReset">Réinitialiser</button>
         </fieldset>
         <fieldset class="opt-group">

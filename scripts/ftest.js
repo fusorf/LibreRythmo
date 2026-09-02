@@ -419,6 +419,30 @@ const TESTS = [
     const ok4 = row.classList.contains('hidden') // aucun perso avec prise → rangée masquée
     return ok1 && ok2 && ok3 && okLbl && ok4
   })()`],
+  ['Export : modale compacte (largeur bornée par la preview)', `(async () => {
+    if (typeof sizeExportPreview !== 'function' || typeof syncBandUI !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [{ id: 's1', start: 0, end: 5, name: 'Scene 1', type: 'normal' }], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }],
+      lines: [], recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }], recMuted: [] }, null)
+    buildExportContent()
+    exp.bandPos = 'bottom'; document.getElementById('expBandPos').value = 'bottom'
+    syncBandUI(); syncFpsModeUI(); applyExpPreset()
+    const modal = document.getElementById('exportModal')
+    modal.classList.remove('hidden')
+    await new Promise((r) => setTimeout(r, 80))
+    const panel = modal.querySelector('.modal-panel')
+    const pw = Math.round(panel.getBoundingClientRect().width)
+    const limit = 622 // largeur CSS du panneau (#exportModal .modal-panel) + bordures
+    // rangées attendues : Encodeur avec Résolution, Réinitialiser avec le Zoom,
+    // Enregistrements/FX avec Audio (comparaison des centres verticaux)
+    const cy = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return r.top + r.height / 2 }
+    const sameRow = (a, b) => Math.abs(cy(a) - cy(b)) < 8
+    const rows = [['lblEnc', 'lblRes'], ['expReset', 'lblSpeedWrap'], ['expRecsRow', 'lblExpAudio']]
+    const broken = rows.filter(([a, b]) => !sameRow(a, b)).map(([a, b]) => a + '≠' + b)
+    modal.classList.add('hidden')
+    if (pw > limit + 2) return 'panel=' + pw + ' > ' + limit
+    return broken.length ? 'rangées cassées : ' + broken.join(', ') : true
+  })()`],
   ['Fenêtre détachée : bouton aperçu grisé quand ouverte', `(() => {
     if (typeof updateDetachedUI !== 'function') return true
     detachedOpenFlag = true; updateDetachedUI()

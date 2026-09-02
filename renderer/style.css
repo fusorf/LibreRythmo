@@ -1200,6 +1200,9 @@ body.detached { background: #000; }
 }
 #exportModal.hidden, #takesModal.hidden, #ytModal.hidden { display: none; }
 #ytModal .modal-panel { width: 640px; max-width: 92vw; }
+/* largeur explicite : sans elle, le panneau prend la largeur max-content de son contenu
+   (les rangées ne replient jamais). Légèrement plus large que la preview (PREVIEW_W). */
+#exportModal .modal-panel { width: 620px; max-width: 92vw; }
 #ytUrl { flex: 1 1 auto; min-width: 0; }
 /* rognage début / fin (apparaît une fois le téléchargement terminé) */
 #ytTrimSec.hidden { display: none; }
@@ -1224,6 +1227,7 @@ body.detached { background: #000; }
 .modal-hint { font-size: 11px; color: var(--dim); }
 #exportPreview {
   display: block;
+  margin: 0 auto; /* panneau un peu plus large que la preview : centrée */
   background: #000;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -1233,7 +1237,7 @@ body.detached { background: #000; }
 .export-row label { display: flex; align-items: center; gap: 6px; color: var(--dim); white-space: nowrap; }
 /* séparateur pleine largeur (bord à bord du panneau, annule le padding de 16px) */
 .modal-sep { width: auto; border: none; border-top: 1px solid var(--border); margin: 2px -16px 0; }
-/* groupes d'options encadrés (Sortie / Bande) */
+/* groupes d'options encadrés (Sortie / Bande / Contenu) */
 .opt-groups { display: flex; flex-direction: column; gap: 10px; }
 .opt-group {
   border: 1px solid var(--border);
@@ -1243,7 +1247,7 @@ body.detached { background: #000; }
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: 8px 10px;
 }
 .opt-group > legend {
   padding: 0 6px;
@@ -1259,9 +1263,9 @@ body.detached { background: #000; }
 /* groupe Contenu : sélection des pistes, boucles, piste audio */
 .content-row { display: flex; align-items: center; gap: 8px; }
 .content-row > span:first-child { color: var(--dim); white-space: nowrap; }
-.content-break { flex-basis: 100%; gap: 14px; } /* force la rangée sur sa propre ligne du groupe */
+.content-break { flex-basis: 100%; gap: 8px 14px; flex-wrap: wrap; } /* propre ligne du groupe ; replie Enregistrements sous Audio si étroit */
 #expRecsRow.hidden { display: none; }
-#expAudio { max-width: 260px; }
+#expAudio { max-width: 180px; }
 /* menu déroulant à cases (pistes / boucles) */
 .dropdown { position: relative; display: inline-block; }
 .dropbtn { min-width: 140px; text-align: left; display: inline-flex; align-items: center; justify-content: space-between; }
@@ -1291,9 +1295,10 @@ body.detached { background: #000; }
   font-size: 12px; color: var(--text); white-space: nowrap; cursor: pointer;
 }
 .dropmenu label:hover { background: var(--hover); }
-#expWin { width: 130px; }
+#expWin { width: 64px; }
+#expWinVal { min-width: 0; }
 .dim-val { font-size: 11px; color: var(--dim); min-width: 86px; }
-#expPath { flex: 1; font-size: 12px; }
+#expPath { flex: 1 1 0; min-width: 0; font-size: 12px; } /* peut rétrécir sous sa taille intrinsèque : ne dicte pas la largeur de la modale */
 button.primary {
   background: #2d4a7a;
   border-color: #3c5d96;
@@ -1335,6 +1340,9 @@ button.primary:disabled { opacity: .45; cursor: default; }
 }
 #expBar, #detBar, #trBar, #tkBar, #ytBar { height: 100%; width: 0%; background: #4a7ac8; transition: width .15s; }
 #expStatus, #detStatus, #trStatus { font-size: 12px; color: var(--dim); min-width: 180px; }
+/* modale d'export étroite : la barre et le statut peuvent rétrécir, ils ne dictent pas la largeur */
+#expProgress { flex: 0 1 220px; min-width: 80px; }
+#expStatus { min-width: 0; }
 #transcribeModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 20; }
 #transcribeModal.hidden { display: none; }
 .ai-notready { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
