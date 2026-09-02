@@ -890,12 +890,21 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-big.recording { background: #e0453a; color: #fff; border-color: #e0453a; }
 .rec-big.recording .rec-dot { background: #fff; animation: recPulse 1s ease-in-out infinite; }
 @keyframes recPulse { 50% { opacity: .35; } }
-/* vumètre d'entrée vertical (droite de la bande + segments), façon logiciel de montage :
-   échelle de couleur fixe (vert→jaune→rouge), niveau révélé par un cache + crête (peak hold) */
-#recVu { flex: 0 0 12px; position: relative; margin: 10px 8px 10px 2px; border-radius: 3px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+/* drawer « niveau d'entrée » (droite de la bande + segments), façon console :
+   en-tête micro + périphérique d'entrée, vumètre rectangulaire avec échelle de
+   couleur fixe (vert→jaune→rouge) révélée par un cache, graduations et crête */
+#recVu {
+  flex: 0 0 64px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 10px 8px; background: var(--panel); border-left: 1px solid var(--border);
+}
+#recVuHead { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; flex: 0 0 auto; }
+#recVuHead svg { width: 18px; height: 18px; color: var(--dim); }
+#recVuDev { width: 100%; font-size: 10px; color: var(--dim); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#recVuMeter { position: relative; flex: 1 1 auto; min-height: 0; width: 22px; background: var(--inset); border: 1px solid var(--border); overflow: hidden; }
 #recVuGrad { position: absolute; inset: 0; opacity: .95; background: linear-gradient(to top, #3fae5a 0%, #3fae5a 55%, #d8c53a 78%, #e0533a 100%); }
-#recVuCover { position: absolute; left: 0; right: 0; top: 0; height: 100%; background: var(--panel); }
-#recVuPeak { position: absolute; left: 0; right: 0; height: 2px; bottom: 0; background: rgba(255, 255, 255, .65); opacity: 0; transition: opacity .25s; }
+#recVuCover { position: absolute; left: 0; right: 0; top: 0; height: 100%; background: var(--inset); }
+#recVuTicks { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to top, transparent 0, transparent calc(10% - 1px), rgba(0, 0, 0, .28) calc(10% - 1px), rgba(0, 0, 0, .28) 10%); }
+#recVuPeak { position: absolute; left: 0; right: 0; height: 2px; bottom: 0; background: rgba(255, 255, 255, .7); opacity: 0; transition: opacity .25s; }
 .rec-charlbl { align-items: center; gap: 6px; }
 .rec-charlbl span { font-size: 12px; color: var(--dim); }
 /* liste des personnages (colonne gauche, pleine hauteur) */

@@ -557,6 +557,7 @@ function applyLang() {
   $('btnPlayer').title = t('playerBtn')
   $('pcExit').title = t('pcExitTitle')
   $('pcDetach').title = t('pcDetachTitle')
+  $('recVu').title = t('recVuTitle')
   $('pcPlay').title = t('pcPlayTitle')
   $('pcPrev').title = t('pcPrevTitle')
   $('pcNext').title = t('pcNextTitle')
@@ -1222,6 +1223,9 @@ function updateRecMeter(level) {
 }
 function updateRecUI() {
   const m = $('recMeter'); if (m) m.hidden = !recorder.active
+  // rappel du périphérique d'entrée dans le drawer du vumètre
+  const dev = $('recVuDev')
+  if (dev) { const nm = audioCfg.deviceLabel || t('capDefault'); dev.textContent = nm; dev.title = nm }
   const big = $('recBigBtn')
   if (big) {
     big.classList.toggle('recording', recorder.active)

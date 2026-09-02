@@ -171,9 +171,16 @@
         <div id="recClipsWrap"><canvas id="recClips" title="Prises — clic pour sélectionner, glisser pour déplacer"></canvas></div>
       </div>
       <div id="recVu" title="Niveau d'entrée">
-        <div id="recVuGrad"></div>
-        <div id="recVuCover"></div>
-        <div id="recVuPeak"></div>
+        <div id="recVuHead">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+          <span id="recVuDev">—</span>
+        </div>
+        <div id="recVuMeter">
+          <div id="recVuGrad"></div>
+          <div id="recVuCover"></div>
+          <div id="recVuTicks"></div>
+          <div id="recVuPeak"></div>
+        </div>
       </div>
     </div>
   </div>
