@@ -501,6 +501,8 @@ function applyLang() {
   $('setCapApiLabel').textContent = t('setCapApiLabel')
   $('setCapDevLabel').textContent = t('setCapDevLabel')
   $('setOutDevLabel').textContent = t('setOutDevLabel')
+  $('recOffLabel').textContent = t('recOffLabel')
+  $('recOffLabel').parentElement.title = t('recOffTitle')
   $('outTest').textContent = t(outTestState ? 'outTestStop' : 'outTestBtn')
   $('setTrLegend').textContent = t('setTrLegend')
   $('setTrActiveLabel').textContent = t('setActiveLabel')
@@ -978,7 +980,7 @@ const recLaneCount = (charId) => 1 + (project.recordings || []).filter((r) => r.
 const recOverlapGroup = (clip) => (project.recordings || []).filter((r) => r.characterId === clip.characterId && r.id !== clip.id && recOverlap(r, clip))
 
 // config capture (persistée côté main : audio-config.json)
-const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null }
+const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null, recOffsetMs: 0 }
 
 function resetMic() {
   try { if (recorder.stream) recorder.stream.getTracks().forEach((t2) => t2.stop()) } catch {}
@@ -1063,11 +1065,29 @@ async function startRecordingWeb() {
   catch { recorder.mr = new MediaRecorder(recStream) }
   recorder.mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) recorder.chunks.push(ev.data) }
   recorder.mr.onstop = () => finishRecordingWeb()
+  // compensation de latence : on mesure le temps entre le vrai début de capture et le
+  // vrai démarrage de la lecture (seek+play ne sont pas instantanés) — l'amorce sera rognée
+  recorder.capAt = 0; recorder.playAt = 0
+  recorder.mr.onstart = () => { recorder.capAt = performance.now() }
+  video.addEventListener('playing', recOnPlaying, { once: true })
   recorder.active = true
   video.currentTime = recorder.recStartAt
   recorder.mr.start()
   video.play().catch(() => {})
   updateRecUI(); meterLoop()
+}
+function recOnPlaying() { recorder.playAt = performance.now() }
+// latence d'entrée déclarée par le pipeline audio (périphérique → flux), si disponible
+function inputLatencySec() {
+  try { const s = recorder.stream?.getAudioTracks()[0].getSettings(); if (s && isFinite(s.latency) && s.latency > 0 && s.latency < 0.5) return s.latency } catch {}
+  try { if (recorder.ac && isFinite(recorder.ac.baseLatency)) return recorder.ac.baseLatency } catch {}
+  return 0
+}
+// compensation totale (s) appliquée à la nouvelle prise : amorce mesurée (capture
+// démarrée avant la lecture) + latence d'entrée + réglage manuel des Paramètres
+function recCompSec() {
+  const gap = recorder.playAt && recorder.capAt ? Math.max(0, recorder.playAt - recorder.capAt) / 1000 : 0
+  return gap + inputLatencySec() + (Number(audioCfg.recOffsetMs) || 0) / 1000
 }
 
 // --- capture DirectShow / ASIO (ffmpeg, process principal) ---
@@ -1077,6 +1097,9 @@ async function startRecordingFfmpeg() {
   if (!r || r.error) { toast(t(r && r.error === 'no-device' ? 'recNoDevice' : 'recCaptureFail')); return }
   recorder.mode = 'ffmpeg'
   recorder.captureName = name
+  recorder.capAt = performance.now() // capture ffmpeg déjà lancée à cet instant
+  recorder.playAt = 0
+  video.addEventListener('playing', recOnPlaying, { once: true })
   recorder.active = true
   video.currentTime = recorder.recStartAt
   video.play().catch(() => {})
@@ -1085,6 +1108,7 @@ async function startRecordingFfmpeg() {
 
 function stopRecording() {
   if (!recorder.active) return
+  video.removeEventListener('playing', recOnPlaying)
   if (recorder.mode === 'ffmpeg') return stopRecordingFfmpeg()
   if (!recorder.mr) return
   try { recorder.mr.stop() } catch {}
@@ -1095,7 +1119,7 @@ async function stopRecordingFfmpeg() {
   video.pause(); recorder.active = false; recorder.mode = null; updateRecUI()
   const r = await window.api.captureStop()
   if (!r || r.error || !r.name) { toast(t('recCaptureFail')); return }
-  await addRecording(recorder.charId, r.name, recorder.recStartAt)
+  await addRecording(recorder.charId, r.name, recorder.recStartAt, 0, recCompSec())
 }
 
 async function finishRecordingWeb() {
@@ -1115,7 +1139,7 @@ async function finishRecordingWeb() {
   const name = `rec_${recorder.charId}_${uid()}.${recorder.ext}`
   const r = await window.api.saveTake(projectPath, name, buf)
   if (!r || r.error) { toast(t('recSaveFail')); return }
-  await addRecording(recorder.charId, r.name, recorder.recStartAt, durHint)
+  await addRecording(recorder.charId, r.name, recorder.recStartAt, durHint, recCompSec())
 }
 
 // durée d'un fichier son : métadonnées rapides, sinon décodage complet (WebM sans en-tête)
@@ -1125,14 +1149,19 @@ async function probeClipDuration(url) {
   return 0
 }
 
-// ajoute un clip enregistré à la piste du personnage (quel que soit le backend)
-async function addRecording(charId, fileName, startTime, durHint) {
+// ajoute un clip enregistré à la piste du personnage (quel que soit le backend).
+// comp (s) = compensation de latence : positif → on rogne l'amorce (la voix se cale
+// plus tôt sur la timeline) ; négatif → le clip est décalé plus tard.
+async function addRecording(charId, fileName, startTime, durHint, comp) {
   const url = await window.api.takeUrl(projectPath, fileName)
   let dur = (isFinite(durHint) && durHint > 0) ? durHint : 0
   if (!dur && url) dur = await probeClipDuration(url)
   pushUndo()
   project.recordings ||= []
   const clip = { id: uid(), characterId: charId, file: fileName, startTime, dur: dur || 0, trimStart: 0, trimEnd: 0, lane: 0, active: true }
+  const c = Number(comp) || 0
+  if (c > 0) clip.trimStart = Math.min(c, Math.max(0, (dur || 0) * 0.9))
+  else if (c < 0) clip.startTime = Math.max(0, startTime - c)
   // chevauchement = autre take du même passage → le segment descend d'une piste et
   // devient la take retenue ; sans chevauchement il continue sur la piste 1
   clip.lane = recAssignLane(clip)
@@ -1754,7 +1783,7 @@ function fmtDlSize(mb) {
   if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang === 'fr') s = s.replace('.', ','); return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
   return Math.round(mb) + ' ' + t('unitMB')
 }
-function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, deviceLabel: audioCfg.deviceLabel, output: audioCfg.output, outputLabel: audioCfg.outputLabel }) }
+function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, deviceLabel: audioCfg.deviceLabel, output: audioCfg.output, outputLabel: audioCfg.outputLabel, recOffsetMs: audioCfg.recOffsetMs || 0 }) }
 
 // ---- préchargement Paramètres : listes en cache pour un affichage instantané ----
 // Les deviceId de Chromium changent d'une session à l'autre (surtout sous file://) :
@@ -2002,6 +2031,7 @@ function renderSepModels() { paintSepModels(); return refreshSepCache() }
 function openSettings() {
   setModal.classList.remove('hidden')
   $('capApi').value = audioCfg.api || 'system'
+  $('recOffset').value = String(audioCfg.recOffsetMs || 0)
   setDl(false, '')
   // tout se peint immédiatement depuis les caches préchargés ; rafraîchissement en fond
   fillCaptureDevices(); fillOutputDevices(); renderTrModels(); renderSepModels()
@@ -2022,6 +2052,7 @@ $('outDevice').addEventListener('change', () => {
   saveAudioCfg(); applyOutputSink()
 })
 $('outRefresh').addEventListener('click', async () => { await refreshDeviceCaches(); fillOutputDevices() })
+$('recOffset').addEventListener('change', () => { audioCfg.recOffsetMs = clamp(Number($('recOffset').value) || 0, -500, 500); $('recOffset').value = String(audioCfg.recOffsetMs); saveAudioCfg() })
 $('outTest').addEventListener('click', toggleOutputTest)
 $('trActive').addEventListener('change', () => setActiveWhisper($('trActive').value))
 $('sepActive').addEventListener('change', () => setActiveSep($('sepActive').value))
@@ -6833,7 +6864,7 @@ function loop() {
 // principal — qui a déjà construit le menu avec les mêmes valeurs.
 ;(async () => {
   const st = await window.api.getSettings()
-  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.deviceLabel = ac.deviceLabel || null; audioCfg.output = ac.output || null; audioCfg.outputLabel = ac.outputLabel || null } } catch {}
+  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.deviceLabel = ac.deviceLabel || null; audioCfg.output = ac.output || null; audioCfg.outputLabel = ac.outputLabel || null; audioCfg.recOffsetMs = Number(ac.recOffsetMs) || 0 } } catch {}
   applyOutputSink()
   preloadSettings() // débloque les noms de périphériques + précharge les listes (Paramètres instantanés)
   lang = st.lang === 'en' ? 'en' : 'fr'

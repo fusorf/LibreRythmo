@@ -264,6 +264,16 @@ const TESTS = [
     const cropOk = Math.abs(recEffDur(g('r2')) - 0.5) < 1e-9
     return lanesOk && retainOk && cropOk
   })()`],
+  ['Enregistrement : compensation de latence (roundtrip config + recCompSec)', `(async () => {
+    if (typeof recCompSec !== 'function') return true
+    const prev = audioCfg.recOffsetMs
+    audioCfg.recOffsetMs = 80
+    recorder.capAt = 1000; recorder.playAt = 1150 // amorce mesurée 150 ms
+    const comp = recCompSec()
+    audioCfg.recOffsetMs = prev
+    // >= 0,23 s (150 ms + 80 ms + latence d'entrée éventuelle), < 0,8 s (borne de santé)
+    return comp >= 0.229 && comp < 0.8
+  })()`],
   ['Enregistrement : bande de clips dessinée sans erreur', `(() => {
     if (typeof drawRecClips !== 'function') return true
     loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
