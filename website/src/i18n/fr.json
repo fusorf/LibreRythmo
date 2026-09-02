@@ -3,7 +3,7 @@
   "locale": "fr_FR",
   "meta": {
     "title": "LibreRythmo : studio de doublage gratuit, bande rythmo et enregistrement",
-    "description": "LibreRythmo est un studio de doublage libre et gratuit : conception de bande rythmo à l'image près, enregistrement multi-prises par personnage, voix d'un personnage coupée pour jouer à sa place, chaîne voix automatique et export de la vidéo doublée. Windows, macOS et Linux.",
+    "description": "LibreRythmo est un studio de doublage libre et gratuit. Concevez la bande rythmo à l'image près, enregistrez les voix par-dessus, coupez la voix d'un personnage pour jouer à sa place, et exportez la vidéo doublée. Windows, macOS et Linux.",
     "keywords": "bande rythmo, studio de doublage, logiciel doublage gratuit, enregistrement doublage, éditeur bande rythmo, doublage logiciel, synchro labiale, DETX, fandub, retirer les voix, transcription doublage, bande rythmo libre"
   },
   "nav": {
@@ -15,70 +15,70 @@
   "hero": {
     "badge": "Libre & gratuit · Windows · macOS · Linux",
     "title": "Le studio de doublage simple et gratuit.",
-    "subtitle": "La bande rythmo la plus fluide à concevoir, et désormais tout le reste : la voix d'un personnage se coupe pour jouer à sa place dans la vraie bande-son, chaque prise s'enregistre sur la bande qui défile, et la vidéo ressort doublée. **Gratuit**, **super rapide**, **sans limite de taille vidéo**. Windows, macOS et Linux.",
+    "subtitle": "Concevez la bande rythmo à l'image près, puis enregistrez les voix directement dessus. Vous pouvez même couper la voix d'un personnage pour jouer à sa place, avant d'exporter la vidéo doublée. **Gratuit**, **rapide**, **sans limite de taille vidéo**. Windows, macOS et Linux.",
     "ctaPrimary": "Télécharger pour {os}",
     "ctaSecondary": "Toutes plateformes & source",
     "release": "{version} · publié le {date}"
   },
   "what": {
-    "kicker": "De la bande rythmo à la voix",
-    "title": "Le doublage de bout en bout, dans un seul logiciel.",
-    "body": "La bande rythmo, c'est le bandeau de texte qui défile sous l'image en studio de doublage, étiré pour que chaque mot tombe pile sur les lèvres du comédien. LibreRythmo apporte cette technique à tout le monde, et la version 3 ajoute l'autre moitié du métier : un mode enregistrement où chaque personnage a sa piste de prises, où sa voix d'origine disparaît pendant ses répliques, et d'où la vidéo ressort doublée. Sans abonnement, sans limite de durée, sans interface d'un autre âge."
+    "kicker": "Deux workflows, un logiciel",
+    "title": "Concevoir la bande, puis enregistrer les voix.",
+    "body": "La bande rythmo, c'est le texte qui défile sous l'image en studio de doublage, étiré pour que chaque mot tombe sur les lèvres du comédien. LibreRythmo sert d'abord à la créer, à l'image près. Depuis la version 3, il sert aussi à enregistrer : chaque comédien pose ses prises directement sur la bande, et la vidéo ressort doublée. Le tout gratuit, sans limite de durée."
   },
   "features": [
     {
       "kicker": "Précision image par image",
-      "title": "Timing au mot près, calé sur les lèvres.",
-      "body": "On ajuste le timing au mot près et on cale chaque limite sur les lèvres, à la frame, l'aimant accrochant pour aider. Pour aller vite, la multi-sélection change le personnage, la police ou la voix off sur des dizaines de répliques à la fois, l'étirement proportionnel garde tout d'aplomb sur 1 à 4 pistes, et les silences ajustables se glissent où il faut. La synchro la plus fine possible, sans se battre avec l'outil.",
+      "title": "Chaque mot calé sur les lèvres.",
+      "body": "Chaque frontière de mot se pose sur les lèvres, à l'image près, et l'aimant accroche les bords pour aller plus vite. Besoin de corriger plusieurs répliques d'un coup ? La multi-sélection change le personnage, la police ou la voix off en une fois. Le tout sur 1 à 4 pistes.",
       "img": "screenshot-sync.webp",
       "alt": "Réglage des mots à l'image près sur la bande rythmo de LibreRythmo"
     },
     {
       "kicker": "Défilement glissé",
-      "title": "Un scrub au beurre, même en 4K ou HEVC.",
-      "body": "La molette fait glisser la bande au fil du son, image par image, sans le moindre accroc. Un proxy 720p généré et mis en cache en tâche de fond rend n'importe quelle source instantanée quel que soit le codec, pendant que l'export repart, lui, de l'original pleine qualité. Le retour est immédiat : la conception suit le rythme de la pensée.",
+      "title": "Un scrub fluide, même en 4K ou HEVC.",
+      "body": "La molette fait défiler la bande au fil du son, image par image, sans le moindre à-coup. En arrière-plan, un proxy 720p rend n'importe quelle source instantanée, quel que soit le codec. L'export, lui, repart de l'original en pleine qualité.",
       "img": "screenshot-player.webp",
       "alt": "Lecture plein écran de LibreRythmo avec la bande rythmo composite"
     },
     {
       "kicker": "Personnages & réacs",
-      "title": "Réacs à la touche, polices embarquées dans le projet.",
-      "body": "On ajoute une réac (ah, oh, fff, (rire)…) d'une seule touche ou depuis la palette, on passe une réplique en voix off soulignée, et chaque comédien a sa couleur, sélectionnable au clavier de 1 à 9. Chaque réplique peut aussi porter sa propre police : n'importe quel TTF/OTF s'embarque dans le .rythmo, qui garde ses polices une fois partagé, en plus des polices libres fournies (Inter, Oswald, Comfortaa, Anton).",
+      "title": "Réacs à la touche, polices dans le projet.",
+      "body": "Une réac (ah, oh, fff, (rire)…) s'ajoute d'une touche, une réplique passe en voix off soulignée, et chaque comédien a sa couleur, choisie de 1 à 9 au clavier. Chaque réplique peut aussi porter sa propre police : n'importe quel TTF/OTF s'embarque dans le projet, qui reste partageable tel quel.",
       "img": "screenshot-characters.webp",
       "alt": "Panneau des personnages et palette de réacs dans LibreRythmo"
     },
     {
       "kicker": "Scènes & plans",
-      "title": "Détection auto des plans, stats de scène en direct.",
-      "body": "LibreRythmo repère seul les changements de plan (ffmpeg) et pose les repères sur la timeline : plus une coupe qui échappe. Le découpage en scènes affiche des compteurs live (répliques, durée, personnages), les segments OUT signalent les passages sans rien à doubler, et la navigation saute de scène en scène au clavier.",
+      "title": "Détection auto des plans, stats en direct.",
+      "body": "LibreRythmo repère seul les changements de plan et pose les repères sur la timeline. Le découpage en scènes affiche en direct le nombre de répliques, la durée et les personnages. Les segments OUT signalent les passages sans rien à doubler.",
       "img": "screenshot-scenes.webp",
       "alt": "Marqueurs de scènes et détection de plans sur la timeline de LibreRythmo"
     },
     {
       "kicker": "Transcription assistée",
-      "title": "Le texte part de l'audio, un personnage par voix.",
-      "body": "Tout retaper sur un épisode entier prend des heures : la transcription dégrossit le travail en local, découpe l'audio en répliques, détecte les locuteurs et crée un personnage par voix, dans la langue choisie. Le moteur et les modèles s'installent en un clic depuis les Paramètres, tournent sans connexion, et rien n'est imposé : l'application reste légère tant qu'on ne s'en sert pas.",
+      "title": "Le texte part directement de l'audio.",
+      "body": "Retaper un épisode entier prend des heures. La transcription écoute l'audio et pré-remplit les répliques, en détectant les voix pour créer un personnage par comédien. Tout tourne en local : le moteur et les modèles s'installent en un clic, seulement si vous en voulez.",
       "img": "screenshot-transcribe.webp",
       "alt": "Fenêtre de transcription assistée de LibreRythmo avec choix du modèle et de la langue"
     },
     {
       "kicker": "Mode enregistrement",
-      "title": "Chaque personnage sa piste, chaque passage ses prises.",
-      "body": "La bande défile en rendu final et l'enregistrement part du point de lecture, prise après prise : celles qui se chevauchent s'empilent en takes dont on choisit la retenue, à rogner ou déplacer librement. La latence du matériel est compensée pour que la voix tombe là où elle a été jouée, et la chaîne voix (EQ, dé-esseur, anti-plosive, compression, niveau aligné sur la vidéo) se déclenche d'un seul bouton FX.",
+      "title": "Un personnage, une piste, autant de prises.",
+      "body": "La bande défile comme au rendu final, et vous enregistrez à partir du point de lecture. Les prises d'un même passage s'empilent : vous gardez la meilleure, vous rognez, vous déplacez. La latence du micro est corrigée pour que la voix tombe pile où vous l'avez jouée, et un bouton FX nettoie le son (EQ, dé-esseur, compression, niveau).",
       "img": "screenshot-recording.webp",
       "alt": "Mode enregistrement de LibreRythmo : prises par personnage sous la bande rythmo"
     },
     {
       "kicker": "Jouer à la place d'un personnage",
-      "title": "Sa voix se coupe, tout le reste du mix continue.",
-      "body": "Le suppresseur de voix intégré fabrique une piste instrumentale, en local. Pendant les répliques d'un personnage coupé, le monitoring bascule dessus : sa voix disparaît, la musique, les bruitages et les autres comédiens restent. Répéter et enregistrer se fait dans la vraie bande-son, pas par-dessus, et la comparaison avec la VO est à un clic.",
+      "title": "Sa voix se coupe, le reste du mix continue.",
+      "body": "Coupez un personnage : pendant ses répliques, sa voix disparaît, mais la musique, les bruitages et les autres comédiens restent. Vous jouez dans la vraie bande-son, pas par-dessus. La piste instrumentale est fabriquée en local par le suppresseur de voix intégré.",
       "img": "screenshot-voice.webp",
       "alt": "Monitoring doublage de LibreRythmo : la voix d'un personnage coupée sur la piste sans voix"
     },
     {
-      "kicker": "Formats pro",
-      "title": "DETX, PDF, MP4 GPU : la vidéo ressort doublée.",
-      "body": "En entrée, du DETX (Joker / Cappella), du SRT / ASS / VTT ou une vidéo YouTube téléchargée directement ; en sortie, un DETX, des documents de travail PDF, un ZIP des enregistrements mixés par personnage, ou un MP4 composite encodé sur le GPU (NVENC, QuickSync, AMF, repli x264) où les prises des personnages choisis sont mixées, brutes ou traitées. La bande peut même s'omettre, pour livrer la vidéo doublée seule.",
+      "kicker": "Export & formats pro",
+      "title": "La vidéo ressort doublée.",
+      "body": "À l'export, LibreRythmo mixe les voix enregistrées dans un MP4 encodé sur le GPU. La bande peut rester incrustée ou disparaître, pour livrer la vidéo doublée seule. Côté échange : import DETX, SRT / ASS / VTT et YouTube ; export DETX, sous-titres, documents PDF et ZIP des enregistrements.",
       "img": "screenshot-export.webp",
       "alt": "Fenêtre d'export MP4 de LibreRythmo avec mix des enregistrements et encodage GPU"
     }
@@ -86,7 +86,7 @@
   "why": {
     "kicker": "Pourquoi LibreRythmo",
     "title": "Créé par un passionné de doublage, pour tous.",
-    "body": "LibreRythmo est né parce que tous les outils existants étaient soit trop vieux, soit peu ergonomiques, soit enfermés derrière un abonnement qui limitait la durée des vidéos. Et une fois la bande conçue, il fallait encore un logiciel pour l'enregistrer : la version 3 réunit les deux moitiés du doublage dans la même fenêtre, ultra-optimisée et entièrement gratuite.",
+    "body": "LibreRythmo est né d'un constat : les outils de bande rythmo étaient soit vieillots, soit peu pratiques, soit payants avec une limite de durée. Et une fois la bande faite, il fallait encore un autre logiciel pour enregistrer. La version 3 réunit les deux dans la même fenêtre, rapide et entièrement gratuite.",
     "points": [
       {
         "title": "Gratuit pour toujours",
@@ -94,15 +94,15 @@
       },
       {
         "title": "Rapide et léger",
-        "body": "Ultra-optimisé pour rester fluide même sur une machine ordinaire, de la conception à l'export."
+        "body": "Optimisé pour rester fluide même sur une machine ordinaire, de la conception à l'export."
       },
       {
         "title": "Tout en local",
-        "body": "Transcription et suppression de voix tournent sur la machine, sans connexion ni compte. Les modèles s'installent seulement si on en veut."
+        "body": "Transcription et suppression de voix tournent sur votre machine, sans connexion ni compte."
       },
       {
         "title": "Fait pour les créateurs",
-        "body": "Idéal pour les communautés de fandub, les associations et le semi-pro : il gère les standards professionnels."
+        "body": "Pensé pour le fandub, les associations et le semi-pro : il gère les standards du métier."
       }
     ]
   },
@@ -112,27 +112,27 @@
     "items": [
       {
         "q": "C'est quoi un éditeur de bande rythmo ?",
-        "a": "Un éditeur de bande rythmo permet d'écrire le texte sur un bandeau qui défile sous la vidéo et d'étirer chaque mot pour qu'il colle aux lèvres du comédien. C'est la technique standard du doublage. LibreRythmo est un éditeur de bande rythmo libre et gratuit pour Windows, macOS et Linux, qui fait aussi l'enregistrement des voix."
+        "a": "C'est un outil pour écrire le texte sur un bandeau qui défile sous la vidéo et étirer chaque mot pour qu'il colle aux lèvres du comédien : la technique standard du doublage. LibreRythmo le fait gratuitement sur Windows, macOS et Linux, et il enregistre aussi les voix."
       },
       {
         "q": "LibreRythmo est-il vraiment gratuit ?",
-        "a": "Oui. LibreRythmo est entièrement gratuit et libre, sous licence GPL-3, sans abonnement, sans filigrane et sans limite de durée vidéo. Il restera gratuit pour toujours."
+        "a": "Oui. Il est entièrement gratuit et libre, sous licence GPL-3, sans abonnement, sans filigrane et sans limite de durée. Il restera gratuit pour toujours."
       },
       {
         "q": "Est-ce que je peux enregistrer ma voix dedans ?",
-        "a": "Oui, c'est tout l'objet du mode enregistrement : chaque personnage a sa piste, les prises s'empilent en takes dont on garde la meilleure, la latence du micro est compensée et une chaîne voix automatique (EQ, dé-esseur, compression, niveau) s'applique d'un bouton. Les prises sont mixées dans la vidéo exportée ou livrées en ZIP par personnage."
+        "a": "Oui, c'est tout l'objet du mode enregistrement. Chaque personnage a sa piste, les prises s'empilent pour garder la meilleure, la latence du micro est corrigée et une chaîne voix automatique nettoie le son en un bouton. Les prises se mixent dans la vidéo exportée ou se récupèrent en ZIP par personnage."
       },
       {
         "q": "Comment jouer à la place d'un personnage sans entendre sa voix ?",
-        "a": "Le suppresseur de voix intégré produit une piste instrumentale en local. En coupant un personnage, la lecture bascule sur cette piste pendant ses répliques : sa voix disparaît tandis que la musique, les bruitages et les autres comédiens restent en place."
+        "a": "Le suppresseur de voix intégré crée une piste instrumentale, en local. Quand vous coupez un personnage, la lecture bascule dessus pendant ses répliques : sa voix disparaît, mais la musique, les bruitages et les autres comédiens restent."
       },
       {
         "q": "Qu'est-ce que je peux exporter ?",
-        "a": "Une vidéo MP4 composite avec encodage GPU, avec ou sans la bande, où les enregistrements des personnages choisis sont mixés ; un ZIP des enregistrements par personnage ; des documents de travail PDF (grille de présence, relevé de lignes) ; un fichier DETX (compatible Joker et Cappella) et des sous-titres (SRT / ASS / VTT)."
+        "a": "Un MP4 composite encodé sur le GPU, avec ou sans la bande, où les voix des personnages choisis sont mixées. Aussi : un ZIP des enregistrements par personnage, des documents de travail PDF, un DETX (compatible Joker et Cappella) et des sous-titres (SRT / ASS / VTT)."
       },
       {
         "q": "La transcription et la suppression de voix ont-elles besoin d'Internet ?",
-        "a": "Non. Les deux tournent entièrement en local, sans compte ni connexion. Rien n'est inclus dans l'application par défaut : moteurs et modèles s'installent en un clic depuis les Paramètres, seulement si on en a besoin."
+        "a": "Non, les deux tournent entièrement sur votre machine, sans compte ni connexion. Rien n'est inclus par défaut : moteurs et modèles s'installent en un clic depuis les Paramètres, seulement si vous en avez besoin."
       },
       {
         "q": "Quelles plateformes sont supportées ?",
@@ -140,11 +140,11 @@
       },
       {
         "q": "Gère-t-il la 4K ou le HEVC ?",
-        "a": "Oui. LibreRythmo construit un proxy 720p en cache en arrière-plan pour que les sources 4K et HEVC lourdes restent fluides pendant le montage, et régénère l'export depuis l'original pleine qualité."
+        "a": "Oui. LibreRythmo crée un proxy 720p en cache en arrière-plan pour que les sources 4K et HEVC lourdes restent fluides pendant le montage, et régénère l'export depuis l'original en pleine qualité."
       },
       {
         "q": "Est-ce une bonne alternative aux outils de doublage payants ?",
-        "a": "LibreRythmo gère les formats standards de l'industrie comme le DETX, exporte des documents de travail professionnels et couvre l'enregistrement des voix : il convient donc aux usages amateurs, fandub et semi-professionnels, sans le coût ni les limites de durée de beaucoup d'outils payants ou en ligne."
+        "a": "Oui. LibreRythmo gère les formats standards comme le DETX, exporte des documents de travail professionnels et couvre l'enregistrement des voix. Il convient aux usages amateurs, fandub et semi-pro, sans le coût ni les limites de durée des outils payants ou en ligne."
       }
     ]
   },
