@@ -6599,6 +6599,9 @@ function drawPlayer() {
   const W = pcanvas.clientWidth, H = pcanvas.clientHeight
   pctx.fillStyle = '#000'; pctx.fillRect(0, 0, W, H)
   const L = playerLayout()
+  // remonte la barre de contrôles juste au-dessus de la bande rythmo (bande en bas) pour ne pas la masquer
+  const bh = player.bandPos === 'bottom' ? L.band.h : 0
+  if (player._pcBandH !== bh) { player._pcBandH = bh; $('playerControls').style.setProperty('--pc-band-h', bh + 'px') }
   if (video.videoWidth) pctx.drawImage(video, L.video.x, L.video.y, L.video.w, L.video.h)
   const winSec = clamp(player.winSec, PLR_SEC_MIN, PLR_SEC_MAX)
   pctx.save()

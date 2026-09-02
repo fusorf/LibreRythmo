@@ -1022,7 +1022,7 @@ body.on-tracks .dub-ctl, body.on-rec .dub-ctl { display: inline-flex; }
 .pc-top, .pc-bottom { pointer-events: auto; }
 .pc-top { display: flex; align-items: center; gap: 10px; padding: 16px 20px; background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent); color: #fff; }
 #pcScene { font-size: 14px; font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
-.pc-bottom { padding: 14px 22px 22px; background: linear-gradient(to top, rgba(0,0,0,.74), transparent); display: flex; flex-direction: column; gap: 10px; }
+.pc-bottom { padding: 14px 22px 14px; margin-bottom: var(--pc-band-h, 0); background: linear-gradient(to top, rgba(0,0,0,.74), transparent); display: flex; flex-direction: column; gap: 10px; }
 #pcSeek { width: 100%; }
 .pc-row { display: flex; align-items: center; gap: 10px; }
 .pc-btn {
