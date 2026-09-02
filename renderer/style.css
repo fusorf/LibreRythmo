@@ -918,16 +918,16 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-ch-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
 .rec-ch-head .trk-spk { flex: 0 0 auto; }
 .rec-ch-meta { margin-top: 4px; font-size: 11px; color: var(--dim); }
-/* carte « chaîne voix » (effets auto d'après analyse) */
-.rec-fx { padding: 8px 10px; border-bottom: 1px solid var(--border); }
-.rec-fx-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
-.rec-fx-head svg { width: 16px; height: 16px; color: var(--dim); flex: 0 0 auto; }
-.rec-fx.on .rec-fx-head svg { color: var(--toggle-text); }
-.rec-fx-name { font-size: 12px; font-weight: 600; color: var(--text); }
-.rec-fx-btn { width: 100%; padding: 4px 8px; font-size: 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--inset); color: var(--text); cursor: pointer; }
-.rec-fx-btn:hover:not(:disabled) { border-color: var(--toggle-border); }
-.rec-fx-btn.on { color: var(--toggle-text); border-color: var(--toggle-border); background: color-mix(in srgb, var(--toggle-text) 14%, transparent); }
-.rec-fx-btn:disabled { opacity: .6; cursor: default; }
+/* bouton FX (effets auto sur les prises) — même gabarit que le haut-parleur mute */
+.rec-fxbtn {
+  flex: 0 0 auto; width: 30px; height: 26px; padding: 0;
+  font: 700 11px "Segoe UI", sans-serif; letter-spacing: .03em;
+  background: var(--inset); border: 1px solid var(--border); border-radius: 5px;
+  color: var(--dim); opacity: .8; cursor: pointer;
+}
+.rec-fxbtn:hover:not(:disabled) { color: var(--text); opacity: 1; }
+.rec-fxbtn.on { color: var(--toggle-text); border-color: var(--toggle-border); background: color-mix(in srgb, var(--toggle-text) 16%, transparent); opacity: 1; }
+.rec-fxbtn:disabled { opacity: .5; cursor: default; }
 /* bande rythmo en rendu final (dubbing) : hauteur fixe, ancrée en haut.
    Canvas en ABSOLU : sa taille interne (attributs width/height) ne doit jamais
    nourrir la taille min du wrap, sinon boucle de rétroaction layout↔canvas

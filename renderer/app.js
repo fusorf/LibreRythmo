@@ -1765,29 +1765,22 @@ function renderRecCharList() {
   const head = document.createElement('div'); head.className = 'rec-ch-head'
   const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
   const nm = document.createElement('span'); nm.className = 'rec-ch-name'; nm.textContent = c.name
+  // bouton FX : chaîne d'effets auto (EQ/comp/niveau) sur les takes retenues —
+  // les nouveaux enregistrements sont traités à la volée tant que c'est actif
+  const fx = document.createElement('button')
+  fx.className = 'rec-fxbtn' + (project.voiceFxOn ? ' on' : '')
+  fx.textContent = 'FX'
+  fx.disabled = fxBusy
+  fx.title = fxBusy ? t('recFxBusy') : t('recFxHint')
+  fx.addEventListener('click', (e) => { e.stopPropagation(); toggleVoiceFx() })
   const mute = document.createElement('button'); mute.className = 'trk-spk' + (isRecMuted(c.id) ? '' : ' on'); mute.innerHTML = isRecMuted(c.id) ? SPK_OFF_SVG : SPK_ON_SVG
   mute.title = t('recMuteTrack'); mute.addEventListener('click', (e) => { e.stopPropagation(); toggleRecMute(c.id) })
-  head.append(dot, nm, mute)
+  head.append(dot, nm, fx, mute)
   row.appendChild(head)
   const meta = document.createElement('div'); meta.className = 'rec-ch-meta'
   meta.textContent = clips.length ? t('recTakes', clips.length) : t('recNoTakes')
   row.appendChild(meta)
   list.appendChild(row)
-  // carte « chaîne voix » : chaîne d'effets auto (EQ/comp/niveau d'après l'analyse des prises)
-  const fx = document.createElement('div')
-  fx.className = 'rec-fx' + (project.voiceFxOn ? ' on' : '')
-  fx.title = t('recFxHint')
-  const fh = document.createElement('div'); fh.className = 'rec-fx-head'
-  fh.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 4v5m0 5v6M12 4v9m0 5v2M19 4v2m0 5v9"/><circle cx="5" cy="11.5" r="2"/><circle cx="12" cy="15.5" r="2"/><circle cx="19" cy="8.5" r="2"/></svg>'
-  const fnm = document.createElement('span'); fnm.className = 'rec-fx-name'; fnm.textContent = t('recFxName')
-  fh.appendChild(fnm)
-  const fbtn = document.createElement('button')
-  fbtn.className = 'rec-fx-btn' + (project.voiceFxOn ? ' on' : '')
-  fbtn.textContent = fxBusy ? t('recFxBusy') : project.voiceFxOn ? t('recFxOn') : t('recFxOff')
-  fbtn.disabled = fxBusy
-  fbtn.addEventListener('click', (e) => { e.stopPropagation(); toggleVoiceFx() })
-  fx.append(fh, fbtn)
-  list.appendChild(fx)
 }
 
 $('recBigBtn').addEventListener('click', toggleRecord)
