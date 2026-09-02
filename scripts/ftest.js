@@ -274,6 +274,20 @@ const TESTS = [
     // >= 0,23 s (150 ms + 80 ms + latence d'entrée éventuelle), < 0,8 s (borne de santé)
     return comp >= 0.229 && comp < 0.8
   })()`],
+  ['Enregistrement : hauteurs fixes tenues (bande 96, take 44, pas de rétroaction)', `(async () => {
+    if (typeof renderRecTab !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Okabe', color: '#2e6da4' }],
+      lines: [{ id: 'l1', characterId: 'a', track: 1, words: [{ text: 'Bonjour', start: 0.2, end: 0.9 }] }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0.5, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }], recMuted: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec')
+    await new Promise((r) => setTimeout(r, 400)) // layout + boucle de rendu (la rétroaction mettait ~1 frame à se figer)
+    const bandH = Math.round(document.getElementById('recBandWrap').getBoundingClientRect().height)
+    const clipsH = Math.round(recClipsCanvas.getBoundingClientRect().height)
+    setTab('rythmo'); project.videoPath = null
+    return bandH === 96 && clipsH === 44
+  })()`],
   ['Fenêtre détachée : bouton aperçu grisé quand ouverte', `(() => {
     if (typeof updateDetachedUI !== 'function') return true
     detachedOpenFlag = true; updateDetachedUI()
