@@ -27,6 +27,13 @@
   },
   "features": [
     {
+      "kicker": "Précision image par image",
+      "title": "Chaque mot calé à l'image près.",
+      "body": "Chaque frontière de mot se pose sur les lèvres, à l'image près, et l'aimant accroche les bords pour aller plus vite. Besoin de corriger plusieurs répliques d'un coup ? La multi-sélection change le personnage, la police ou la voix off en une fois. Le tout sur 1 à 4 pistes.",
+      "img": "screenshot-sync.webp",
+      "alt": "Réglage des mots à l'image près sur la bande rythmo de LibreRythmo"
+    },
+    {
       "kicker": "Jouer à la place d'un personnage",
       "title": "Sa voix se coupe, le reste du mix continue.",
       "body": "Coupez un personnage : pendant ses répliques, sa voix disparaît, mais la musique, les bruitages et les autres comédiens restent. Vous jouez dans la vraie bande-son, pas par-dessus. La piste instrumentale est fabriquée en local par le suppresseur de voix intégré.",
@@ -34,11 +41,11 @@
       "alt": "Monitoring doublage de LibreRythmo : la voix d'un personnage coupée sur la piste sans voix"
     },
     {
-      "kicker": "Mode enregistrement",
-      "title": "Un personnage, une piste, autant de prises.",
-      "body": "La bande défile comme au rendu final, et vous enregistrez à partir du point de lecture. Les prises d'un même passage s'empilent : vous gardez la meilleure, vous rognez, vous déplacez. La latence du micro est corrigée pour que la voix tombe pile où vous l'avez jouée, et un bouton FX nettoie le son (EQ, dé-esseur, compression, niveau).",
-      "img": "screenshot-recording.webp",
-      "alt": "Mode enregistrement de LibreRythmo : prises par personnage sous la bande rythmo"
+      "kicker": "Gagnez des heures",
+      "title": "Transcription assistée et ergonomique.",
+      "body": "Retaper un épisode entier prend des heures. La transcription écoute l'audio et pré-remplit les répliques, en détectant les voix pour créer un personnage par comédien. Tout tourne en local : le moteur et les modèles s'installent en un clic, seulement si vous en voulez.",
+      "img": "screenshot-transcribe.webp",
+      "alt": "Fenêtre de transcription assistée de LibreRythmo avec choix du modèle et de la langue"
     },
     {
       "kicker": "Export & formats pro",
@@ -48,11 +55,11 @@
       "alt": "Fenêtre d'export MP4 de LibreRythmo avec mix des enregistrements et encodage GPU"
     },
     {
-      "kicker": "Précision image par image",
-      "title": "Chaque mot calé à l'image près.",
-      "body": "Chaque frontière de mot se pose sur les lèvres, à l'image près, et l'aimant accroche les bords pour aller plus vite. Besoin de corriger plusieurs répliques d'un coup ? La multi-sélection change le personnage, la police ou la voix off en une fois. Le tout sur 1 à 4 pistes.",
-      "img": "screenshot-sync.webp",
-      "alt": "Réglage des mots à l'image près sur la bande rythmo de LibreRythmo"
+      "kicker": "Mode enregistrement",
+      "title": "Un personnage, une piste, autant de prises.",
+      "body": "La bande défile comme au rendu final, et vous enregistrez à partir du point de lecture. Les prises d'un même passage s'empilent : vous gardez la meilleure, vous rognez, vous déplacez. La latence du micro est corrigée pour que la voix tombe pile où vous l'avez jouée, et un bouton FX nettoie le son (EQ, dé-esseur, compression, niveau).",
+      "img": "screenshot-recording.webp",
+      "alt": "Mode enregistrement de LibreRythmo : prises par personnage sous la bande rythmo"
     },
     {
       "kicker": "Défilement glissé",
@@ -62,25 +69,18 @@
       "alt": "Lecture plein écran de LibreRythmo avec la bande rythmo composite"
     },
     {
-      "kicker": "Personnages & réacs",
-      "title": "Réacs à la touche, polices dans le projet.",
-      "body": "Une réac (ah, oh, fff, (rire)…) s'ajoute d'une touche, une réplique passe en voix off soulignée, et chaque comédien a sa couleur, choisie de 1 à 9 au clavier. Chaque réplique peut aussi porter sa propre police : n'importe quel TTF/OTF s'embarque dans le projet, qui reste partageable tel quel.",
-      "img": "screenshot-characters.webp",
-      "alt": "Panneau des personnages et palette de réacs dans LibreRythmo"
-    },
-    {
-      "kicker": "Transcription assistée",
-      "title": "Le texte part directement de l'audio.",
-      "body": "Retaper un épisode entier prend des heures. La transcription écoute l'audio et pré-remplit les répliques, en détectant les voix pour créer un personnage par comédien. Tout tourne en local : le moteur et les modèles s'installent en un clic, seulement si vous en voulez.",
-      "img": "screenshot-transcribe.webp",
-      "alt": "Fenêtre de transcription assistée de LibreRythmo avec choix du modèle et de la langue"
-    },
-    {
       "kicker": "Scènes & plans",
       "title": "Détection auto des plans, stats en direct.",
       "body": "LibreRythmo repère seul les changements de plan et pose les repères sur la timeline. Le découpage en scènes affiche en direct le nombre de répliques, la durée et les personnages. Les segments OUT signalent les passages sans rien à doubler.",
       "img": "screenshot-scenes.webp",
       "alt": "Marqueurs de scènes et détection de plans sur la timeline de LibreRythmo"
+    },
+    {
+      "kicker": "Personnages & réacs",
+      "title": "Réacs à la touche, et polices personnalisées.",
+      "body": "Une réac (ah, oh, fff, (rire)…) s'ajoute d'une touche, une réplique passe en voix off soulignée, et chaque comédien a sa couleur, choisie de 1 à 9 au clavier. Chaque réplique peut aussi porter sa propre police : n'importe quel TTF/OTF s'embarque dans le projet, qui reste partageable tel quel.",
+      "img": "screenshot-characters.webp",
+      "alt": "Panneau des personnages et palette de réacs dans LibreRythmo"
     }
   ],
   "why": {

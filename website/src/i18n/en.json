@@ -27,6 +27,13 @@
   },
   "features": [
     {
+      "kicker": "Frame-perfect",
+      "title": "Every word snapped to the frame.",
+      "body": "Each word boundary lands on the lips, down to the frame, and the magnet catches edges to speed things up. Need to fix several lines at once? Multi-selection changes the character, font or voice-over in one go. All across 1 to 4 tracks.",
+      "img": "screenshot-sync.webp",
+      "alt": "Frame-accurate word adjustment on the LibreRythmo rythmo band"
+    },
+    {
       "kicker": "Act a character's part",
       "title": "Their voice mutes, the rest of the mix keeps playing.",
       "body": "Mute a character: during their lines, their voice disappears, but the music, effects and other actors stay. You perform inside the real soundtrack, not on top of it. The instrumental track is made locally by the built-in voice remover.",
@@ -34,11 +41,11 @@
       "alt": "LibreRythmo dubbing monitor: one character's voice muted onto the voiceless track"
     },
     {
-      "kicker": "Recording mode",
-      "title": "One character, one track, as many takes as you need.",
-      "body": "The band scrolls like the final render, and you record from the playhead. Takes of the same pass stack up: you keep the best one, trim it, move it. Microphone latency is corrected so the voice lands exactly where you performed it, and an FX button cleans the sound (EQ, de-esser, compression, level).",
-      "img": "screenshot-recording.webp",
-      "alt": "LibreRythmo recording mode: takes per character under the rythmo band"
+      "kicker": "Save hours",
+      "title": "Assisted, effortless transcription.",
+      "body": "Retyping a whole episode takes hours. Transcription listens to the audio and pre-fills the lines, detecting the voices to create one character per actor. It all runs locally: the engine and models install in one click, only if you want them.",
+      "img": "screenshot-transcribe.webp",
+      "alt": "LibreRythmo assisted transcription window with model and language choice"
     },
     {
       "kicker": "Export & pro formats",
@@ -48,11 +55,11 @@
       "alt": "LibreRythmo MP4 export window with recordings mix and GPU encoding"
     },
     {
-      "kicker": "Frame-perfect",
-      "title": "Every word snapped to the frame.",
-      "body": "Each word boundary lands on the lips, down to the frame, and the magnet catches edges to speed things up. Need to fix several lines at once? Multi-selection changes the character, font or voice-over in one go. All across 1 to 4 tracks.",
-      "img": "screenshot-sync.webp",
-      "alt": "Frame-accurate word adjustment on the LibreRythmo rythmo band"
+      "kicker": "Recording mode",
+      "title": "One character, one track, as many takes as you need.",
+      "body": "The band scrolls like the final render, and you record from the playhead. Takes of the same pass stack up: you keep the best one, trim it, move it. Microphone latency is corrected so the voice lands exactly where you performed it, and an FX button cleans the sound (EQ, de-esser, compression, level).",
+      "img": "screenshot-recording.webp",
+      "alt": "LibreRythmo recording mode: takes per character under the rythmo band"
     },
     {
       "kicker": "Glide scrubbing",
@@ -62,25 +69,18 @@
       "alt": "LibreRythmo fullscreen playback with the composited rythmo band"
     },
     {
-      "kicker": "Characters & reacs",
-      "title": "One-key reacs, fonts in the project.",
-      "body": "A reac (ah, oh, fff, (laughs)…) drops in with one key, a line switches to underlined voice-over, and each actor has their own colour, picked with keys 1 to 9. Any line can carry its own font too: any TTF/OTF embeds into the project, which stays shareable as-is.",
-      "img": "screenshot-characters.webp",
-      "alt": "Character panel and reac palette in LibreRythmo"
-    },
-    {
-      "kicker": "Assisted transcription",
-      "title": "The text starts straight from the audio.",
-      "body": "Retyping a whole episode takes hours. Transcription listens to the audio and pre-fills the lines, detecting the voices to create one character per actor. It all runs locally: the engine and models install in one click, only if you want them.",
-      "img": "screenshot-transcribe.webp",
-      "alt": "LibreRythmo assisted transcription window with model and language choice"
-    },
-    {
       "kicker": "Scenes & shots",
       "title": "Automatic shot detection, live stats.",
       "body": "LibreRythmo spots shot changes on its own and drops the markers on the timeline. Scene slicing shows the line count, duration and characters live. OUT segments flag the stretches with nothing to dub.",
       "img": "screenshot-scenes.webp",
       "alt": "Scene markers and shot detection on the LibreRythmo timeline"
+    },
+    {
+      "kicker": "Characters & reacs",
+      "title": "One-key reacs, and custom fonts.",
+      "body": "A reac (ah, oh, fff, (laughs)…) drops in with one key, a line switches to underlined voice-over, and each actor has their own colour, picked with keys 1 to 9. Any line can carry its own font too: any TTF/OTF embeds into the project, which stays shareable as-is.",
+      "img": "screenshot-characters.webp",
+      "alt": "Character panel and reac palette in LibreRythmo"
     }
   ],
   "why": {

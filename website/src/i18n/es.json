@@ -27,6 +27,13 @@
   },
   "features": [
     {
+      "kicker": "Precisión al fotograma",
+      "title": "Cada palabra ajustada al fotograma.",
+      "body": "Cada límite de palabra cae sobre los labios, al fotograma, y el imán engancha los bordes para ir más rápido. ¿Hay que corregir varias líneas a la vez? La multiselección cambia el personaje, la fuente o la voz en off de una sola vez. Todo en 1 a 4 pistas.",
+      "img": "screenshot-sync.webp",
+      "alt": "Ajuste de palabras al fotograma en la banda rítmica de LibreRythmo"
+    },
+    {
       "kicker": "Interpretar el papel de un personaje",
       "title": "Su voz se silencia, el resto de la mezcla sigue.",
       "body": "Silencia a un personaje: durante sus líneas su voz desaparece, pero la música, los efectos y los demás actores permanecen. Interpretas dentro de la banda sonora real, no por encima. La pista instrumental la crea en local el supresor de voces integrado.",
@@ -34,11 +41,11 @@
       "alt": "Monitor de doblaje de LibreRythmo: la voz de un personaje silenciada sobre la pista sin voces"
     },
     {
-      "kicker": "Modo grabación",
-      "title": "Un personaje, una pista, todas las tomas que quieras.",
-      "body": "La banda se desliza como en el render final, y grabas desde el punto de lectura. Las tomas de un mismo pasaje se apilan: te quedas con la mejor, la recortas, la mueves. La latencia del micrófono se corrige para que la voz caiga justo donde la interpretaste, y un botón FX limpia el sonido (EQ, de-esser, compresión, nivel).",
-      "img": "screenshot-recording.webp",
-      "alt": "Modo grabación de LibreRythmo: tomas por personaje bajo la banda rítmica"
+      "kicker": "Ahorra horas",
+      "title": "Transcripción asistida y cómoda.",
+      "body": "Volver a teclear un episodio entero lleva horas. La transcripción escucha el audio y rellena las líneas, detectando las voces para crear un personaje por actor. Todo funciona en local: el motor y los modelos se instalan en un clic, solo si los quieres.",
+      "img": "screenshot-transcribe.webp",
+      "alt": "Ventana de transcripción asistida de LibreRythmo con elección de modelo e idioma"
     },
     {
       "kicker": "Exportación y formatos pro",
@@ -48,11 +55,11 @@
       "alt": "Ventana de exportación MP4 de LibreRythmo con mezcla de grabaciones y codificación GPU"
     },
     {
-      "kicker": "Precisión al fotograma",
-      "title": "Cada palabra ajustada al fotograma.",
-      "body": "Cada límite de palabra cae sobre los labios, al fotograma, y el imán engancha los bordes para ir más rápido. ¿Hay que corregir varias líneas a la vez? La multiselección cambia el personaje, la fuente o la voz en off de una sola vez. Todo en 1 a 4 pistas.",
-      "img": "screenshot-sync.webp",
-      "alt": "Ajuste de palabras al fotograma en la banda rítmica de LibreRythmo"
+      "kicker": "Modo grabación",
+      "title": "Un personaje, una pista, todas las tomas que quieras.",
+      "body": "La banda se desliza como en el render final, y grabas desde el punto de lectura. Las tomas de un mismo pasaje se apilan: te quedas con la mejor, la recortas, la mueves. La latencia del micrófono se corrige para que la voz caiga justo donde la interpretaste, y un botón FX limpia el sonido (EQ, de-esser, compresión, nivel).",
+      "img": "screenshot-recording.webp",
+      "alt": "Modo grabación de LibreRythmo: tomas por personaje bajo la banda rítmica"
     },
     {
       "kicker": "Desplazamiento deslizado",
@@ -62,25 +69,18 @@
       "alt": "Reproducción a pantalla completa de LibreRythmo con la banda rítmica compuesta"
     },
     {
-      "kicker": "Personajes y reacciones",
-      "title": "Reacciones con una tecla, fuentes en el proyecto.",
-      "body": "Una reacción (ah, oh, fff, (risa)…) se añade con una tecla, una línea pasa a voz en off subrayada, y cada actor tiene su color, elegido con las teclas 1 a 9. Cada línea puede llevar su propia fuente: cualquier TTF/OTF se integra en el proyecto, que sigue siendo compartible tal cual.",
-      "img": "screenshot-characters.webp",
-      "alt": "Panel de personajes y paleta de reacciones en LibreRythmo"
-    },
-    {
-      "kicker": "Transcripción asistida",
-      "title": "El texto parte directamente del audio.",
-      "body": "Volver a teclear un episodio entero lleva horas. La transcripción escucha el audio y rellena las líneas, detectando las voces para crear un personaje por actor. Todo funciona en local: el motor y los modelos se instalan en un clic, solo si los quieres.",
-      "img": "screenshot-transcribe.webp",
-      "alt": "Ventana de transcripción asistida de LibreRythmo con elección de modelo e idioma"
-    },
-    {
       "kicker": "Escenas y planos",
       "title": "Detección automática de planos, estadísticas en vivo.",
       "body": "LibreRythmo localiza solo los cambios de plano y coloca los marcadores en la línea de tiempo. El corte en escenas muestra en vivo el número de líneas, la duración y los personajes. Los segmentos OUT señalan los pasajes sin nada que doblar.",
       "img": "screenshot-scenes.webp",
       "alt": "Marcadores de escenas y detección de planos en la línea de tiempo de LibreRythmo"
+    },
+    {
+      "kicker": "Personajes y reacciones",
+      "title": "Reacciones con una tecla, y fuentes personalizadas.",
+      "body": "Una reacción (ah, oh, fff, (risa)…) se añade con una tecla, una línea pasa a voz en off subrayada, y cada actor tiene su color, elegido con las teclas 1 a 9. Cada línea puede llevar su propia fuente: cualquier TTF/OTF se integra en el proyecto, que sigue siendo compartible tal cual.",
+      "img": "screenshot-characters.webp",
+      "alt": "Panel de personajes y paleta de reacciones en LibreRythmo"
     }
   ],
   "why": {
