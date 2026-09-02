@@ -1376,7 +1376,11 @@ const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * recClipsPps
 // conteneur (#recClipsWrap) scrolle verticalement pour parcourir les takes
 const REC_LANE_H = 44
 function syncRecClipsHeight() {
-  const want = recLaneCount(recTargetId()) * REC_LANE_H
+  // le canvas remplit AU MOINS tout l'espace restant : la zone vide sous les pistes
+  // fait partie de la timeline (la barre de lecture la traverse, les pistes futures
+  // s'y ajouteront) ; au-delà, il grandit et le conteneur scrolle
+  const wrap = $('recClipsWrap')
+  const want = Math.max(recLaneCount(recTargetId()) * REC_LANE_H, wrap ? wrap.clientHeight : 0)
   if (recClipsCanvas._lanesH !== want) { recClipsCanvas._lanesH = want; recClipsCanvas.style.height = want + 'px' }
 }
 // mini haut-parleur dessiné sur un segment multi-takes (retenue = ondes, sinon barré)
@@ -1396,12 +1400,12 @@ function drawRecClips() {
   const chId = recTargetId()
   const clips = (project.recordings || []).filter((r) => r.characterId === chId)
   const lanes = recLaneCount(chId)
-  const laneH = rch / lanes
+  const laneH = REC_LANE_H // hauteur fixe : la zone vide sous les pistes reste de la timeline
   const isMuted = isRecMuted(chId)
   const pps = recClipsPps()
   // fonds de pistes alternés + séparateurs
-  for (let ln = 0; ln < lanes; ln++) {
-    if (ln % 2 === 1) { recClipsCtx.fillStyle = pal.lane; recClipsCtx.fillRect(0, ln * laneH, rcw, laneH) }
+  for (let ln = 0; ln <= lanes; ln++) { // <= : trait de clôture sous la dernière piste
+    if (ln < lanes && ln % 2 === 1) { recClipsCtx.fillStyle = pal.lane; recClipsCtx.fillRect(0, ln * laneH, rcw, laneH) }
     recClipsCtx.strokeStyle = pal.grid; recClipsCtx.beginPath(); recClipsCtx.moveTo(0, ln * laneH + 0.5); recClipsCtx.lineTo(rcw, ln * laneH + 0.5); recClipsCtx.stroke()
   }
   const col = getChar(chId)?.color || '#888'
@@ -1463,7 +1467,8 @@ function drawRecClips() {
 function recClipHit(px, py) {
   const chId = recTargetId()
   const lanes = recLaneCount(chId)
-  const laneH = rch / lanes
+  const laneH = REC_LANE_H
+  if (py >= lanes * laneH) return null // zone vide sous les pistes
   const ln = clamp(Math.floor(py / laneH), 0, lanes - 1)
   for (const r of (project.recordings || [])) {
     if (r.characterId !== chId || (r.lane || 0) !== ln) continue

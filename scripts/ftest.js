@@ -285,8 +285,10 @@ const TESTS = [
     await new Promise((r) => setTimeout(r, 400)) // layout + boucle de rendu (la rétroaction mettait ~1 frame à se figer)
     const bandH = Math.round(document.getElementById('recBandWrap').getBoundingClientRect().height)
     const clipsH = Math.round(recClipsCanvas.getBoundingClientRect().height)
+    const wrapH = Math.round(document.getElementById('recClipsWrap').getBoundingClientRect().height)
     setTab('rythmo'); project.videoPath = null
-    return bandH === 96 && clipsH === 44
+    // le canvas des takes remplit au moins l'espace restant (barre rouge jusqu'en bas)
+    return bandH === 96 && clipsH >= 44 && clipsH >= wrapH - 1
   })()`],
   ['Fenêtre détachée : bouton aperçu grisé quand ouverte', `(() => {
     if (typeof updateDetachedUI !== 'function') return true
