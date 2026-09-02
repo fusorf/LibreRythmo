@@ -290,6 +290,24 @@ const TESTS = [
     // le canvas des takes remplit au moins l'espace restant (barre rouge jusqu'en bas)
     return bandH === 96 && clipsH >= 44 && clipsH >= wrapH - 1
   })()`],
+  ['Chaîne voix : analyse cohérente + WAV + bascule de fichier', `(async () => {
+    if (typeof analyzeVoice !== 'function') return true
+    const ac = new OfflineAudioContext(1, 16000, 16000)
+    const b = ac.createBuffer(1, 16000, 16000)
+    const d = b.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * 220 * i / 16000)
+    const A = analyzeVoice(b)
+    const okA = A.rmsDb < -5 && A.rmsDb > -30 && A.ratio >= 2 && A.eqMud <= 0 && A.eqPres >= 0 && A.eqSib <= 0
+    const wav = encodeWav16(b)
+    const okW = wav.byteLength === 44 + 16000 * 2
+    project.voiceFxOn = false
+    const r = { file: 'a.webm', fxFile: 'fx_a.wav' }
+    const offOk = recPlayFile(r) === 'a.webm'
+    project.voiceFxOn = true
+    const onOk = recPlayFile(r) === 'fx_a.wav'
+    project.voiceFxOn = false
+    return okA && okW && offOk && onOk
+  })()`],
   ['Fenêtre détachée : bouton aperçu grisé quand ouverte', `(() => {
     if (typeof updateDetachedUI !== 'function') return true
     detachedOpenFlag = true; updateDetachedUI()

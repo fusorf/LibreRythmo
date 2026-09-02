@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null, recordings: [], recMuted: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null, recordings: [], recMuted: [], voiceFxOn: false }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
@@ -985,6 +985,8 @@ function recAssignLane(clip) {
 const recLaneCount = (charId) => 1 + (project.recordings || []).filter((r) => r.characterId === charId).reduce((m, r) => Math.max(m, r.lane || 0), 0)
 // groupe de chevauchement d'un segment (les autres takes du même passage)
 const recOverlapGroup = (clip) => (project.recordings || []).filter((r) => r.characterId === clip.characterId && r.id !== clip.id && recOverlap(r, clip))
+// fichier joué/exporté : la version traitée par la chaîne voix quand elle est active
+const recPlayFile = (r) => (project.voiceFxOn && r.fxFile) ? r.fxFile : r.file
 
 // config capture (persistée côté main : audio-config.json)
 const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null, recOffsetMs: 0 }
@@ -1178,6 +1180,8 @@ async function addRecording(charId, fileName, startTime, durHint, comp) {
   markDirty()
   if (activeTab === 'rec') renderRecTab()
   preloadTakeAudios()
+  // chaîne voix active → la nouvelle prise est traitée dans la foulée
+  if (project.voiceFxOn) fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); preloadTakeAudios() } })
   toast(t('recSaved'))
 }
 
@@ -1186,7 +1190,10 @@ async function deleteRecTrack(charId) {
   const clips = (project.recordings || []).filter((r) => r.characterId === charId)
   if (!clips.length) return
   pushUndo()
-  for (const c of clips) { try { await window.api.deleteTake(projectPath, c.file) } catch {}; takeAudios.delete(c.file) }
+  for (const c of clips) {
+    try { await window.api.deleteTake(projectPath, c.file) } catch {}; takeAudios.delete(c.file)
+    if (c.fxFile) { try { await window.api.deleteTake(projectPath, c.fxFile) } catch {}; takeAudios.delete(c.fxFile) }
+  }
   project.recordings = (project.recordings || []).filter((r) => r.characterId !== charId)
   markDirty()
   if (activeTab === 'rec') renderRecTab()
@@ -1240,9 +1247,10 @@ async function preloadTakeAudios() {
   const wanted = new Set()
   let fixed = false
   for (const r of (project.recordings || [])) {
-    wanted.add(r.file)
+    const pf = recPlayFile(r) // version traitée par la chaîne voix si active
+    wanted.add(pf)
     let url = null
-    if (!takeAudios.has(r.file)) { url = await window.api.takeUrl(projectPath, r.file); if (url) takeAudios.set(r.file, new Audio(url)) }
+    if (!takeAudios.has(pf)) { const u2 = await window.api.takeUrl(projectPath, pf); if (u2) takeAudios.set(pf, new Audio(u2)) }
     // auto-réparation : anciens enregistrements sans durée (WebM sans en-tête) → on la calcule
     if (!(r.dur > 0)) {
       url = url || await window.api.takeUrl(projectPath, r.file)
@@ -1268,7 +1276,7 @@ function syncTakesMonitor() {
   const now = effectiveTime()
   const muted = project.recMuted || []
   for (const r of (project.recordings || [])) {
-    const a = takeAudios.get(r.file); if (!a) continue
+    const a = takeAudios.get(recPlayFile(r)); if (!a) continue
     const eff = recEffDur(r)
     const playable = r.active && eff > 0 && !muted.includes(r.characterId) && now >= r.startTime && now < r.startTime + eff
     if (playable) {
@@ -1510,6 +1518,8 @@ function retainClip(clip) {
   pushUndo()
   for (const r of recOverlapGroup(clip)) r.active = false
   clip.active = true
+  // chaîne voix active → la take nouvellement retenue est traitée si besoin
+  if (project.voiceFxOn && !clip.fxFile) fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); preloadTakeAudios() } })
   markDirty()
 }
 let clipDrag = null
@@ -1593,10 +1603,153 @@ async function deleteClip(id) {
   pushUndo()
   project.recordings.splice(idx, 1)
   try { await window.api.deleteTake(projectPath, cl.file) } catch {}
+  if (cl.fxFile) { try { await window.api.deleteTake(projectPath, cl.fxFile) } catch {}; takeAudios.delete(cl.fxFile) }
   takeAudios.delete(cl.file); clipWaves.delete(cl.file)
   if (selectedClipId === id) selectedClipId = null
   // réactive la dernière prise restante qui chevauchait, le cas échéant (latest wins)
   markDirty(); renderRecTab()
+}
+
+// ============================================================ chaîne voix (auto-mix)
+// EQ + compression + niveau calculés automatiquement d'après l'ANALYSE de chaque prise
+// (approche type Auphonic AutoEQ/Leveler) : énergie par bande → filtres correctifs,
+// facteur de crête → compression, puis normalisation vers une cible ≈ -16 dBFS RMS
+// (podcast/US, approx. LUFS) équilibrée avec le niveau moyen de la piste vidéo.
+// Le résultat est PRÉCALCULÉ en WAV sidecar (fx_*.wav) : lecture et export l'utilisent.
+let fxBusy = false
+const dbOf = (x) => 10 * Math.log10(x + 1e-12)
+
+// biquad RBJ minimal (analyse par bande, O(n), hors WebAudio)
+function biquadRms(data, sr, type, fc, Q) {
+  const w0 = 2 * Math.PI * fc / sr, cw = Math.cos(w0), sw = Math.sin(w0), al = sw / (2 * Q)
+  let b0, b1, b2
+  if (type === 'bandpass') { b0 = al; b1 = 0; b2 = -al }
+  else if (type === 'lowpass') { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0 }
+  else { b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = b0 } // highpass
+  const a0 = 1 + al, a1 = -2 * cw, a2 = 1 - al
+  b0 /= a0; b1 /= a0; b2 /= a0
+  const na1 = a1 / a0, na2 = a2 / a0
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, sq = 0
+  for (let i = 0; i < data.length; i++) {
+    const x = data[i]
+    const y = b0 * x + b1 * x1 + b2 * x2 - na1 * y1 - na2 * y2
+    x2 = x1; x1 = x; y2 = y1; y1 = y
+    sq += y * y
+  }
+  return dbOf(sq / Math.max(1, data.length))
+}
+
+// analyse d'une prise : niveau moyen (fenêtres voisées), crête, énergie par bande →
+// réglages de la chaîne (EQ correctif, compression, seuil)
+function analyzeVoice(buf, light) {
+  const d = buf.getChannelData(0), sr = buf.sampleRate
+  const win = Math.max(1, Math.round(sr * 0.05))
+  const rmsW = []
+  for (let i = 0; i + win <= d.length; i += win) {
+    let sq = 0
+    for (let k = i; k < i + win; k++) sq += d[k] * d[k]
+    rmsW.push(dbOf(sq / win))
+  }
+  const maxW = rmsW.length ? Math.max(...rmsW) : -90
+  const voiced = rmsW.filter((v) => v > maxW - 30)
+  const rmsDb = voiced.length ? voiced.reduce((a, b) => a + b, 0) / voiced.length : maxW
+  let pk = 1e-9
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a }
+  const peakDb = 20 * Math.log10(pk)
+  if (light) return { rmsDb, peakDb }
+  const full = rmsW.length ? rmsW.reduce((a, b) => a + b, 0) / rmsW.length : -90
+  // énergie relative par bande vs référence « voix neutre » (empirique)
+  const lowRel = biquadRms(d, sr, 'lowpass', 90, 0.71) - full   // gronde/pop
+  const mudRel = biquadRms(d, sr, 'bandpass', 300, 1) - full    // boue 200-500 Hz
+  const presRel = biquadRms(d, sr, 'bandpass', 3500, 0.9) - full // présence/intelligibilité
+  const sibRel = biquadRms(d, sr, 'bandpass', 7000, 1.5) - full  // sibilance
+  const crest = peakDb - rmsDb
+  return {
+    rmsDb, peakDb,
+    hpFc: lowRel > -6 ? 110 : 85,                       // coupe-bas plus haut si ça gronde
+    eqMud: clamp(-(mudRel + 6) * 0.9, -6, 0),           // cut boue si excès
+    eqPres: clamp((-10 - presRel) * 0.7, 0, 4),         // boost présence si voix sourde
+    eqSib: clamp(-(sibRel + 14) * 1.0, -8, 0),          // dé-esseur statique si sibilance
+    ratio: crest >= 18 ? 4 : crest >= 12 ? 3 : 2.2,     // compression selon la dynamique
+    thresh: clamp(rmsDb + 4, -45, -8),
+  }
+}
+
+// cible de niveau : équilibrée avec la piste audio de la vidéo, sinon ≈ -16 (podcast/US)
+const fxTargetDb = () => (videoRmsDb != null && isFinite(videoRmsDb)) ? clamp(videoRmsDb + 4, -22, -13) : -16
+
+// rendu offline de la chaîne : HP → EQ boue → présence → dé-ess → comp → (pass 2) gain vers la cible → limiteur
+async function renderVoiceChain(buf, A, targetDb) {
+  const off = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate)
+  const src = off.createBufferSource(); src.buffer = buf
+  const hp = off.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = A.hpFc; hp.Q.value = 0.71
+  const mud = off.createBiquadFilter(); mud.type = 'peaking'; mud.frequency.value = 300; mud.Q.value = 1; mud.gain.value = A.eqMud
+  const pres = off.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3500; pres.Q.value = 0.9; pres.gain.value = A.eqPres
+  const sib = off.createBiquadFilter(); sib.type = 'peaking'; sib.frequency.value = 7000; sib.Q.value = 2; sib.gain.value = A.eqSib
+  const comp = off.createDynamicsCompressor(); comp.threshold.value = A.thresh; comp.ratio.value = A.ratio; comp.attack.value = 0.004; comp.release.value = 0.18; comp.knee.value = 8
+  src.connect(hp); hp.connect(mud); mud.connect(pres); pres.connect(sib); sib.connect(comp); comp.connect(off.destination)
+  src.start()
+  const mid = await off.startRendering()
+  const A2 = analyzeVoice(mid, true)
+  const g = Math.pow(10, clamp(targetDb - A2.rmsDb, -24, 24) / 20)
+  const off2 = new OfflineAudioContext(mid.numberOfChannels, mid.length, mid.sampleRate)
+  const s2 = off2.createBufferSource(); s2.buffer = mid
+  const gn = off2.createGain(); gn.gain.value = g
+  const lim = off2.createDynamicsCompressor(); lim.threshold.value = -2; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1; lim.knee.value = 1
+  s2.connect(gn); gn.connect(lim); lim.connect(off2.destination); s2.start()
+  return off2.startRendering()
+}
+
+// AudioBuffer → WAV PCM 16 bits (sidecar précalculé)
+function encodeWav16(buf) {
+  const ch = buf.numberOfChannels, sr = buf.sampleRate, n = buf.length
+  const bytes = 44 + n * ch * 2
+  const ab = new ArrayBuffer(bytes); const v = new DataView(ab)
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)) }
+  ws(0, 'RIFF'); v.setUint32(4, bytes - 8, true); ws(8, 'WAVE'); ws(12, 'fmt ')
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true)
+  v.setUint32(24, sr, true); v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true)
+  ws(36, 'data'); v.setUint32(40, n * ch * 2, true)
+  const chans = []; for (let c = 0; c < ch; c++) chans.push(buf.getChannelData(c))
+  let o = 44
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) { const s = Math.max(-1, Math.min(1, chans[c][i])); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2 }
+  return ab
+}
+
+// analyse + traite une prise → écrit le sidecar fx_*.wav et le référence sur le clip
+async function fxProcessClip(r) {
+  try {
+    const url = await window.api.takeUrl(projectPath, r.file); if (!url) return false
+    const resp = await fetch(url); const ab = await resp.arrayBuffer()
+    const dc = new (window.AudioContext || window.webkitAudioContext)()
+    const buf = await dc.decodeAudioData(ab); dc.close()
+    const out = await renderVoiceChain(buf, analyzeVoice(buf), fxTargetDb())
+    const name = 'fx_' + r.file.replace(/\.[^.]+$/, '') + '.wav'
+    const res = await window.api.saveTake(projectPath, name, encodeWav16(out))
+    if (!res || res.error) return false
+    r.fxFile = res.name
+    return true
+  } catch { return false }
+}
+
+// bouton « chaîne voix » : traite toutes les takes actives qui ne le sont pas encore
+async function toggleVoiceFx() {
+  if (fxBusy) return
+  if (project.voiceFxOn) {
+    project.voiceFxOn = false
+    markDirty(); stopAllTakeAudio(); preloadTakeAudios(); renderRecCharList()
+    return
+  }
+  fxBusy = true; renderRecCharList()
+  let n = 0
+  for (const r of (project.recordings || [])) {
+    if (!r.active || r.fxFile) continue
+    if (await fxProcessClip(r)) n++
+  }
+  project.voiceFxOn = true
+  fxBusy = false
+  markDirty(); stopAllTakeAudio(); await preloadTakeAudios(); renderRecCharList()
+  toast(t('recFxDone', n))
 }
 
 // encart de gauche : uniquement le personnage sélectionné (la sélection se fait via le
@@ -1620,6 +1773,21 @@ function renderRecCharList() {
   meta.textContent = clips.length ? t('recTakes', clips.length) : t('recNoTakes')
   row.appendChild(meta)
   list.appendChild(row)
+  // carte « chaîne voix » : chaîne d'effets auto (EQ/comp/niveau d'après l'analyse des prises)
+  const fx = document.createElement('div')
+  fx.className = 'rec-fx' + (project.voiceFxOn ? ' on' : '')
+  fx.title = t('recFxHint')
+  const fh = document.createElement('div'); fh.className = 'rec-fx-head'
+  fh.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 4v5m0 5v6M12 4v9m0 5v2M19 4v2m0 5v9"/><circle cx="5" cy="11.5" r="2"/><circle cx="12" cy="15.5" r="2"/><circle cx="19" cy="8.5" r="2"/></svg>'
+  const fnm = document.createElement('span'); fnm.className = 'rec-fx-name'; fnm.textContent = t('recFxName')
+  fh.appendChild(fnm)
+  const fbtn = document.createElement('button')
+  fbtn.className = 'rec-fx-btn' + (project.voiceFxOn ? ' on' : '')
+  fbtn.textContent = fxBusy ? t('recFxBusy') : project.voiceFxOn ? t('recFxOn') : t('recFxOff')
+  fbtn.disabled = fxBusy
+  fbtn.addEventListener('click', (e) => { e.stopPropagation(); toggleVoiceFx() })
+  fx.append(fh, fbtn)
+  list.appendChild(fx)
 }
 
 $('recBigBtn').addEventListener('click', toggleRecord)
@@ -3574,6 +3742,7 @@ video.addEventListener('error', () => showLoading(false))
 
 // ============================================================ waveform
 let wave = null // { peaks: Float32Array, perSec, duration } — forme d'onde de la piste active
+let videoRmsDb = null // niveau moyen (dBFS) de la piste active — référence d'équilibrage de la chaîne voix
 let waveOffset = 0 // décalage (s) de la piste active, appliqué à l'affichage de la forme d'onde
 let showWave = true
 let waveToken = 0
@@ -3637,6 +3806,8 @@ async function buildWaveform() {
     for (let i = 0; i < n; i++) if (peaks[i] > max) max = peaks[i]
     if (max > 0) for (let i = 0; i < n; i++) peaks[i] /= max
     wave = { peaks, perSec: PER_SEC, duration: audio.duration }
+    // niveau moyen absolu (avant normalisation des peaks) : cible de la chaîne voix
+    { let sq = 0, ns = 0; const d0 = audio.getChannelData(0); for (let i = 0; i < d0.length; i += 4) { sq += d0[i] * d0[i]; ns++ }; videoRmsDb = ns ? 10 * Math.log10(sq / ns + 1e-12) : null }
     // mixage mono conservé pour le scrub sonore (rééchantillonné à la lecture)
     const mono = new Float32Array(audio.length)
     for (let ch2 = 0; ch2 < audio.numberOfChannels; ch2++) {
@@ -6621,7 +6792,7 @@ async function runExport(outPathOverride) {
     if (!r.active || recMutedSet.includes(r.characterId)) continue
     const eff = recEffDur(r)
     if (!eff || r.startTime + eff <= startT) continue // entièrement avant la fenêtre
-    takes.push({ name: r.file, offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
+    takes.push({ name: recPlayFile(r), offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
   }
   const noBand = exp.bandPos === 'none'
   const r = await window.api.exportStart({
