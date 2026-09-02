@@ -1,17 +1,22 @@
-// Dev tool: drives the running app (electron . --remote-debugging-port=9222)
-// to load an enriched Xenoblade project and capture marketing screenshots.
+// Dev tool: marketing screenshots for the website. Boots the app under CDP,
+// loads two real projects (Xenoblade Genesis enriched with multi-track dialogue,
+// Steins Gate 2 with takes for the recording features), captures each section's
+// screenshot, then converts everything to WebP (+ og-image.jpg). Run: node scripts/shoot.js
 'use strict'
 const WebSocket = require('ws')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
+const { spawn, spawnSync } = require('child_process')
 
 const PORT = 9222
-const SRC_PROJECT = 'C:/Users/user/OneDrive/Vidéos/doublage/trailer xenoG/xenoblade-genesis-r.rythmo'
-const OUT_DIR = path.join(__dirname, '..', 'website', 'src', 'assets')
+const ROOT = path.join(__dirname, '..')
+const XENO_PROJECT = 'C:/Users/user/OneDrive/Vidéos/doublage/trailer xenoG/xenoblade-genesis-r.rythmo'
+const STEINS_PROJECT = 'C:/Users/user/Desktop/steins gate 2.rythmo'
+const OUT_DIR = path.join(ROOT, 'website', 'src', 'assets')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// ---- build an enriched project: keep video + narrator, add multi-track dialogue ----
+// ---- projet Xenoblade enrichi : vidéo + narrateur d'origine, dialogues multi-pistes ----
 function words(phrase, start, end) {
   const parts = phrase.split(' ')
   const totalLen = parts.reduce((s, w) => s + w.length, 0)
@@ -29,24 +34,24 @@ function line(id, characterId, track, phrase, start, end, opts = {}) {
     voiceOff: !!opts.voiceOff, font: null, words: words(phrase, start, end) }
 }
 
-function enrich() {
-  const p = JSON.parse(fs.readFileSync(SRC_PROJECT, 'utf8'))
+function enrichXeno() {
+  const p = JSON.parse(fs.readFileSync(XENO_PROJECT, 'utf8'))
   const C = {} // name → id
   for (const c of p.characters) C[c.name] = c.id
   p.tracks = 4
   const added = [
-    // window ~14-21 s
+    // fenêtre ~14-21 s
     line('add1', C['Professeur Lunette'], 1, 'Regarde ces relevés, c’est impossible', 15.1, 17.2),
     line('add2', C['Le méchant'], 2, 'Rien n’est jamais impossible', 17.5, 18.9, { voiceOff: true }),
     line('add3', C['La soigneuse'], 1, 'Restez groupés, tous', 19.3, 20.7),
     line('add4', C['Mr Kill'], 3, '(souffle)', 16.1, 16.8),
-    // window ~26-35 s (dense, colourful)
+    // fenêtre ~26-35 s (dense, colorée)
     line('add5', C['Eleanor'], 1, 'Je ne les laisserai pas faire', 27.0, 29.4),
     line('add6', C['La méchante'], 3, '(rire)', 28.0, 28.9),
     line('add7', C['Mr Dragon'], 2, 'Alors tu périras avec eux', 29.7, 31.9, { voiceOff: true }),
     line('add8', C['Guerrière Arc'], 1, 'Pas tant que je respire', 32.1, 33.9),
     line('add9', C['Jane X doré'], 2, 'En avant, à l’attaque', 33.2, 34.6),
-    // ~40 s (frame onglet pistes)
+    // ~40 s (transcription)
     line('addA', C['Eleanor'], 1, 'Tout a commencé ici', 39.5, 41.5),
     // ~52 s (frame sync — course)
     line('addB', C['Le blond'], 1, 'Ils arrivent, il faut courir', 50.6, 52.6),
@@ -64,21 +69,28 @@ function enrich() {
     line('addK', C['Professeur Lunette'], 1, 'Les relevés confirment nos craintes', 98.3, 101.0),
     line('addL', C['Professeur combat réel'], 2, 'Alors préparons-nous', 101.2, 102.9, { voiceOff: true }),
     line('addM', C['Jane X doré'], 3, '(soupire)', 99.0, 99.8),
-    // ~128 s (frame export) — piste 0 déjà prise par le narrateur d'origine, on remplit les pistes libres
-    line('addN', C['Guerrière Arc'], 1, 'À nous de jouer maintenant', 127.0, 129.3),
-    line('addO', C['Mr Kill'], 2, '(souffle)', 127.6, 128.3),
   ]
   p.lines = p.lines.concat(added)
   return p
 }
 
 async function main() {
-  const targets = await new Promise((resolve, reject) => {
-    http.get(`http://127.0.0.1:${PORT}/json`, (res) => {
-      let d = ''; res.on('data', (c) => (d += c)); res.on('end', () => resolve(JSON.parse(d)))
-    }).on('error', reject)
-  })
-  const page = targets.find((t) => t.type === 'page')
+  // ---- boot de l'app sous CDP ----
+  const child = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    ['electron', '.', `--remote-debugging-port=${PORT}`],
+    { cwd: ROOT, shell: true, stdio: 'ignore' })
+  let page = null
+  for (let i = 0; i < 60 && !page; i++) {
+    await sleep(500)
+    try {
+      const targets = await new Promise((resolve, reject) => {
+        http.get(`http://127.0.0.1:${PORT}/json`, (res) => {
+          let d = ''; res.on('data', (c) => (d += c)); res.on('end', () => resolve(JSON.parse(d)))
+        }).on('error', reject)
+      })
+      page = targets.find((t) => t.type === 'page' && !/detached/.test(t.url))
+    } catch {}
+  }
   if (!page) throw new Error('no page target')
   const ws = new WebSocket(page.webSocketDebuggerUrl, { maxPayload: 128 * 1024 * 1024 })
   let id = 0
@@ -100,110 +112,153 @@ async function main() {
     if (r.exceptionDetails) throw new Error('page error: ' + JSON.stringify(r.exceptionDetails))
     return r.result.value
   }
-  const shot = async (name, clip) => {
-    const params = { format: 'png' }
-    if (clip) params.clip = { ...clip, scale: 1 }
-    const s = await send('Page.captureScreenshot', params)
-    const out = path.join(OUT_DIR, name)
-    fs.writeFileSync(out, Buffer.from(s.data, 'base64'))
-    console.log('  saved', name, clip ? `(${Math.round(clip.width)}x${Math.round(clip.height)})` : '(full)')
-  }
-  const clipOf = (sel) => evaluate(`(() => { const el = document.querySelector('${sel}');
-    if (!el) return null; const r = el.getBoundingClientRect();
-    return { x: r.x, y: r.y, width: r.width, height: r.height } })()`)
+  // taille de fenêtre constante pour des captures homogènes
+  try {
+    const { windowId } = await send('Browser.getWindowForTarget', { targetId: page.id })
+    await send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal', left: 20, top: 20, width: 1680, height: 960 } })
+  } catch (e) { console.log('  ! resize err', e.message) }
+  await sleep(1500)
 
-  const project = enrich()
-  console.log('loading enriched project:', project.lines.length, 'lines,', project.tracks, 'tracks')
-  await evaluate(`loadProjectData(${JSON.stringify(project)}, null)`)
-
-  // wait for the video to be seekable
-  for (let i = 0; i < 60; i++) {
-    const ok = await evaluate('!!(window.video && video.readyState >= 2 && !isNaN(video.duration))')
-    if (ok) break
-    await sleep(500)
+  const pngs = []
+  const shot = async (name) => {
+    const s = await send('Page.captureScreenshot', { format: 'png' })
+    fs.writeFileSync(path.join(OUT_DIR, name), Buffer.from(s.data, 'base64'))
+    pngs.push(name)
+    console.log('  saved', name)
   }
-  const info = await evaluate('({ duration: video.duration, w: video.videoWidth, h: video.videoHeight, lines: project.lines.length })')
-  console.log('  video:', JSON.stringify(info))
-
-  const key = async (k, code, vk) => {
-    for (const type of ['keyDown', 'keyUp'])
-      await send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: vk })
+  const waitVideo = async () => {
+    for (let i = 0; i < 60; i++) {
+      if (await evaluate('!!(window.video && video.readyState >= 2 && !isNaN(video.duration))')) return
+      await sleep(500)
+    }
+    throw new Error('video not ready')
   }
-  const playerOpen = () => evaluate('typeof player !== "undefined" && !!player.open')
-  const closeExport = () => evaluate("try { if (typeof exp !== 'undefined') exp.open = false; const m = document.getElementById('exportModal'); if (m) m.classList.add('hidden') } catch(e){}")
+  const seek = async (tc) => { await evaluate('video.pause(); video.currentTime = ' + tc); await sleep(1100) }
   const ensureEditor = async () => {
     await evaluate('try { if (typeof player !== "undefined" && player.open) closePlayer() } catch(e){}')
-    await closeExport()
-    await sleep(500)
+    await evaluate("try { if (typeof exp !== 'undefined') exp.open = false; document.getElementById('exportModal').classList.add('hidden') } catch(e){}")
+    await sleep(400)
     await evaluate("try { document.getElementById('tabRythmo').click() } catch(e){}")
     await sleep(300)
   }
-  const seek = async (tc) => { await evaluate('video.pause(); video.currentTime = ' + tc); await sleep(1100) }
 
-  // start clean (a prior run may have left the player open)
+  // ================= phase A : Xenoblade Genesis (éditeur) =================
+  const xeno = enrichXeno()
+  console.log('xenoblade:', xeno.lines.length, 'lines,', xeno.tracks, 'tracks')
+  await evaluate(`loadProjectData(${JSON.stringify(xeno)}, null)`)
+  await waitVideo()
   await ensureEditor()
 
-  // HERO (unchanged frame) ~30.5 s
+  // HERO ~30.5 s (bande dense multi-pistes)
   await seek(30.5)
   await shot('screenshot-main.png')
 
-  // feature 1 — sync, distinct frame ~52 s
+  // sync ~52 s (course)
   await seek(52)
   await shot('screenshot-sync.png')
 
-  // 2) TRACKS (NLE) tab — crop to the bottom panel (waveform lanes)
-  try {
-    await evaluate("document.getElementById('tabTracks').click()")
-    for (let i = 0; i < 40; i++) { if (await evaluate('typeof wave !== "undefined" && !!wave')) break; await sleep(500) }
-    await evaluate('video.currentTime = 40'); await sleep(800)
-    console.log('  tracksView visible:', await evaluate("!document.getElementById('tracksView').classList.contains('hidden')"))
-    await shot('screenshot-tracks.png', await clipOf('#bottomPanel'))
-    await evaluate("document.getElementById('tabRythmo').click()")
-    await sleep(400)
-  } catch (e) { console.log('  ! tracks err', e.message) }
+  // personnages + palette de réacs ~82 s
+  await seek(82)
+  await evaluate("document.getElementById('btnOnoma').click()")
+  await sleep(600)
+  await shot('screenshot-characters.png')
+  await evaluate("try { const p=document.getElementById('onomaPop'); if(p && !p.classList.contains('hidden')) document.getElementById('btnOnoma').click() } catch(e){}")
 
-  // 3) SCENES + PLANS panels open
+  // scènes + plans ~100 s
+  await evaluate("video.currentTime = 100; document.getElementById('btnToggleLoops').click(); document.getElementById('btnTogglePlans').click()")
+  await sleep(900)
+  await shot('screenshot-scenes.png')
+  await evaluate("document.getElementById('btnToggleLoops').click(); document.getElementById('btnTogglePlans').click()")
+  await sleep(300)
+
+  // transcription assistée ~40 s (modale, moteur + modèles déjà installés sur la machine)
   try {
-    await evaluate("video.currentTime = 100; document.getElementById('btnToggleLoops').click(); document.getElementById('btnTogglePlans').click()")
-    await sleep(900)
-    await shot('screenshot-scenes.png')
-    await evaluate("document.getElementById('btnToggleLoops').click(); document.getElementById('btnTogglePlans').click()")
+    await seek(40)
+    await evaluate('try { openTranscribeDialog() } catch(e){}')
+    await sleep(1400)
+    await shot('screenshot-transcribe.png')
+    await evaluate("try { document.getElementById('transcribeModal').classList.add('hidden') } catch(e){}")
     await sleep(300)
-  } catch (e) { console.log('  ! scenes err', e.message) }
+  } catch (e) { console.log('  ! transcribe err', e.message) }
 
-  // 4) CHARACTERS + reaction palette ~82 s
-  try {
-    await seek(82)
-    await evaluate("document.getElementById('btnOnoma').click()")
+  // plein écran ~66 s (champ de bataille)
+  await evaluate('video.currentTime = 66; try { openPlayer() } catch(e){}')
+  await sleep(1800)
+  if (await evaluate('typeof player !== "undefined" && !!player.open')) {
+    await shot('screenshot-player.png')
+    await evaluate('try { closePlayer() } catch(e){}')
     await sleep(600)
-    await shot('screenshot-characters.png')
-    await evaluate("try { const p=document.getElementById('onomaPop'); if(p && !p.classList.contains('hidden')) document.getElementById('btnOnoma').click() } catch(e){}")
-    await sleep(300)
-  } catch (e) { console.log('  ! characters err', e.message) }
+  } else console.log('  ! player did not open')
 
-  // 5) EXPORT modal ~128 s
-  try {
-    await seek(128)
-    await evaluate('try { openExportModal() } catch(e){}')
-    await sleep(1000)
-    await shot('screenshot-export.png')
-    await closeExport()
-    await sleep(400)
-  } catch (e) { console.log('  ! export err', e.message) }
+  // ================= phase B : Steins Gate 2 (enregistrement) =================
+  await ensureEditor()
+  console.log('loading steins gate 2…')
+  await evaluate(`(async () => {
+    const r = await window.api.openProjectPath(${JSON.stringify(STEINS_PROJECT)})
+    loadProjectData(JSON.parse(r.data), r.path)
+  })()`)
+  await waitVideo()
+  // enrichit les prises : la vraie prise (95 s) est découpée en segments pour montrer
+  // plusieurs takes par personnage, dont une alternative empilée (take 2 retenue)
+  await evaluate(`(() => {
+    const ok = project.characters.find((c) => c.name === 'Okabe').id
+    const ku = project.characters.find((c) => c.name === 'Kurisu').id
+    const F = 'rec_nu4n7ciq_7absz0fl.webm', FX = 'fx_rec_nu4n7ciq_7absz0fl.wav', D = 95.46
+    const seg = (id, ch, startTime, srcOff, len, lane, active) => ({ id, characterId: ch, file: F, startTime,
+      dur: D, trimStart: srcOff, trimEnd: Math.max(0, D - srcOff - len), lane, active: active !== false, fxFile: FX })
+    project.recordings = [
+      seg('s1', ok, 12.2, 5, 6.5, 0),
+      seg('s2', ok, 21.0, 14, 5.2, 0, false), // 1re take, remplacée
+      seg('s3', ok, 22.4, 30, 4.4, 1),        // take 2 retenue, empilée
+      seg('s4', ok, 30.8, 44, 7.0, 0),
+      seg('s5', ku, 18.6, 60, 3.8, 0),
+      seg('s6', ku, 27.5, 70, 5.5, 0),
+    ]
+    project.recMuted = []
+    selectedCharId = ok
+  })()`)
+  // onglet Enregistrement, dialogue visible sur la bande ~24 s
+  await evaluate("document.getElementById('tabRec').click()")
+  await sleep(1200)
+  await seek(24)
+  await sleep(2200) // formes d'onde des prises
+  await shot('screenshot-recording.png')
 
-  // 6) FULLSCREEN player LAST (composited band over video)
-  try {
-    await ensureEditor()
-    await evaluate('video.currentTime = 66; try { openPlayer() } catch(e){}')
-    await sleep(1800)
-    console.log('  player open:', await playerOpen())
-    if (await playerOpen()) {
-      await shot('screenshot-player.png')
-      await evaluate('try { closePlayer() } catch(e){}')
-      await sleep(600)
-    } else console.log('  ! player did not open')
-  } catch (e) { console.log('  ! player err', e.message) }
+  // voix par personnage : onglet Audio, Kurisu coupée, popover ouvert
+  await evaluate("document.getElementById('tabTracks').click()")
+  await sleep(900)
+  await evaluate(`(() => {
+    const ku = project.characters.find((c) => c.name === 'Kurisu').id
+    project.muteChars = [ku]
+  })()`)
+  await seek(30)
+  await evaluate("document.getElementById('btnDub').click()")
+  await sleep(700)
+  await shot('screenshot-voice.png')
+  await evaluate("try { document.getElementById('dubPop').classList.add('hidden') } catch(e){}")
+
+  // export : modale compacte avec la rangée Enregistrements + FX
+  await evaluate("document.getElementById('tabRythmo').click()")
+  await sleep(400)
+  await seek(55)
+  await evaluate('try { openExportModal() } catch(e){}')
+  await sleep(1400)
+  await shot('screenshot-export.png')
 
   ws.close()
+  spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], { shell: true })
+  await sleep(1000)
+
+  // ================= conversion WebP + og-image =================
+  const ffmpeg = require('ffmpeg-static')
+  for (const png of pngs) {
+    const webp = png.replace(/\.png$/, '.webp')
+    const r = spawnSync(ffmpeg, ['-y', '-i', path.join(OUT_DIR, png), '-c:v', 'libwebp', '-quality', '82', path.join(OUT_DIR, webp)], { stdio: 'ignore' })
+    console.log(r.status === 0 ? '  webp ' + webp : '  ! webp FAIL ' + webp)
+  }
+  const og = spawnSync(ffmpeg, ['-y', '-i', path.join(OUT_DIR, 'screenshot-main.png'), '-vf', 'scale=1200:-2,crop=1200:630', '-q:v', '3', path.join(OUT_DIR, 'og-image.jpg')], { stdio: 'ignore' })
+  console.log(og.status === 0 ? '  og-image.jpg' : '  ! og-image FAIL')
+  for (const png of pngs) fs.unlinkSync(path.join(OUT_DIR, png))
+  console.log('done:', pngs.length, 'screenshots')
 }
 main().catch((e) => { console.error('FAIL:', e.message); process.exit(1) })

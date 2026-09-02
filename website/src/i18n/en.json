@@ -2,9 +2,9 @@
   "lang": "en",
   "locale": "en_US",
   "meta": {
-    "title": "LibreRythmo: Free rythmo band editor for dubbing",
-    "description": "LibreRythmo is a free, open-source rythmo band editor for dubbing. Sync dialogue to picture frame by frame, preview 4K footage smoothly, and export a composited video, PDF script, DETX or subtitles. Windows, macOS and Linux.",
-    "keywords": "rythmo band editor, free dubbing software, dubbing editor, lip sync software, DETX editor, fandub tool, rythmo band software, dub script editor, open source dubbing"
+    "title": "LibreRythmo: free dubbing studio, rythmo band and voice recording",
+    "description": "LibreRythmo is a free, open-source dubbing studio: frame-accurate rythmo band design, multi-take voice recording per character, one character's voice muted so their part can be acted, an automatic voice chain and a dubbed video out. Windows, macOS and Linux.",
+    "keywords": "rythmo band, dubbing studio, free dubbing software, dubbing recording, rythmo band editor, dubbing software, lip sync, DETX, fandub, remove vocals, dubbing transcription, open source dubbing"
   },
   "nav": {
     "features": "Features",
@@ -14,104 +14,137 @@
   },
   "hero": {
     "badge": "Free & open-source · Windows · macOS · Linux",
-    "title": "The simple, free rythmo band editor.",
-    "subtitle": "The smoothest way to design a rythmo band: frame-perfect sync, glide scrubbing even in 4K, reactions on a keystroke, and one-click DETX, PDF or MP4 export. **Free**, **blazing fast**, **no video length limit**. Windows, macOS and Linux.",
+    "title": "The simple, free dubbing studio.",
+    "subtitle": "The smoothest rythmo band design there is, and now the rest of the craft: a character's voice mutes so their part can be acted inside the real soundtrack, every take lands on the scrolling band, and the video comes out dubbed. **Free**, **blazing fast**, **no video length limit**. Windows, macOS and Linux.",
     "ctaPrimary": "Download for {os}",
     "ctaSecondary": "All platforms & source",
     "release": "{version} · released {date}"
   },
   "what": {
-    "kicker": "What is a rythmo band?",
-    "title": "The dubbing tool that shows every syllable.",
-    "body": "A rythmo band is the scrolling strip of text that runs under the picture in a dubbing studio, stretched so each word lands exactly on the actor's lips. It's how professional dubs stay perfectly in sync. LibreRythmo brings that studio technique to everyone: no subscription, no video length limit, no dated interface."
+    "kicker": "From rythmo band to voice",
+    "title": "Dubbing end to end, in a single app.",
+    "body": "A rythmo band is the scrolling strip of text that runs under the picture in a dubbing studio, stretched so each word lands exactly on the actor's lips. LibreRythmo brings that technique to everyone, and version 3 adds the other half of the craft: a recording mode where each character has their own take track, where their original voice drops out during their lines, and where the video comes out dubbed. No subscription, no length limit, no dated interface."
   },
   "features": [
     {
       "kicker": "Frame-perfect",
-      "title": "Timing to the word, locked to the lips.",
-      "body": "Timing adjusts to the word, and each boundary lines up on the lips down to the frame, with the magnet snapping in to help. For speed, multi-select changes the character, font or voice-over across dozens of lines at once, proportional stretch keeps everything aligned across 1 to 4 tracks, and adjustable silences slot in wherever needed. The tightest sync possible, without fighting the tool.",
+      "title": "Per-word timing, snapped to the lips.",
+      "body": "Timing adjusts word by word and every boundary lands on the lips, down to the frame, with the magnet catching edges to help. To move fast, multi-selection changes the character, font or voice-over across dozens of lines at once, proportional stretching keeps everything straight across 1 to 4 tracks, and adjustable silences slip in where needed. The finest sync possible, without fighting the tool.",
       "img": "screenshot-sync.webp",
-      "alt": "Adjusting words down to the frame on the LibreRythmo rythmo band"
+      "alt": "Frame-accurate word adjustment on the LibreRythmo rythmo band"
     },
     {
       "kicker": "Glide scrubbing",
-      "title": "Butter-smooth scrub, even in 4K or HEVC.",
-      "body": "The wheel glides the band along the sound, frame by frame, without a hitch. A 720p proxy built and cached in the background makes any source instant in any codec, while the export re-renders from the full-quality original. Feedback is immediate, so design keeps pace with thought.",
+      "title": "Butter-smooth scrubbing, even in 4K or HEVC.",
+      "body": "The wheel glides the band along the audio, frame by frame, without a single hitch. A 720p proxy generated and cached in the background makes any source instant regardless of codec, while the export starts over from the full-quality original. Feedback is immediate: the design keeps up with the pace of thought.",
       "img": "screenshot-player.webp",
       "alt": "LibreRythmo fullscreen playback with the composited rythmo band"
     },
     {
-      "kicker": "Characters & reactions",
-      "title": "Reactions on a keystroke, fonts baked into the project.",
-      "body": "A reaction (ah, oh, fff, laughter…) goes in on a single key or from the palette, a line can turn into underlined voice-over, and every actor has a color. Any line can also carry its own font: any TTF/OTF embeds into the .rythmo, which keeps its fonts once shared, alongside the bundled open-source faces (Inter, Oswald, Comfortaa, Anton).",
+      "kicker": "Characters & reacs",
+      "title": "One-key reacs, fonts embedded in the project.",
+      "body": "A reac (ah, oh, fff, (laughs)…) drops in with a single key or from the palette, a line switches to underlined voice-over, and every actor has their own colour, selectable from keys 1 to 9. Each line can also carry its own font: any TTF/OTF embeds into the .rythmo, which keeps its fonts once shared, on top of the bundled open fonts (Inter, Oswald, Comfortaa, Anton).",
       "img": "screenshot-characters.webp",
-      "alt": "Character panel and reaction palette in LibreRythmo"
+      "alt": "Character panel and reac palette in LibreRythmo"
     },
     {
       "kicker": "Scenes & shots",
       "title": "Automatic shot detection, live scene stats.",
-      "body": "LibreRythmo finds shot changes on its own (ffmpeg) and drops markers on the timeline, so no cut slips by. Scenes come with live counters (lines, duration, characters), OUT segments flag the passages with nothing to dub, and navigation jumps scene to scene from the keyboard.",
+      "body": "LibreRythmo spots shot changes on its own (ffmpeg) and drops the markers on the timeline: not a single cut slips by. Scene slicing shows live counters (lines, duration, characters), OUT segments flag stretches with nothing to dub, and navigation jumps scene to scene from the keyboard.",
       "img": "screenshot-scenes.webp",
       "alt": "Scene markers and shot detection on the LibreRythmo timeline"
     },
     {
+      "kicker": "Assisted transcription",
+      "title": "The text starts from the audio, one character per voice.",
+      "body": "Retyping a whole episode takes hours: transcription roughs out the work locally, slices the audio into lines, detects the speakers and creates one character per voice, in the chosen language. The engine and models install in one click from Settings, run without a connection, and nothing is forced: the app stays light until they are needed.",
+      "img": "screenshot-transcribe.webp",
+      "alt": "LibreRythmo assisted transcription window with model and language choice"
+    },
+    {
+      "kicker": "Recording mode",
+      "title": "Each character on their track, each pass in takes.",
+      "body": "The band scrolls in final-render mode and recording starts from the playhead, take after take: overlapping ones stack up, the keeper is a click away, and any take trims or moves freely. Hardware latency is compensated so the voice lands where it was performed, and the voice chain (EQ, de-esser, plosive tamer, compression, loudness aligned to the video) fires from a single FX button.",
+      "img": "screenshot-recording.webp",
+      "alt": "LibreRythmo recording mode: takes per character under the rythmo band"
+    },
+    {
+      "kicker": "Act a character's part",
+      "title": "Their voice mutes, the rest of the mix keeps playing.",
+      "body": "The built-in voice remover produces an instrumental track, locally. During a muted character's lines, monitoring switches over to it: their voice disappears while the music, effects and other actors stay in place. Rehearsing and recording happen inside the real soundtrack, not on top of it, and comparing with the original is one click away.",
+      "img": "screenshot-voice.webp",
+      "alt": "LibreRythmo dubbing monitor: one character's voice muted onto the voiceless track"
+    },
+    {
       "kicker": "Pro formats",
-      "title": "DETX, PDF, subtitles, GPU MP4: deliver in one click.",
-      "body": "In come DETX (Joker / Cappella) and SRT / ASS / VTT; out go a PDF script, a DETX, subtitles, or a fully composited MP4 encoded on the GPU (NVENC, QuickSync, AMF, x264 fallback), at a chosen frame rate, with tracks, scenes and audio selected. Delivery lands in the exact format the studio expects.",
+      "title": "DETX, PDF, GPU MP4: the video comes out dubbed.",
+      "body": "In: DETX (Joker / Cappella), SRT / ASS / VTT, or a YouTube video downloaded directly. Out: a DETX, PDF work documents, a ZIP of the recordings mixed per character, or a fully composited MP4 encoded on the GPU (NVENC, QuickSync, AMF, x264 fallback) with the chosen characters' takes mixed in, raw or processed. The band can even be left out, to deliver the dubbed video alone.",
       "img": "screenshot-export.webp",
-      "alt": "MP4 export with GPU encoding in LibreRythmo"
+      "alt": "LibreRythmo MP4 export window with recordings mix and GPU encoding"
     }
   ],
   "why": {
     "kicker": "Why LibreRythmo",
-    "title": "Built by a dubbing fan, for everyone.",
-    "body": "LibreRythmo started because every existing tool was too old, too clumsy, or locked behind a subscription that capped how long a video could be. Modern computers can do so much better, so this one is heavily optimized and completely free.",
+    "title": "Built by a dubbing enthusiast, for everyone.",
+    "body": "LibreRythmo was born because every existing tool was either too old, clumsy to use, or locked behind a subscription that limited video length. And once the band was designed, recording it still required another program: version 3 brings both halves of dubbing into the same window, heavily optimized and entirely free.",
     "points": [
       {
         "title": "Free forever",
-        "body": "No subscription, no video length limit, no paywall. Open-source under the GPL-3 license."
+        "body": "No subscription, no duration limit, no paywall. Open source, GPL-3 licensed."
       },
       {
         "title": "Fast and light",
-        "body": "Heavily optimized to stay fluid even on ordinary machines, from editing to export."
+        "body": "Heavily optimized to stay smooth even on an ordinary machine, from design to export."
       },
       {
-        "title": "Made for makers",
-        "body": "Ideal for fandub communities, associations and semi-pro work: it supports the professional standards."
+        "title": "Everything local",
+        "body": "Transcription and voice removal run on the machine, with no connection and no account. Models install only if wanted."
       },
       {
-        "title": "Evolving quickly",
-        "body": "This is a young project that ships fast. User feedback directly shapes what comes next."
+        "title": "Made for creators",
+        "body": "Ideal for fandub communities, associations and semi-pro work: it speaks the professional standards."
       }
     ]
   },
   "faq": {
     "kicker": "FAQ",
-    "title": "Questions, answered.",
+    "title": "Your questions, answered.",
     "items": [
       {
         "q": "What is a rythmo band editor?",
-        "a": "A rythmo band editor lets you write dialogue on a scrolling strip beneath the video and stretch each word so it matches the actor's lips exactly. It's the standard technique for dubbing and voice-over localization. LibreRythmo is a free, open-source rythmo band editor for Windows, macOS and Linux."
+        "a": "A rythmo band editor lets you write text on a strip scrolling under the video and stretch each word so it sticks to the actor's lips. It is the standard dubbing technique. LibreRythmo is a free, open-source rythmo band editor for Windows, macOS and Linux, which also records the voices."
       },
       {
         "q": "Is LibreRythmo really free?",
-        "a": "Yes. LibreRythmo is completely free and open-source under the GPL-3 license, with no subscription, no watermark and no limit on video length. It will stay free forever."
+        "a": "Yes. LibreRythmo is entirely free and open source, GPL-3 licensed, with no subscription, no watermark and no video duration limit. It will stay free forever."
+      },
+      {
+        "q": "Can I record my voice in it?",
+        "a": "Yes, that is what the recording mode is for: each character has their own track, takes stack up so the best one can be kept, microphone latency is compensated, and an automatic voice chain (EQ, de-esser, compression, leveling) applies from one button. The recordings are mixed into the exported video or delivered as a per-character ZIP."
+      },
+      {
+        "q": "How do I act a character's part without hearing their voice?",
+        "a": "The built-in voice remover produces an instrumental track locally. With a character muted, playback switches to that track during their lines: their voice disappears while the music, effects and other actors stay in place."
       },
       {
         "q": "What can I export?",
-        "a": "A composited MP4 video with GPU encoding, a PDF dubbing script, a DETX file (compatible with Joker and Cappella), and subtitles (SRT / ASS / VTT). The tracks, scenes, audio track and output frame rate are all selectable."
+        "a": "A composited MP4 with GPU encoding, with or without the band, with the chosen characters' recordings mixed in; a per-character ZIP of the recordings; PDF work documents (presence grid, line tally); a DETX file (Joker and Cappella compatible) and subtitles (SRT / ASS / VTT)."
+      },
+      {
+        "q": "Do transcription and voice removal need the Internet?",
+        "a": "No. Both run entirely on the machine, with no account and no connection. Nothing ships in the app by default: engines and models install in one click from Settings, only when needed."
       },
       {
         "q": "Which platforms are supported?",
-        "a": "Windows (installer or portable zip), macOS (Apple Silicon .dmg) and Linux (AppImage, .deb and .pacman)."
+        "a": "Windows (installer or portable zip), macOS (Apple Silicon .dmg) and Linux (AppImage, .deb and .pacman). The interface is available in English, French and Spanish."
       },
       {
-        "q": "Can it handle 4K or HEVC footage?",
-        "a": "Yes. LibreRythmo builds a cached 720p proxy in the background so heavy 4K and HEVC sources stay smooth while editing, and re-renders the export from the full-quality original."
+        "q": "Does it handle 4K or HEVC?",
+        "a": "Yes. LibreRythmo builds a cached 720p proxy in the background so heavy 4K and HEVC sources stay smooth while editing, and regenerates the export from the full-quality original."
       },
       {
         "q": "Is it a good alternative to paid dubbing tools?",
-        "a": "LibreRythmo supports industry-standard formats like DETX and exports professional PDF scripts, so it fits amateur, fandub and semi-professional workflows, without the cost or the video length limits of many paid or online tools."
+        "a": "LibreRythmo speaks industry-standard formats like DETX, exports professional work documents and covers voice recording: it fits amateur, fandub and semi-professional workflows, without the cost or duration limits of many paid or online tools."
       }
     ]
   },
@@ -120,7 +153,7 @@
     "title": "Get LibreRythmo",
     "subtitle": "Free, no account, no limits. A build for every platform.",
     "current": "Latest version {version} · released {date}",
-    "downloads": "Downloaded {count} times",
+    "downloads": "Downloaded {count} times already",
     "platforms": {
       "windows": "Windows",
       "macos": "macOS",
@@ -138,10 +171,10 @@
     "allReleases": "All releases & changelog"
   },
   "footer": {
-    "tagline": "Free, open-source rythmo band editor for dubbing.",
+    "tagline": "Free, open-source dubbing studio: rythmo band, recording, export.",
     "made": "Made by",
-    "contact": "Feedback and contact:",
-    "license": "GPL-3.0 · Source on GitHub",
+    "contact": "Suggestions and contact:",
+    "license": "GPL-3.0 · Code on GitHub",
     "nav": "Navigation"
   }
 }
