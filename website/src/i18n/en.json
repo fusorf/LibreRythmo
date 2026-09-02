@@ -27,8 +27,29 @@
   },
   "features": [
     {
+      "kicker": "Act a character's part",
+      "title": "Their voice mutes, the rest of the mix keeps playing.",
+      "body": "Mute a character: during their lines, their voice disappears, but the music, effects and other actors stay. You perform inside the real soundtrack, not on top of it. The instrumental track is made locally by the built-in voice remover.",
+      "img": "screenshot-voice.webp",
+      "alt": "LibreRythmo dubbing monitor: one character's voice muted onto the voiceless track"
+    },
+    {
+      "kicker": "Recording mode",
+      "title": "One character, one track, as many takes as you need.",
+      "body": "The band scrolls like the final render, and you record from the playhead. Takes of the same pass stack up: you keep the best one, trim it, move it. Microphone latency is corrected so the voice lands exactly where you performed it, and an FX button cleans the sound (EQ, de-esser, compression, level).",
+      "img": "screenshot-recording.webp",
+      "alt": "LibreRythmo recording mode: takes per character under the rythmo band"
+    },
+    {
+      "kicker": "Export & pro formats",
+      "title": "The video comes out dubbed.",
+      "body": "On export, LibreRythmo mixes the recorded voices into a GPU-encoded MP4. The band can stay burned in or drop out, to deliver the dubbed video alone. For interchange: import DETX, SRT / ASS / VTT and YouTube; export DETX, subtitles, PDF documents and a ZIP of the recordings.",
+      "img": "screenshot-export.webp",
+      "alt": "LibreRythmo MP4 export window with recordings mix and GPU encoding"
+    },
+    {
       "kicker": "Frame-perfect",
-      "title": "Every word snapped to the lips.",
+      "title": "Every word snapped to the frame.",
       "body": "Each word boundary lands on the lips, down to the frame, and the magnet catches edges to speed things up. Need to fix several lines at once? Multi-selection changes the character, font or voice-over in one go. All across 1 to 4 tracks.",
       "img": "screenshot-sync.webp",
       "alt": "Frame-accurate word adjustment on the LibreRythmo rythmo band"
@@ -48,13 +69,6 @@
       "alt": "Character panel and reac palette in LibreRythmo"
     },
     {
-      "kicker": "Scenes & shots",
-      "title": "Automatic shot detection, live stats.",
-      "body": "LibreRythmo spots shot changes on its own and drops the markers on the timeline. Scene slicing shows the line count, duration and characters live. OUT segments flag the stretches with nothing to dub.",
-      "img": "screenshot-scenes.webp",
-      "alt": "Scene markers and shot detection on the LibreRythmo timeline"
-    },
-    {
       "kicker": "Assisted transcription",
       "title": "The text starts straight from the audio.",
       "body": "Retyping a whole episode takes hours. Transcription listens to the audio and pre-fills the lines, detecting the voices to create one character per actor. It all runs locally: the engine and models install in one click, only if you want them.",
@@ -62,25 +76,11 @@
       "alt": "LibreRythmo assisted transcription window with model and language choice"
     },
     {
-      "kicker": "Recording mode",
-      "title": "One character, one track, as many takes as you need.",
-      "body": "The band scrolls like the final render, and you record from the playhead. Takes of the same pass stack up: you keep the best one, trim it, move it. Microphone latency is corrected so the voice lands exactly where you performed it, and an FX button cleans the sound (EQ, de-esser, compression, level).",
-      "img": "screenshot-recording.webp",
-      "alt": "LibreRythmo recording mode: takes per character under the rythmo band"
-    },
-    {
-      "kicker": "Act a character's part",
-      "title": "Their voice mutes, the rest of the mix keeps playing.",
-      "body": "Mute a character: during their lines, their voice disappears, but the music, effects and other actors stay. You perform inside the real soundtrack, not on top of it. The instrumental track is made locally by the built-in voice remover.",
-      "img": "screenshot-voice.webp",
-      "alt": "LibreRythmo dubbing monitor: one character's voice muted onto the voiceless track"
-    },
-    {
-      "kicker": "Export & pro formats",
-      "title": "The video comes out dubbed.",
-      "body": "On export, LibreRythmo mixes the recorded voices into a GPU-encoded MP4. The band can stay burned in or drop out, to deliver the dubbed video alone. For interchange: import DETX, SRT / ASS / VTT and YouTube; export DETX, subtitles, PDF documents and a ZIP of the recordings.",
-      "img": "screenshot-export.webp",
-      "alt": "LibreRythmo MP4 export window with recordings mix and GPU encoding"
+      "kicker": "Scenes & shots",
+      "title": "Automatic shot detection, live stats.",
+      "body": "LibreRythmo spots shot changes on its own and drops the markers on the timeline. Scene slicing shows the line count, duration and characters live. OUT segments flag the stretches with nothing to dub.",
+      "img": "screenshot-scenes.webp",
+      "alt": "Scene markers and shot detection on the LibreRythmo timeline"
     }
   ],
   "why": {
