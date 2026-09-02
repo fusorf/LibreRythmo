@@ -960,7 +960,22 @@ function gotoBookmark(dir) {
 // ils coexistent. Les clips actifs (pistes non coupées) sont mixés à l'export.
 const recorder = { stream: null, mr: null, chunks: [], active: false, charId: null, mime: 'audio/webm', ext: 'webm', ac: null, analyser: null, raf: 0, level: 0, recStartAt: 0 }
 const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture)
-const recOverlap = (a, b) => a.startTime < b.startTime + (b.dur || 0) && b.startTime < a.startTime + (a.dur || 0)
+// durée effective d'un segment = durée du fichier moins les rognages (poignées de crop)
+const recEffDur = (r) => Math.max(0, (r.dur || 0) - (r.trimStart || 0) - (r.trimEnd || 0))
+const recOverlap = (a, b) => a.startTime < b.startTime + recEffDur(b) && b.startTime < a.startTime + recEffDur(a)
+const REC_MAX_LANES = 4 // nombre max de pistes d'enregistrement empilées (takes)
+// piste d'un segment : la 1re (de haut en bas) où il ne chevauche aucun segment déjà posé
+function recAssignLane(clip) {
+  const others = (project.recordings || []).filter((r) => r.characterId === clip.characterId && r.id !== clip.id)
+  for (let ln = 0; ln < REC_MAX_LANES; ln++) {
+    if (!others.some((r) => (r.lane || 0) === ln && recOverlap(r, clip))) return ln
+  }
+  return REC_MAX_LANES - 1
+}
+// nombre de pistes affichées pour un perso (au moins 1)
+const recLaneCount = (charId) => 1 + (project.recordings || []).filter((r) => r.characterId === charId).reduce((m, r) => Math.max(m, r.lane || 0), 0)
+// groupe de chevauchement d'un segment (les autres takes du même passage)
+const recOverlapGroup = (clip) => (project.recordings || []).filter((r) => r.characterId === clip.characterId && r.id !== clip.id && recOverlap(r, clip))
 
 // config capture (persistée côté main : audio-config.json)
 const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null }
@@ -1117,11 +1132,13 @@ async function addRecording(charId, fileName, startTime, durHint) {
   if (!dur && url) dur = await probeClipDuration(url)
   pushUndo()
   project.recordings ||= []
-  const clip = { id: uid(), characterId: charId, file: fileName, startTime, dur: dur || 0, active: true }
-  // chevauchement dans la même piste perso = prises alternatives → la plus récente reste active
-  for (const r of project.recordings) if (r.characterId === charId && recOverlap(r, clip)) r.active = false
+  const clip = { id: uid(), characterId: charId, file: fileName, startTime, dur: dur || 0, trimStart: 0, trimEnd: 0, lane: 0, active: true }
+  // chevauchement = autre take du même passage → le segment descend d'une piste et
+  // devient la take retenue ; sans chevauchement il continue sur la piste 1
+  clip.lane = recAssignLane(clip)
+  for (const r of recOverlapGroup(clip)) r.active = false
   project.recordings.push(clip)
-  selectedClipId = clip.id // sélectionne la prise qu'on vient d'enregistrer
+  selectedClipId = clip.id // sélectionne le segment qu'on vient d'enregistrer
   markDirty()
   if (activeTab === 'rec') renderRecTab()
   preloadTakeAudios()
@@ -1186,7 +1203,9 @@ async function preloadTakeAudios() {
       if (url) { const d = await probeClipDuration(url); if (d > 0) { r.dur = d; fixed = true } }
     }
   }
-  if (fixed) { // durées connues → (re)calcule chevauchement->prises (la plus récente active)
+  // anciens clips sans piste assignée (modèle pré-lanes) → assignation dans l'ordre
+  for (const r of (project.recordings || [])) if (r.lane == null) { r.lane = recAssignLane(r); fixed = true }
+  if (fixed) { // durées connues → (re)calcule chevauchement->takes (la plus récente active)
     for (const a of project.recordings) a.active = true
     for (let i = 0; i < project.recordings.length; i++) for (let k = i + 1; k < project.recordings.length; k++) { const a = project.recordings[i], b = project.recordings[k]; if (a.characterId === b.characterId && recOverlap(a, b)) a.active = false }
     markDirty(); if (activeTab === 'rec') renderRecTab()
@@ -1204,20 +1223,17 @@ function syncTakesMonitor() {
   const muted = project.recMuted || []
   for (const r of (project.recordings || [])) {
     const a = takeAudios.get(r.file); if (!a) continue
-    const playable = r.active && r.dur && !muted.includes(r.characterId) && now >= r.startTime && now < r.startTime + r.dur
+    const eff = recEffDur(r)
+    const playable = r.active && eff > 0 && !muted.includes(r.characterId) && now >= r.startTime && now < r.startTime + eff
     if (playable) {
-      const target = now - r.startTime
+      const target = now - r.startTime + (r.trimStart || 0) // fenêtre rognée → position dans le fichier
       if (a.paused) { a.currentTime = target; a.play().catch(() => {}) }
       else if (Math.abs(a.currentTime - target) > 0.3) a.currentTime = target
     } else if (!a.paused) a.pause()
   }
 }
 
-// ---------- onglet Enregistrement : liste des répliques + prises ----------
-const SVG_PLAY = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.5l8.5 5.5-8.5 5.5V2.5z"/></svg>'
-const SVG_TAKE_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/></svg>'
-const SVG_REC = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg>'
-
+// ---------- onglet Enregistrement ----------
 function toggleRecord() {
   if (recorder.active) { stopRecording(); return }
   startRecording()
@@ -1250,7 +1266,11 @@ function resizeRecBand() {
 new ResizeObserver(() => { if (activeTab === 'rec') resizeRecBand() }).observe($('recBandWrap'))
 function drawRecBand() {
   if (!rbw) { resizeRecBand(); if (!rbw) return }
-  renderBand(recBandCtx, effectiveTime(), rbw, rbh, rbw / recWinSec, { ruler: false, wave: false, handles: false, theme: bandPal() })
+  // piste unique : toutes les répliques du perso sélectionné écrasées au bon timing,
+  // indépendamment de leurs pistes 1-4 de l'éditeur
+  const chId = recTargetId()
+  const squashed = project.lines.filter((l) => l.characterId === chId).map((l) => ({ ...l, track: 0 }))
+  renderBand(recBandCtx, effectiveTime(), rbw, rbh, rbw / recWinSec, { ruler: false, wave: false, handles: false, theme: bandPal(), lines: squashed, trackList: [0] })
 }
 // glisser = déplacer la timeline, comme la bande rythmo (attrape-et-déplace, relatif)
 let recBandDrag = null
@@ -1310,89 +1330,170 @@ function resizeRecClips() {
 new ResizeObserver(() => { if (activeTab === 'rec') resizeRecClips() }).observe(recClipsCanvas)
 const recClipsPps = () => rcw / recWinSec
 const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * recClipsPps()
+// hauteur d'une piste d'enregistrement + ajustement du conteneur au nb de pistes
+const REC_LANE_H = 44
+function syncRecClipsHeight() {
+  const lanes = recLaneCount(recTargetId())
+  const want = lanes * REC_LANE_H
+  const wrap = $('recClipsWrap')
+  if (wrap && wrap._lanes !== lanes) { wrap._lanes = lanes; wrap.style.flexBasis = want + 'px' }
+}
+// mini haut-parleur dessiné sur un segment multi-takes (retenue = ondes, sinon barré)
+function drawClipSpk(c, x, y, s, col, on) {
+  c.save(); c.translate(x, y); c.scale(s / 16, s / 16)
+  c.fillStyle = col
+  c.beginPath(); c.moveTo(2, 6); c.lineTo(5, 6); c.lineTo(9, 2.5); c.lineTo(9, 13.5); c.lineTo(5, 10); c.lineTo(2, 10); c.closePath(); c.fill()
+  c.strokeStyle = col; c.lineWidth = 1.6; c.beginPath()
+  if (on) { c.arc(9.5, 8, 4.2, -1.05, 1.05) } else { c.moveTo(11.5, 6); c.lineTo(15, 9.8); c.moveTo(15, 6); c.lineTo(11.5, 9.8) }
+  c.stroke(); c.restore()
+}
 function drawRecClips() {
   if (!rcw) { resizeRecClips(); if (!rcw) return }
+  syncRecClipsHeight()
   const pal = bandPal()
   recClipsCtx.fillStyle = pal.rulerBg || pal.bg; recClipsCtx.fillRect(0, 0, rcw, rch)
-  const muted = project.recMuted || []
+  const chId = recTargetId()
+  const clips = (project.recordings || []).filter((r) => r.characterId === chId)
+  const lanes = recLaneCount(chId)
+  const laneH = rch / lanes
+  const isMuted = isRecMuted(chId)
   const pps = recClipsPps()
-  const y = 3, h = rch - 6
-  for (const r of (project.recordings || [])) {
-    const x0 = recClipXAt(r.startTime), x1 = recClipXAt(r.startTime + (r.dur || 0))
+  // fonds de pistes alternés + séparateurs
+  for (let ln = 0; ln < lanes; ln++) {
+    if (ln % 2 === 1) { recClipsCtx.fillStyle = pal.lane; recClipsCtx.fillRect(0, ln * laneH, rcw, laneH) }
+    recClipsCtx.strokeStyle = pal.grid; recClipsCtx.beginPath(); recClipsCtx.moveTo(0, ln * laneH + 0.5); recClipsCtx.lineTo(rcw, ln * laneH + 0.5); recClipsCtx.stroke()
+  }
+  const col = getChar(chId)?.color || '#888'
+  for (const r of clips) {
+    const eff = recEffDur(r)
+    const x0 = recClipXAt(r.startTime), x1 = recClipXAt(r.startTime + eff)
     if (x1 < -20 || x0 > rcw + 20) continue
-    const col = getChar(r.characterId)?.color || '#888'
-    const active = r.active && !muted.includes(r.characterId)
+    const laneY = (r.lane || 0) * laneH
+    const y = laneY + 3, h = laneH - 6
+    const active = r.active && !isMuted
     const selected = r.id === selectedClipId
     const xa = Math.max(-2, x0), wpx = Math.max(3, Math.min(rcw + 2, x1) - xa)
-    // fond du bloc
     recClipsCtx.globalAlpha = active ? 0.9 : 0.45
     recClipsCtx.fillStyle = col + '2e'
     recClipsCtx.beginPath(); recClipsCtx.roundRect(xa, y, wpx, h, 4); recClipsCtx.fill()
-    // waveform (décodée à la demande)
+    // waveform du fichier, décalée du rognage de début
     const wv = clipWaves.get(r.file)
     if (wv && wv.peaks) {
       const mid = y + h / 2, amp = h / 2 - 3
       const va = Math.max(0, x0), vb = Math.min(rcw, x1)
       recClipsCtx.fillStyle = col; recClipsCtx.globalAlpha = active ? 0.85 : 0.4
       recClipsCtx.beginPath(); recClipsCtx.moveTo(va, mid)
-      for (let x = va; x <= vb; x++) { const tt = (x - x0) / pps; let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid - v * amp) }
-      for (let x = vb; x >= va; x--) { const tt = (x - x0) / pps; let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid + v * amp) }
+      for (let x = va; x <= vb; x++) { const tt = (x - x0) / pps + (r.trimStart || 0); let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid - v * amp) }
+      for (let x = vb; x >= va; x--) { const tt = (x - x0) / pps + (r.trimStart || 0); let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid + v * amp) }
       recClipsCtx.closePath(); recClipsCtx.fill()
     } else if (wv === undefined) { ensureClipWave(r.file) }
-    // bordure (sélection = accent épais)
+    // bordure (sélection = accent épais) + poignées de crop quand sélectionné
     recClipsCtx.globalAlpha = 1
     recClipsCtx.strokeStyle = selected ? pal.handleAccent : col + 'aa'
     recClipsCtx.lineWidth = selected ? 2 : 1
     recClipsCtx.beginPath(); recClipsCtx.roundRect(xa + 0.5, y + 0.5, wpx - 1, h - 1, 4); recClipsCtx.stroke()
     recClipsCtx.lineWidth = 1
+    if (selected) {
+      recClipsCtx.fillStyle = pal.handleAccent
+      recClipsCtx.fillRect(x0 - 2, y + 2, 4, h - 4)
+      recClipsCtx.fillRect(x1 - 2, y + 2, 4, h - 4)
+    }
+    // segment multi-takes : bouton haut-parleur (take retenue) sur l'objet
+    if (recOverlapGroup(r).length) {
+      recClipsCtx.globalAlpha = 0.92
+      recClipsCtx.fillStyle = pal.bg
+      recClipsCtx.beginPath(); recClipsCtx.roundRect(Math.max(2, x0) + 3, y + 3, 20, 20, 4); recClipsCtx.fill()
+      recClipsCtx.globalAlpha = 1
+      drawClipSpk(recClipsCtx, Math.max(2, x0) + 5, y + 5, 16, r.active ? pal.handleAccent : pal.tickText, r.active)
+    }
   }
   const px = rcw * READ_RATIO
   recClipsCtx.strokeStyle = pal.playhead; recClipsCtx.lineWidth = 1.5
   recClipsCtx.beginPath(); recClipsCtx.moveTo(px + 0.5, 0); recClipsCtx.lineTo(px + 0.5, rch); recClipsCtx.stroke(); recClipsCtx.lineWidth = 1
 }
-// prise sous le curseur (coords canvas)
-function recClipAt(px) {
-  const t = effectiveTime() + (px - rcw * READ_RATIO) / recClipsPps()
-  for (const r of (project.recordings || [])) if (t >= r.startTime && t < r.startTime + (r.dur || 0)) return r
+// hit-test : segment + zone (haut-parleur, poignée gauche/droite, corps)
+function recClipHit(px, py) {
+  const chId = recTargetId()
+  const lanes = recLaneCount(chId)
+  const laneH = rch / lanes
+  const ln = clamp(Math.floor(py / laneH), 0, lanes - 1)
+  for (const r of (project.recordings || [])) {
+    if (r.characterId !== chId || (r.lane || 0) !== ln) continue
+    const x0 = recClipXAt(r.startTime), x1 = recClipXAt(r.startTime + recEffDur(r))
+    if (px < x0 - 5 || px > x1 + 5) continue
+    const y = ln * laneH + 3
+    if (recOverlapGroup(r).length && px >= Math.max(2, x0) + 3 && px <= Math.max(2, x0) + 23 && py >= y + 3 && py <= y + 23) return { clip: r, zone: 'spk' }
+    if (Math.abs(px - x0) <= 5) return { clip: r, zone: 'l' }
+    if (Math.abs(px - x1) <= 5) return { clip: r, zone: 'r' }
+    return { clip: r, zone: 'move' }
+  }
   return null
 }
-// sélectionne une prise (et la rend active dans sa piste : c'est la prise écoutée)
+// dans chaque groupe de chevauchement : exactement une take retenue (active)
+function recNormalizeActive(charId) {
+  const clips = (project.recordings || []).filter((r) => r.characterId === charId)
+  for (let i = clips.length - 1; i >= 0; i--) {
+    const c = clips[i]; if (!c.active) continue
+    for (let k = 0; k < i; k++) { const o = clips[k]; if (o.active && recOverlap(o, c)) o.active = false }
+  }
+  for (const c of clips) {
+    const grp = clips.filter((o) => o !== c && recOverlap(o, c))
+    if (!grp.length) c.active = true
+    else if (!c.active && !grp.some((o) => o.active)) c.active = true
+  }
+}
+// sélectionne un segment (sélection visuelle seule — la take retenue se règle au haut-parleur)
 function selectClip(id) {
   selectedClipId = id
   const clip = (project.recordings || []).find((r) => r.id === id)
-  if (clip) {
-    for (const r of project.recordings) if (r.characterId === clip.characterId && r.id !== id && recOverlap(r, clip)) r.active = false
-    clip.active = true
-    selectedCharId = clip.characterId // sélection unique : sélectionne aussi le perso dans le drawer
-    markDirty()
-  }
-  renderChars() // met à jour drawer + badge + liste rec
+  if (clip && clip.characterId !== selectedCharId) { selectedCharId = clip.characterId; renderChars() }
+}
+// clic haut-parleur : ce segment devient la take retenue de son groupe
+function retainClip(clip) {
+  pushUndo()
+  for (const r of recOverlapGroup(clip)) r.active = false
+  clip.active = true
+  markDirty()
 }
 let clipDrag = null
 recClipsCanvas.addEventListener('pointerdown', (e) => {
-  const r = recClipsCanvas.getBoundingClientRect()
-  const clip = recClipAt(e.clientX - r.left)
-  if (!clip) { selectedClipId = null; renderRecCharList(); return }
+  const rct = recClipsCanvas.getBoundingClientRect()
+  const hit = recClipHit(e.clientX - rct.left, e.clientY - rct.top)
+  if (!hit) { selectedClipId = null; return }
+  if (hit.zone === 'spk') { selectClip(hit.clip.id); retainClip(hit.clip); return }
   recClipsCanvas.setPointerCapture(e.pointerId)
-  selectClip(clip.id)
-  clipDrag = { clip, x0: e.clientX, startOff: clip.startTime, moved: false, pushed: false }
+  selectClip(hit.clip.id)
+  clipDrag = { clip: hit.clip, zone: hit.zone, x0: e.clientX, start0: hit.clip.startTime, trimS0: hit.clip.trimStart || 0, trimE0: hit.clip.trimEnd || 0, moved: false, pushed: false }
 })
 recClipsCanvas.addEventListener('pointermove', (e) => {
-  if (!clipDrag) { const r = recClipsCanvas.getBoundingClientRect(); recClipsCanvas.style.cursor = recClipAt(e.clientX - r.left) ? 'grab' : 'default'; return }
-  const dx = e.clientX - clipDrag.x0
-  if (Math.abs(dx) > 3) clipDrag.moved = true
-  if (clipDrag.moved) {
-    if (!clipDrag.pushed) { pushUndo(); clipDrag.pushed = true }
-    clipDrag.clip.startTime = Math.max(0, clipDrag.startOff + dx / recClipsPps())
-    recClipsCanvas.style.cursor = 'grabbing'
-    markDirty()
+  const rct = recClipsCanvas.getBoundingClientRect()
+  if (!clipDrag) {
+    const hit = recClipHit(e.clientX - rct.left, e.clientY - rct.top)
+    recClipsCanvas.style.cursor = !hit ? 'default' : hit.zone === 'move' ? 'grab' : hit.zone === 'spk' ? 'pointer' : 'col-resize'
+    return
   }
+  const dt = (e.clientX - clipDrag.x0) / recClipsPps()
+  if (Math.abs(e.clientX - clipDrag.x0) > 3) clipDrag.moved = true
+  if (!clipDrag.moved) return
+  if (!clipDrag.pushed) { pushUndo(); clipDrag.pushed = true }
+  const c = clipDrag.clip
+  if (clipDrag.zone === 'move') {
+    c.startTime = Math.max(0, clipDrag.start0 + dt)
+  } else if (clipDrag.zone === 'l') {
+    // poignée gauche : rogne le début (l'audio restant reste calé sur la timeline)
+    const ts = clamp(clipDrag.trimS0 + dt, 0, (c.dur || 0) - (c.trimEnd || 0) - 0.1)
+    c.startTime = Math.max(0, clipDrag.start0 + (ts - clipDrag.trimS0))
+    c.trimStart = ts
+  } else if (clipDrag.zone === 'r') {
+    c.trimEnd = clamp(clipDrag.trimE0 - dt, 0, (c.dur || 0) - (c.trimStart || 0) - 0.1)
+  }
+  markDirty()
 })
 function clipDragEnd() {
   if (clipDrag && clipDrag.moved) {
-    const clip = clipDrag.clip // recalcule les chevauchements après déplacement
-    for (const r of project.recordings) if (r.characterId === clip.characterId && r.id !== clip.id && recOverlap(r, clip)) r.active = false
-    clip.active = true
+    const clip = clipDrag.clip
+    clip.lane = recAssignLane(clip) // remonte si plus de chevauchement, descend sinon
+    recNormalizeActive(clip.characterId)
     renderRecCharList()
   }
   clipDrag = null; recClipsCanvas.style.cursor = 'default'
@@ -1431,14 +1532,6 @@ function updateRecCharBadge() {
   const grp = $('recSegGroup'); if (grp) grp.style.borderColor = c ? c.color : ''
 }
 
-const clipLabel = (cl, i) => `${t('recTakeN', i + 1)} · ${formatTc(cl.startTime, project.fps).slice(3)} · ${(cl.dur || 0).toFixed(1)}s`
-async function listenClip(id) {
-  const cl = (project.recordings || []).find((r) => r.id === id); if (!cl) return
-  selectClip(id) // devient la prise active → jouée par le monitoring
-  video.pause(); scrubTo(cl.startTime)
-  await sleep0(); video.play().catch(() => {})
-}
-const sleep0 = () => new Promise((res) => setTimeout(res, 30))
 async function deleteClip(id) {
   const idx = (project.recordings || []).findIndex((r) => r.id === id); if (idx < 0) return
   const cl = project.recordings[idx]
@@ -1451,43 +1544,27 @@ async function deleteClip(id) {
   markDirty(); renderRecTab()
 }
 
-// liste des personnages à gauche : cible d'enregistrement, mute, choix/écoute/suppression de prise
+// encart de gauche : uniquement le personnage sélectionné (la sélection se fait via le
+// drawer Personnages ou les touches 1-9) + mute de sa piste d'enregistrement
 function renderRecCharList() {
   const list = $('recCharList'); if (!list) return
   list.innerHTML = ''
-  const target = recTargetId()
-  for (const c of project.characters) {
-    const clips = (project.recordings || []).filter((r) => r.characterId === c.id).sort((a, b) => a.startTime - b.startTime)
-    const row = document.createElement('div')
-    row.className = 'rec-ch' + (c.id === target ? ' target' : '') + (isRecMuted(c.id) ? ' muted' : '')
-    row.addEventListener('click', () => { selectedCharId = c.id; renderChars() }) // sélection unique (drawer + rec)
-    // ligne 1 : pastille + nom + mute
-    const head = document.createElement('div'); head.className = 'rec-ch-head'
-    const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
-    const nm = document.createElement('span'); nm.className = 'rec-ch-name'; nm.textContent = c.name
-    const mute = document.createElement('button'); mute.className = 'trk-spk' + (isRecMuted(c.id) ? '' : ' on'); mute.innerHTML = isRecMuted(c.id) ? SPK_OFF_SVG : SPK_ON_SVG
-    mute.title = t('recMuteTrack'); mute.addEventListener('click', (e) => { e.stopPropagation(); toggleRecMute(c.id) })
-    head.append(dot, nm, mute)
-    row.appendChild(head)
-    // ligne 2 : dropdown de prise + écouter + supprimer (si prises)
-    if (clips.length) {
-      const ctr = document.createElement('div'); ctr.className = 'rec-ch-take'
-      const selc = clips.find((k) => k.id === selectedClipId) ? selectedClipId : clips[0].id
-      const dd = document.createElement('select'); dd.className = 'rec-takesel'
-      clips.forEach((cl, i) => { const o = document.createElement('option'); o.value = cl.id; o.textContent = clipLabel(cl, i) + (cl.active ? ' ●' : ''); dd.appendChild(o) })
-      dd.value = selc
-      dd.addEventListener('click', (e) => e.stopPropagation())
-      dd.addEventListener('change', () => selectClip(dd.value))
-      const del = document.createElement('button'); del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('recDel')
-      del.addEventListener('click', (e) => { e.stopPropagation(); deleteClip(dd.value) })
-      ctr.append(dd, del)
-      row.appendChild(ctr)
-    } else {
-      const meta = document.createElement('div'); meta.className = 'rec-ch-meta'; meta.textContent = t('recNoTakes')
-      row.appendChild(meta)
-    }
-    list.appendChild(row)
-  }
+  const c = getChar(recTargetId())
+  if (!c) return
+  const clips = (project.recordings || []).filter((r) => r.characterId === c.id)
+  const row = document.createElement('div')
+  row.className = 'rec-ch target' + (isRecMuted(c.id) ? ' muted' : '')
+  const head = document.createElement('div'); head.className = 'rec-ch-head'
+  const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
+  const nm = document.createElement('span'); nm.className = 'rec-ch-name'; nm.textContent = c.name
+  const mute = document.createElement('button'); mute.className = 'trk-spk' + (isRecMuted(c.id) ? '' : ' on'); mute.innerHTML = isRecMuted(c.id) ? SPK_OFF_SVG : SPK_ON_SVG
+  mute.title = t('recMuteTrack'); mute.addEventListener('click', (e) => { e.stopPropagation(); toggleRecMute(c.id) })
+  head.append(dot, nm, mute)
+  row.appendChild(head)
+  const meta = document.createElement('div'); meta.className = 'rec-ch-meta'
+  meta.textContent = clips.length ? t('recTakes', clips.length) : t('recNoTakes')
+  row.appendChild(meta)
+  list.appendChild(row)
 }
 
 $('recBigBtn').addEventListener('click', toggleRecord)
@@ -3823,8 +3900,9 @@ function renderBand(c, now, W, H, pps, opts) {
     }
   }
 
-  // répliques
-  for (const line of project.lines) {
+  // répliques (opts.lines : liste alternative, ex. onglet Enregistrement — répliques
+  // du perso sélectionné écrasées sur une piste unique)
+  for (const line of (opts.lines || project.lines)) {
     const row = rowOf(line.track)
     if (row < 0) continue // piste exclue de la sélection d'export
     const s = lineStart(line)
@@ -5108,6 +5186,11 @@ document.addEventListener('keydown', (e) => {
   if (activeTab === 'tracks') {
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTrackId) { e.preventDefault(); deleteTrack(selectedTrackId) }
     // on laisse passer Espace / flèches / Page↑↓ / Ctrl+Z·Y (gérés plus bas, indépendants de l'onglet)
+  }
+
+  // onglet Enregistrement : Suppr efface le segment sélectionné
+  if (activeTab === 'rec' && (e.key === 'Delete' || e.key === 'Backspace') && selectedClipId) {
+    e.preventDefault(); deleteClip(selectedClipId); return
   }
 
   // copier / couper / coller des répliques sélectionnées (onglet Rythmo)
@@ -6476,8 +6559,9 @@ async function runExport(outPathOverride) {
   const recMutedSet = project.recMuted || []
   for (const r of (project.recordings || [])) {
     if (!r.active || recMutedSet.includes(r.characterId)) continue
-    if (r.startTime + (r.dur || 0) <= startT) continue // entièrement avant la fenêtre
-    takes.push({ name: r.file, offset: Math.max(0, r.startTime - startT) })
+    const eff = recEffDur(r)
+    if (!eff || r.startTime + eff <= startT) continue // entièrement avant la fenêtre
+    takes.push({ name: r.file, offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
   }
   const noBand = exp.bandPos === 'none'
   const r = await window.api.exportStart({

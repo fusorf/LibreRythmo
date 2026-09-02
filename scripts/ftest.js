@@ -226,7 +226,7 @@ const TESTS = [
     setTab('rec')
     const recViewShown = !document.getElementById('recView').classList.contains('hidden')
     const rows = document.querySelectorAll('#recCharList .rec-ch')
-    const okUI = recViewShown && rows.length === 2
+    const okUI = recViewShown && rows.length === 1 // encart = uniquement le perso sélectionné
     setTab('rythmo'); project.videoPath = null
     loadProjectData(JSON.parse(JSON.stringify(project)), null)
     return okUI && project.recordings.length === 1 && project.recordings[0].characterId === 'a'
@@ -243,18 +243,26 @@ const TESTS = [
     toggleRecMute('a'); const muted = isRecMuted('a'); toggleRecMute('a'); const unmuted = !isRecMuted('a')
     return overlapOk && muted && unmuted
   })()`],
-  ['Enregistrement : selectClip active la prise et désactive le chevauchement', `(() => {
-    if (typeof selectClip !== 'function') return true
+  ['Enregistrement : lanes (chevauchement→take 2) + retainClip + crop', `(() => {
+    if (typeof recAssignLane !== 'function' || typeof retainClip !== 'function') return true
     loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
       characters: [{ id: 'a', name: 'A', color: '#fff' }],
-      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 3, active: true },
-                   { id: 'r2', characterId: 'a', file: 'f2', startTime: 1, dur: 3, active: false }], recMuted: [] }, null)
-    project.videoPath = 'X:/fake.mp4'
-    setTab('rec'); selectClip('r1')
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 3, trimStart: 0, trimEnd: 0, lane: 0, active: true }], recMuted: [] }, null)
     const g = (id) => project.recordings.find((r) => r.id === id)
-    const ok = selectedClipId === 'r1' && g('r1').active === true && g('r2').active === false
-    setTab('rythmo'); project.videoPath = null
-    return ok
+    // chevauchant → lane 1 ; disjoint → lane 0 (suite de la take 1)
+    const c2 = { id: 'r2', characterId: 'a', file: 'f2', startTime: 1, dur: 3, trimStart: 0, trimEnd: 0, lane: 0, active: true }
+    c2.lane = recAssignLane(c2); project.recordings.push(c2)
+    const c3 = { id: 'r3', characterId: 'a', file: 'f3', startTime: 10, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }
+    c3.lane = recAssignLane(c3); project.recordings.push(c3)
+    const lanesOk = g('r2').lane === 1 && g('r3').lane === 0 && recLaneCount('a') === 2
+    // retainClip : r1 redevient la take retenue de son groupe
+    g('r1').active = false; g('r2').active = true
+    retainClip(g('r1'))
+    const retainOk = g('r1').active === true && g('r2').active === false && g('r3').active === true
+    // crop : durée effective réduite → plus de chevauchement
+    g('r2').trimStart = 2.5
+    const cropOk = Math.abs(recEffDur(g('r2')) - 0.5) < 1e-9
+    return lanesOk && retainOk && cropOk
   })()`],
   ['Enregistrement : bande de clips dessinée sans erreur', `(() => {
     if (typeof drawRecClips !== 'function') return true

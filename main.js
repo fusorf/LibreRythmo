@@ -1638,7 +1638,11 @@ ipcMain.handle('export-start', async (e, opts) => {
       labels.push(`[am${idx}]`); idx++
     }
     for (const tk of takes) {
-      inputs.push('-itsoffset', (Number(tk.offset) || 0).toFixed(3), '-i', tk.path)
+      // segment rogné (poignées de crop) : -ss/-t en options d'entrée
+      const trims = []
+      if (Number(tk.trimStart) > 0) trims.push('-ss', Number(tk.trimStart).toFixed(3))
+      if (Number(tk.trimDur) > 0) trims.push('-t', Number(tk.trimDur).toFixed(3))
+      inputs.push(...trims, '-itsoffset', (Number(tk.offset) || 0).toFixed(3), '-i', tk.path)
       audioFilters.push(`[${idx}:a]aresample=async=1[am${idx}]`)
       labels.push(`[am${idx}]`); idx++
     }

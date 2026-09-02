@@ -895,7 +895,7 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-charlbl { align-items: center; gap: 6px; }
 .rec-charlbl span { font-size: 12px; color: var(--dim); }
 /* liste des personnages (colonne gauche, pleine hauteur) */
-#recCharList { flex: 0 0 288px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border); }
+#recCharList { flex: 0 0 200px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border); }
 .rec-ch { padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .rec-ch:hover { background: var(--row-hover); }
 .rec-ch.target { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--toggle-text); }
@@ -904,11 +904,6 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-dot-c { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; }
 .rec-ch-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
 .rec-ch-head .trk-spk { flex: 0 0 auto; }
-.rec-ch-take { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
-.rec-ch-take .rec-takesel { flex: 1 1 auto; min-width: 0; font-size: 11px; }
-.rec-ch-take .icon-btn, .rec-ch-take .trk-del { flex: 0 0 auto; width: 26px; height: 26px; padding: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); background: none; border: 1px solid var(--border); border-radius: 5px; }
-.rec-ch-take .icon-btn:hover, .rec-ch-take .trk-del:hover { color: var(--text); }
-.rec-ch-take svg { width: 14px; height: 14px; display: block; }
 .rec-ch-meta { margin-top: 4px; font-size: 11px; color: var(--dim); }
 /* bande rythmo en rendu final (dubbing) */
 #recBandWrap { flex: 1 1 auto; min-height: 0; position: relative; background: var(--band-bg); }
