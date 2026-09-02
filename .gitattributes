@@ -1,0 +1,2 @@
+# fins de ligne : LF partout (le dépôt est historiquement en LF ; évite le churn CRLF sous Windows)
+* text=auto eol=lf

@@ -368,6 +368,7 @@ function setClean() {
 }
 
 function updateTitle() {
+  if (DETACHED) { document.title = 'LibreRythmo - Monitoring'; return } // fenêtre détachée : titre fixe
   const name = projectPath ? projectPath.replace(/^.*[\\/]/, '') : t('untitled')
   const auto = autosaveOn ? `  [${t('autosaveTag')}]` : ''
   document.title = `LibreRythmo - ${name}${dirty ? ' •' : ''}${auto}`
@@ -638,6 +639,7 @@ function applyLang() {
   $('lblExpTracks').textContent = t('lblExpTracks')
   $('lblExpLoops').textContent = t('lblExpLoops')
   $('lblExpAudio').textContent = t('lblExpAudio')
+  $('lblExpRecs').textContent = t('lblExpRecs')
   $('lblBandPos').textContent = t('lblBandPos')
   $('optBandBottom').textContent = t('optBandBottom')
   $('optBandTop').textContent = t('optBandTop')
@@ -649,9 +651,7 @@ function applyLang() {
   $('lblDest').textContent = t('lblDest')
   $('tkTitle').textContent = t('tkTitle')
   $('tkGrpSrc').textContent = t('tkGrpSrc')
-  $('tkLblSource').textContent = t('tkLblSource')
-  $('tkOptRaw').textContent = t('tkOptRaw')
-  $('tkOptFx').textContent = t('tkOptFx')
+  $('tkLblChars').textContent = t('tkLblChars')
   $('tkLblDetached').textContent = t('tkLblDetached')
   $('tkLblDest').textContent = t('lblDest')
   $('tkPath').placeholder = t('tkPathPh')
@@ -1160,11 +1160,15 @@ function inputLatencySec() {
   try { if (recorder.ac && isFinite(recorder.ac.baseLatency)) return recorder.ac.baseLatency } catch {}
   return 0
 }
+// latence matérielle résiduelle NON déclarée par le pipeline (tampons du périphérique,
+// démarrage de l'encodeur, résampleur…) : marge fixe constatée à l'usage, affinable via
+// le réglage « Compensation » des Paramètres
+const REC_HW_LATENCY_MS = 80
 // compensation totale (s) appliquée à la nouvelle prise : amorce mesurée (capture
-// démarrée avant la lecture) + latence d'entrée + réglage manuel des Paramètres
+// démarrée avant la lecture) + latence d'entrée + marge matérielle + réglage manuel
 function recCompSec() {
   const gap = recorder.playAt && recorder.capAt ? Math.max(0, recorder.playAt - recorder.capAt) / 1000 : 0
-  return gap + inputLatencySec() + (Number(audioCfg.recOffsetMs) || 0) / 1000
+  return gap + inputLatencySec() + (REC_HW_LATENCY_MS + (Number(audioCfg.recOffsetMs) || 0)) / 1000
 }
 
 // --- capture DirectShow / ASIO (ffmpeg, process principal) ---
@@ -1248,8 +1252,9 @@ async function addRecording(charId, fileName, startTime, durHint, comp) {
   markDirty()
   if (activeTab === 'rec') renderRecTab()
   preloadTakeAudios()
-  // chaîne voix active → la nouvelle prise est traitée dans la foulée
-  if (project.voiceFxOn) fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); preloadTakeAudios() } })
+  // sidecar FX généré systématiquement dans la foulée (les exports « FX » l'ont toujours
+  // sous la main) ; la lecture n'en tient compte que si la chaîne voix est active
+  fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); if (project.voiceFxOn) preloadTakeAudios() } })
   toast(t('recSaved'))
 }
 
@@ -1287,7 +1292,6 @@ function meterLoop() {
 let recVuPeakPct = 0, recVuPeakAt = 0
 function updateRecMeter(level) {
   const pct = Math.min(100, level * 140)
-  const bar = $('recMeterBar'); if (bar) bar.style.width = Math.round(pct) + '%'
   // vumètre vertical : le cache descend pour révéler l'échelle de couleur fixe
   const cover = $('recVuCover'); if (cover) cover.style.height = (100 - pct) + '%'
   // crête (peak hold ~1,2 s)
@@ -1297,7 +1301,6 @@ function updateRecMeter(level) {
   if (pk) { pk.style.bottom = recVuPeakPct + '%'; pk.style.opacity = recVuPeakPct > 1.5 ? 1 : 0 }
 }
 function updateRecUI() {
-  const m = $('recMeter'); if (m) m.hidden = !recorder.active
   // rappel du périphérique d'entrée dans le drawer du vumètre
   const dev = $('recVuDev')
   if (dev) { const nm = audioCfg.deviceLabel || t('capDefault'); dev.textContent = nm; dev.title = nm }
@@ -1681,14 +1684,15 @@ async function deleteClip(id) {
 // ============================================================ chaîne voix (auto-mix)
 // EQ + compression + niveau calculés automatiquement d'après l'ANALYSE de chaque prise
 // (approche type Auphonic AutoEQ/Leveler) : énergie par bande → filtres correctifs,
-// facteur de crête → compression, puis normalisation vers une cible ≈ -16 dBFS RMS
+// dé-esseur et anti-plosive dynamiques (tameBand), facteur de crête → compression,
+// puis normalisation vers une cible ≈ -22 dBFS RMS
 // (podcast/US, approx. LUFS) équilibrée avec le niveau moyen de la piste vidéo.
 // Le résultat est PRÉCALCULÉ en WAV sidecar (fx_*.wav) : lecture et export l'utilisent.
 let fxBusy = false
 const dbOf = (x) => 10 * Math.log10(x + 1e-12)
 
-// biquad RBJ minimal (analyse par bande, O(n), hors WebAudio)
-function biquadRms(data, sr, type, fc, Q) {
+// biquad RBJ minimal (filtrage par bande, O(n), hors WebAudio)
+function biquadFilt(data, sr, type, fc, Q) {
   const w0 = 2 * Math.PI * fc / sr, cw = Math.cos(w0), sw = Math.sin(w0), al = sw / (2 * Q)
   let b0, b1, b2
   if (type === 'bandpass') { b0 = al; b1 = 0; b2 = -al }
@@ -1697,14 +1701,55 @@ function biquadRms(data, sr, type, fc, Q) {
   const a0 = 1 + al, a1 = -2 * cw, a2 = 1 - al
   b0 /= a0; b1 /= a0; b2 /= a0
   const na1 = a1 / a0, na2 = a2 / a0
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, sq = 0
+  const out = new Float32Array(data.length)
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0
   for (let i = 0; i < data.length; i++) {
     const x = data[i]
     const y = b0 * x + b1 * x1 + b2 * x2 - na1 * y1 - na2 * y2
     x2 = x1; x1 = x; y2 = y1; y1 = y
-    sq += y * y
+    out[i] = y
   }
-  return dbOf(sq / Math.max(1, data.length))
+  return out
+}
+function biquadRms(data, sr, type, fc, Q) {
+  const y = biquadFilt(data, sr, type, fc, Q)
+  let sq = 0
+  for (let i = 0; i < y.length; i++) sq += y[i] * y[i]
+  return dbOf(sq / Math.max(1, y.length))
+}
+
+// réduction dynamique d'une bande (dé-esseur sur les aigus, anti-plosive sur les graves) :
+// l'enveloppe de la bande est suivie en dB ; quand elle dépasse de `overDb` le niveau
+// voisé moyen de cette bande, l'excès est soustrait du signal (y = x − (1−g)·bande).
+// La bande n'est atténuée que pendant les pointes — pas de déphasage ni de perte de
+// timbre le reste du temps, contrairement à un EQ statique.
+function tameBand(buf, type, fc, Q, overDb, maxCutDb, attMs, relMs) {
+  const sr = buf.sampleRate
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const x = buf.getChannelData(c)
+    const band = biquadFilt(x, sr, type, fc, Q)
+    // niveau de référence : RMS fenêtré de la bande, fenêtres voisées uniquement
+    const win = Math.max(1, Math.round(sr * 0.05))
+    const w = []
+    for (let i = 0; i + win <= band.length; i += win) {
+      let sq = 0
+      for (let k = i; k < i + win; k++) sq += band[k] * band[k]
+      w.push(dbOf(sq / win))
+    }
+    const mx = w.length ? Math.max(...w) : -90
+    const voiced = w.filter((v) => v > mx - 30)
+    const thr = (voiced.length ? voiced.reduce((a, b) => a + b, 0) / voiced.length : mx) + overDb
+    const ga = Math.exp(-1000 / (sr * attMs)), gr = Math.exp(-1000 / (sr * relMs))
+    let env = 0
+    for (let i = 0; i < x.length; i++) {
+      const a = Math.abs(band[i])
+      env = a > env ? ga * env + (1 - ga) * a : gr * env + (1 - gr) * a
+      const eDb = 20 * Math.log10(env + 1e-12)
+      if (eDb <= thr) continue
+      const cut = Math.min(maxCutDb, (eDb - thr) * 0.8) // pente ≈ compression 4:1
+      x[i] -= (1 - Math.pow(10, -cut / 20)) * band[i]
+    }
+  }
 }
 
 // analyse d'une prise : niveau moyen (fenêtres voisées), crête, énergie par bande →
@@ -1737,27 +1782,32 @@ function analyzeVoice(buf, light) {
     hpFc: lowRel > -6 ? 110 : 85,                       // coupe-bas plus haut si ça gronde
     eqMud: clamp(-(mudRel + 6) * 0.9, -6, 0),           // cut boue si excès
     eqPres: clamp((-10 - presRel) * 0.7, 0, 4),         // boost présence si voix sourde
-    eqSib: clamp(-(sibRel + 14) * 1.0, -8, 0),          // dé-esseur statique si sibilance
+    eqSib: clamp(-(sibRel + 14) * 1.0, -5, 0),          // cut statique doux — le dé-esseur dynamique (tameBand) fait le reste
     ratio: crest >= 18 ? 4 : crest >= 12 ? 3 : 2.2,     // compression selon la dynamique
     thresh: clamp(rmsDb + 4, -45, -8),
   }
 }
 
-// cible de niveau : équilibrée avec la piste audio de la vidéo, sinon ≈ -16 (podcast/US)
-const fxTargetDb = () => (videoRmsDb != null && isFinite(videoRmsDb)) ? clamp(videoRmsDb + 4, -22, -13) : -16
+// cible de niveau : équilibrée avec la piste audio de la vidéo, sinon ≈ -22 dBFS RMS
+// (−6 dB sous la référence podcast : la voix traitée sortait trop fort)
+const fxTargetDb = () => (videoRmsDb != null && isFinite(videoRmsDb)) ? clamp(videoRmsDb - 2, -28, -19) : -22
 
-// rendu offline de la chaîne : HP → EQ boue → présence → dé-ess → comp → (pass 2) gain vers la cible → limiteur
+// rendu offline de la chaîne : anti-plosive → HP → shelf graves → EQ boue → présence →
+// dé-ess statique → comp → dé-esseur dynamique → (pass 2) gain vers la cible → limiteur
 async function renderVoiceChain(buf, A, targetDb) {
+  tameBand(buf, 'lowpass', 120, 0.71, 6, 12, 3, 90) // anti-plosive : ravale les coups de graves (p/b) avant tout
   const off = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate)
   const src = off.createBufferSource(); src.buffer = buf
   const hp = off.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = A.hpFc; hp.Q.value = 0.71
+  const shelf = off.createBiquadFilter(); shelf.type = 'lowshelf'; shelf.frequency.value = 150; shelf.gain.value = -3 // allège les basses (proximité micro)
   const mud = off.createBiquadFilter(); mud.type = 'peaking'; mud.frequency.value = 300; mud.Q.value = 1; mud.gain.value = A.eqMud
   const pres = off.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3500; pres.Q.value = 0.9; pres.gain.value = A.eqPres
   const sib = off.createBiquadFilter(); sib.type = 'peaking'; sib.frequency.value = 7000; sib.Q.value = 2; sib.gain.value = A.eqSib
   const comp = off.createDynamicsCompressor(); comp.threshold.value = A.thresh; comp.ratio.value = A.ratio; comp.attack.value = 0.004; comp.release.value = 0.18; comp.knee.value = 8
-  src.connect(hp); hp.connect(mud); mud.connect(pres); pres.connect(sib); sib.connect(comp); comp.connect(off.destination)
+  src.connect(hp); hp.connect(shelf); shelf.connect(mud); mud.connect(pres); pres.connect(sib); sib.connect(comp); comp.connect(off.destination)
   src.start()
   const mid = await off.startRendering()
+  tameBand(mid, 'highpass', 5500, 0.71, 4, 10, 1, 60) // dé-esseur dynamique, après EQ/comp
   const A2 = analyzeVoice(mid, true)
   const g = Math.pow(10, clamp(targetDb - A2.rmsDb, -24, 24) / 20)
   const off2 = new OfflineAudioContext(mid.numberOfChannels, mid.length, mid.sampleRate)
@@ -1800,20 +1850,38 @@ async function fxProcessClip(r) {
   } catch { return false }
 }
 
-// ============================================================ export des prises (ZIP)
+// garantit les sidecars FX des prises données — générés à l'enregistrement désormais,
+// mais les prises plus anciennes peuvent en manquer : rattrapage avant un export « FX »
+async function ensureFxSidecars(clips) {
+  let n = 0
+  for (const r of clips) if (!r.fxFile && await fxProcessClip(r)) n++
+  if (n) markDirty()
+  return n
+}
+
+// ============================================================ export des enregistrements (ZIP)
 // Même UX que l'export vidéo : options, destination, barre de progression.
 // Mix complet par personnage (prises actives, timeline respectée) + option prises
-// détachées horodatées — le tout dans un ZIP, source brute ou traitée (FX).
+// détachées horodatées — le tout dans un ZIP, source brute ou traitée (coche FX).
 const tkModal = $('takesModal')
 let tkBusy = false
+let tkCharSel = new Set() // personnages cochés dans la modale
+const takesCharItems = () => project.characters
+  .filter((c) => (project.recordings || []).some((r) => r.characterId === c.id && recEffDur(r) > 0))
+  .map((c) => ({ value: c.id, label: c.name }))
 function openTakesExport() {
   if (!(project.recordings || []).length) { toast(t('tkNone')); return }
   tkModal.classList.remove('hidden')
   $('tkBar').style.width = '0%'
   $('tkStatus').textContent = ''
-  $('tkSource').value = project.voiceFxOn ? 'fx' : 'raw'
+  $('tkFx').checked = false // toujours sans FX par défaut, même si les pistes perso sont « avec FX »
+  const items = takesCharItems()
+  tkCharSel = new Set(items.map((it) => it.value))
+  const upd = () => { $('ddTkCharsBtn').textContent = summarizeChecks(tkCharSel, items, t('expAllRecs'), (n) => t('expSomeRecs', n)) }
+  fillChecklist($('ddTkCharsMenu'), items, tkCharSel, upd)
+  upd()
 }
-const tkSuggestedName = () => (projectPath ? baseName(projectPath).replace(/\.[^.]+$/, '') : baseName(project.videoPath || 'prises').replace(/\.[^.]+$/, '')) + '-prises.zip'
+const tkSuggestedName = () => (projectPath ? baseName(projectPath).replace(/\.[^.]+$/, '') : baseName(project.videoPath || 'enregistrements').replace(/\.[^.]+$/, '')) + '-enregistrements.zip'
 $('tkBrowse').addEventListener('click', async () => {
   const p = await window.api.takesExportPick(tkSuggestedName())
   if (p) $('tkPath').value = p
@@ -1829,17 +1897,23 @@ async function runTakesExport() {
   let outPath = $('tkPath').value.trim()
   if (!outPath) { const p = await window.api.takesExportPick(tkSuggestedName()); if (!p) return; outPath = p; $('tkPath').value = p }
   if (!/\.zip$/i.test(outPath)) { outPath += '.zip'; $('tkPath').value = outPath }
-  const useFx = $('tkSource').value === 'fx'
+  const useFx = $('tkFx').checked
+  tkBusy = true
+  $('tkGo').disabled = true
+  // export « FX » : rattrape d'abord les sidecars manquants des prises concernées
+  if (useFx) {
+    $('tkStatus').textContent = t('recFxBusy')
+    await ensureFxSidecars((project.recordings || []).filter((r) => tkCharSel.has(r.characterId) && recEffDur(r) > 0))
+  }
   const pick = (r) => (useFx && r.fxFile) ? r.fxFile : r.file
   const clipInfo = (r) => ({ name: pick(r), trimStart: r.trimStart || 0, effDur: recEffDur(r), offset: r.startTime, takeN: (r.lane || 0) + 1 })
   const chars = project.characters
+    .filter((c) => tkCharSel.has(c.id))
     .map((c) => {
       const all = (project.recordings || []).filter((r) => r.characterId === c.id && recEffDur(r) > 0)
       return { name: c.name, active: all.filter((r) => r.active).map(clipInfo), all: all.map(clipInfo) }
     })
     .filter((c) => c.all.length)
-  tkBusy = true
-  $('tkGo').disabled = true
   $('tkStatus').textContent = t('tkPhaseMix', '…')
   const r = await window.api.exportTakes({
     outPath, projectPath, includeDetached: $('tkDetached').checked, chars,
@@ -6767,14 +6841,14 @@ function buildExportContent() {
   // pistes rythmo — toutes cochées par défaut
   const trackItems = Array.from({ length: laneCount() }, (_, i) => ({ value: i, label: t('track', i + 1) }))
   exp.tracks = new Set(trackItems.map((it) => it.value))
-  const updTracks = () => { $('ddTracksBtn').textContent = summarizeChecks(exp.tracks, trackItems, t('expAllTracks'), t('expSomeTracks')) }
+  const updTracks = () => { $('ddTracksBtn').textContent = summarizeChecks(exp.tracks, trackItems, t('expAllTracks'), (n) => t('expSomeTracks', n)) }
   fillChecklist($('ddTracksMenu'), trackItems, exp.tracks, updTracks)
   updTracks()
 
   // boucles — toutes cochées = toute la vidéo
   const loopItems = sortedLoops().map((lp) => ({ value: lp.id, label: lp.name + (lp.type === 'out' ? ' (OUT)' : '') }))
   exp.loopSel = new Set(loopItems.map((it) => it.value))
-  const updLoops = () => { $('ddLoopsBtn').textContent = loopItems.length ? summarizeChecks(exp.loopSel, loopItems, t('expAllLoops'), t('expSomeLoops')) : t('expWholeVideo') }
+  const updLoops = () => { $('ddLoopsBtn').textContent = loopItems.length ? summarizeChecks(exp.loopSel, loopItems, t('expAllLoops'), (n) => t('expSomeLoops', n)) : t('expWholeVideo') }
   fillChecklist($('ddLoopsMenu'), loopItems, exp.loopSel, updLoops)
   $('ddLoopsBtn').disabled = !loopItems.length
   updLoops()
@@ -6793,6 +6867,18 @@ function buildExportContent() {
   exp.audioId = def ? def.id : ''
   sel.value = exp.audioId
   sel.disabled = !tracks.length
+
+  // enregistrements — personnages ayant au moins une prise active ; rangée masquée sinon.
+  // Cochés par défaut sauf pistes coupées (mute) ; coche FX toujours décochée à l'ouverture
+  const recItems = project.characters
+    .filter((c) => (project.recordings || []).some((r) => r.characterId === c.id && r.active && recEffDur(r) > 0))
+    .map((c) => ({ value: c.id, label: c.name }))
+  exp.recChars = new Set(recItems.filter((it) => !(project.recMuted || []).includes(it.value)).map((it) => it.value))
+  const updRecs = () => { $('ddRecsBtn').textContent = summarizeChecks(exp.recChars, recItems, t('expAllRecs'), (n) => t('expSomeRecs', n)) }
+  fillChecklist($('ddRecsMenu'), recItems, exp.recChars, updRecs)
+  updRecs()
+  $('expRecsRow').classList.toggle('hidden', !recItems.length)
+  $('expRecFx').checked = false
 }
 
 function openExportModal() {
@@ -6835,9 +6921,9 @@ $('expFpsMode').addEventListener('change', () => {
 $('expTheme').addEventListener('change', () => { exp.theme = $('expTheme').value === 'light' ? 'light' : 'dark' })
 $('expAudio').addEventListener('change', () => { exp.audioId = $('expAudio').value })
 
-// menus déroulants à cases (pistes / boucles) : ouverture exclusive + fermeture au clic dehors
+// menus déroulants à cases (pistes / boucles / enregistrements) : ouverture exclusive + fermeture au clic dehors
 function closeDropdowns(except) {
-  for (const m of [$('ddTracksMenu'), $('ddLoopsMenu')]) if (m !== except) m.classList.add('hidden')
+  for (const m of [$('ddTracksMenu'), $('ddLoopsMenu'), $('ddRecsMenu'), $('ddTkCharsMenu')]) if (m !== except) m.classList.add('hidden')
 }
 function wireDropdown(btnId, menuId) {
   $(btnId).addEventListener('click', (e) => {
@@ -6851,6 +6937,8 @@ function wireDropdown(btnId, menuId) {
 }
 wireDropdown('ddTracksBtn', 'ddTracksMenu')
 wireDropdown('ddLoopsBtn', 'ddLoopsMenu')
+wireDropdown('ddRecsBtn', 'ddRecsMenu')
+wireDropdown('ddTkCharsBtn', 'ddTkCharsMenu')
 document.addEventListener('click', () => closeDropdowns(null))
 
 $('expBrowse').addEventListener('click', async () => {
@@ -7014,14 +7102,21 @@ async function runExport(outPathOverride) {
     exported: true,
     isDefault: true,
   }] : []
-  // enregistrements actifs des pistes perso non coupées, calés sur la fenêtre d'export
+  // enregistrements : prises actives des personnages cochés dans « Contenu »,
+  // source brute ou FX selon la coche, calées sur la fenêtre d'export
   const takes = []
-  const recMutedSet = project.recMuted || []
+  const recSel = exp.recChars || new Set()
+  const recUseFx = $('expRecFx').checked
+  if (recUseFx) { // rattrape les sidecars FX manquants (prises antérieures à leur génération auto)
+    $('expStatus').textContent = t('recFxBusy')
+    await ensureFxSidecars((project.recordings || []).filter((r) => r.active && recSel.has(r.characterId) && recEffDur(r) > 0))
+    $('expStatus').textContent = ''
+  }
   for (const r of (project.recordings || [])) {
-    if (!r.active || recMutedSet.includes(r.characterId)) continue
+    if (!r.active || !recSel.has(r.characterId)) continue
     const eff = recEffDur(r)
     if (!eff || r.startTime + eff <= startT) continue // entièrement avant la fenêtre
-    takes.push({ name: recPlayFile(r), offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
+    takes.push({ name: (recUseFx && r.fxFile) ? r.fxFile : r.file, offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
   }
   const noBand = exp.bandPos === 'none'
   const r = await window.api.exportStart({

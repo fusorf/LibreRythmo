@@ -271,8 +271,8 @@ const TESTS = [
     recorder.capAt = 1000; recorder.playAt = 1150 // amorce mesurée 150 ms
     const comp = recCompSec()
     audioCfg.recOffsetMs = prev
-    // >= 0,23 s (150 ms + 80 ms + latence d'entrée éventuelle), < 0,8 s (borne de santé)
-    return comp >= 0.229 && comp < 0.8
+    // >= 0,31 s (150 ms + 80 ms + 80 ms de marge matérielle + latence d'entrée éventuelle), < 0,8 s (borne de santé)
+    return comp >= 0.309 && comp < 0.8
   })()`],
   ['Enregistrement : hauteurs fixes tenues (bande 96, take 44, pas de rétroaction)', `(async () => {
     if (typeof renderRecTab !== 'function') return true
@@ -361,6 +361,63 @@ const TESTS = [
     const onOk = recPlayFile(r) === 'fx_a.wav'
     project.voiceFxOn = false
     return okA && okW && offOk && onOk
+  })()`],
+  ['Chaîne voix : dé-esseur dynamique (tameBand) cible la pointe sans toucher le reste', `(async () => {
+    if (typeof tameBand !== 'function') return true
+    const sr = 16000
+    const oac = new OfflineAudioContext(1, sr, sr)
+    const b = oac.createBuffer(1, sr, sr)
+    const d = b.getChannelData(0)
+    // voix « neutre » : 220 Hz doux + un souffle d'aigus continu, avec une pointe sifflante à 7 kHz au milieu
+    for (let i = 0; i < sr; i++) d[i] = 0.15 * Math.sin(2 * Math.PI * 220 * i / sr) + 0.02 * Math.sin(2 * Math.PI * 6500 * i / sr)
+    for (let i = 6400; i < 8000; i++) d[i] += 0.5 * Math.sin(2 * Math.PI * 7000 * i / sr)
+    const rmsSeg = (a, s, e) => { let sq = 0; for (let i = s; i < e; i++) sq += a[i] * a[i]; return Math.sqrt(sq / (e - s)) }
+    const before = rmsSeg(d, 6600, 8000)
+    const low0 = rmsSeg(d, 1000, 4000)
+    tameBand(b, 'highpass', 5500, 0.71, 4, 10, 1, 60)
+    const after = rmsSeg(d, 6600, 8000)
+    const low1 = rmsSeg(d, 1000, 4000)
+    // la pointe sifflante est nettement atténuée, les graves hors pointe sont intacts
+    return after < before * 0.9 && Math.abs(low1 - low0) < low0 * 0.02
+  })()`],
+  ['Export enregistrements : coche FX off par défaut + sélecteur de personnages', `(async () => {
+    if (typeof openTakesExport !== 'function' || !document.getElementById('tkFx')) return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }],
+      lines: [],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }],
+      recMuted: [] }, null)
+    project.voiceFxOn = true // même avec la chaîne FX active sur les pistes…
+    openTakesExport()
+    const fxOff = !document.getElementById('tkFx').checked // …la modale part sans FX
+    const names = [...document.getElementById('ddTkCharsMenu').querySelectorAll('label')].map((l) => l.textContent)
+    document.getElementById('takesModal').classList.add('hidden')
+    project.voiceFxOn = false
+    // seule Alice a une prise → seule entrée du sélecteur, cochée par défaut
+    return fxOff && names.length === 1 && names[0] === 'Alice' && tkCharSel.has('a')
+  })()`],
+  ['Export vidéo : dropdown Enregistrements (persos avec prises, mute décoché) + coche FX', `(async () => {
+    if (typeof buildExportContent !== 'function' || !document.getElementById('ddRecsMenu')) return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }, { id: 'c', name: 'Cléa', color: '#3ae87a' }],
+      lines: [],
+      recordings: [
+        { id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true },
+        { id: 'r2', characterId: 'b', file: 'f2', startTime: 3, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true },
+        { id: 'r3', characterId: 'c', file: 'f3', startTime: 6, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }],
+      recMuted: ['b'] }, null)
+    buildExportContent() // sélection partielle (2/3) dès l'ouverture — crashait avant (someLabel non fonction)
+    const row = document.getElementById('expRecsRow')
+    const names = [...document.getElementById('ddRecsMenu').querySelectorAll('label')].map((l) => l.textContent)
+    const ok1 = !row.classList.contains('hidden') && names.join(',') === 'Alice,Bob,Cléa'
+    const ok2 = exp.recChars.has('a') && !exp.recChars.has('b') && exp.recChars.has('c') // piste de Bob coupée → décochée par défaut
+    const ok3 = !document.getElementById('expRecFx').checked
+    const okLbl = document.getElementById('ddRecsBtn').textContent === '2 personnages' // libellé « n personnages »
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }], lines: [], recordings: [], recMuted: [] }, null)
+    buildExportContent()
+    const ok4 = row.classList.contains('hidden') // aucun perso avec prise → rangée masquée
+    return ok1 && ok2 && ok3 && okLbl && ok4
   })()`],
   ['Fenêtre détachée : bouton aperçu grisé quand ouverte', `(() => {
     if (typeof updateDetachedUI !== 'function') return true

@@ -249,7 +249,7 @@ ipcMain.handle('detached-open', () => {
   if (detachedWin && !detachedWin.isDestroyed()) { detachedWin.focus(); return true }
   detachedWin = new BrowserWindow({
     width: 960, height: 580, minWidth: 480, minHeight: 300,
-    backgroundColor: '#000000', title: 'LibreRythmo - Aperçu',
+    backgroundColor: '#000000', title: 'LibreRythmo - Monitoring',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   })
@@ -299,8 +299,8 @@ const MENU_STR = {
     saveProjectAs: 'Enregistrer sous…',
     autosave: 'Enregistrement automatique',
     exportVideo: 'Exporter la vidéo…',
-    exportTakes: 'Exporter les prises…',
-    dlgTakesZip: 'Exporter les prises (ZIP)',
+    exportTakes: 'Exporter les enregistrements…',
+    dlgTakesZip: 'Exporter les enregistrements (ZIP)',
     workDocs: 'Documents de travail (PDF)',
     docPresence: 'Grille de présence…',
     docTally: 'Relevé de lignes…',
@@ -378,8 +378,8 @@ const MENU_STR = {
     saveProjectAs: 'Save As…',
     autosave: 'Autosave',
     exportVideo: 'Export video…',
-    exportTakes: 'Export takes…',
-    dlgTakesZip: 'Export takes (ZIP)',
+    exportTakes: 'Export recordings…',
+    dlgTakesZip: 'Export recordings (ZIP)',
     workDocs: 'Work documents (PDF)',
     docPresence: 'Presence grid…',
     docTally: 'Line tally…',
@@ -457,8 +457,8 @@ const MENU_STR = {
     saveProjectAs: 'Guardar como…',
     autosave: 'Guardado automático',
     exportVideo: 'Exportar el vídeo…',
-    exportTakes: 'Exportar las tomas…',
-    dlgTakesZip: 'Exportar las tomas (ZIP)',
+    exportTakes: 'Exportar las grabaciones…',
+    dlgTakesZip: 'Exportar las grabaciones (ZIP)',
     workDocs: 'Documentos de trabajo (PDF)',
     docPresence: 'Cuadro de presencia…',
     docTally: 'Recuento de líneas…',
@@ -1964,7 +1964,7 @@ ipcMain.handle('yt-trim', async (e, opts) => {
 })
 
 ipcMain.handle('takes-export-pick', async (e, suggested) => {
-  const r = await dialog.showSaveDialog(win, { title: S().dlgTakesZip, defaultPath: suggested || 'prises.zip', filters: [{ name: 'ZIP', extensions: ['zip'] }] })
+  const r = await dialog.showSaveDialog(win, { title: S().dlgTakesZip, defaultPath: suggested || 'enregistrements.zip', filters: [{ name: 'ZIP', extensions: ['zip'] }] })
   return r.canceled || !r.filePath ? null : r.filePath
 })
 

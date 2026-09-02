@@ -28,7 +28,6 @@
       <video id="video"></video>
       <div id="zoomRect" hidden></div>
       <canvas id="cueOverlay" class="cue-overlay" hidden></canvas>
-      <div id="recMeter" class="rec-meter" hidden><div id="recMeterBar"></div></div>
       <div id="subOverlay" class="sub-overlay" hidden></div>
       <div id="dropHint">
         <span id="dropHintMain">Glisse une vidéo ici</span>
@@ -290,7 +289,13 @@
           <div class="content-row"><span id="lblExpLoops">Scènes</span>
             <span class="dropdown"><button id="ddLoopsBtn" class="dropbtn" type="button"></button><div id="ddLoopsMenu" class="dropmenu hidden"></div></span>
           </div>
-          <label><span id="lblExpAudio">Audio</span> <select id="expAudio"></select></label>
+          <div class="content-row content-break">
+            <label><span id="lblExpAudio">Audio</span> <select id="expAudio"></select></label>
+            <span class="content-row" id="expRecsRow"><span id="lblExpRecs">Enregistrements</span>
+              <span class="dropdown"><button id="ddRecsBtn" class="dropbtn" type="button"></button><div id="ddRecsMenu" class="dropmenu hidden"></div></span>
+              <label class="tk-check"><input id="expRecFx" type="checkbox"> <span>FX</span></label>
+            </span>
+          </div>
         </fieldset>
       </div>
       <div class="export-row">
@@ -352,16 +357,14 @@
 
   <div id="takesModal" class="hidden">
     <div class="modal-panel">
-      <h2 id="tkTitle">Exporter les prises</h2>
+      <h2 id="tkTitle">Exporter les enregistrements</h2>
       <div class="opt-groups">
         <fieldset class="opt-group">
-          <legend id="tkGrpSrc">Prises</legend>
-          <label><span id="tkLblSource">Source</span>
-            <select id="tkSource">
-              <option value="raw" id="tkOptRaw">Brut</option>
-              <option value="fx" id="tkOptFx">Avec FX</option>
-            </select>
-          </label>
+          <legend id="tkGrpSrc">Enregistrements</legend>
+          <div class="content-row"><span id="tkLblChars">Personnages</span>
+            <span class="dropdown"><button id="ddTkCharsBtn" class="dropbtn" type="button"></button><div id="ddTkCharsMenu" class="dropmenu hidden"></div></span>
+          </div>
+          <label class="tk-check"><input id="tkFx" type="checkbox"> <span>FX</span></label>
           <label class="tk-check"><input id="tkDetached" type="checkbox"> <span id="tkLblDetached">Inclure les prises détachées</span></label>
         </fieldset>
       </div>
