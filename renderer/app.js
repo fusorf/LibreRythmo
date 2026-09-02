@@ -87,15 +87,18 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [] }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null, recordings: [], recMuted: [], voiceFxOn: false }
 }
 
-// Boucles (= scènes, unité de travail à l'enregistrement). Durées de référence du
-// doublage FR : on alerte au-delà de ~50 s pour une boucle normale, et en deçà de
-// 30 s pour un segment OUT (qui doit rester long et d'un seul tenant).
-const LOOP_WARN_SEC = 50
+// Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
+// doublage FR : un segment OUT doit rester long (≥ 30 s) et d'un seul tenant. Une
+// scène normale peut durer autant que voulu — on ne signale pas les scènes longues.
 const LOOP_OUT_MIN_SEC = 30
 const LOOP_DEFAULT_SEC = 40 // longueur par défaut d'une nouvelle boucle
+
+// fenêtre détachée (index.html?detached=1) : mode « rendu seul » piloté par la
+// fenêtre principale via IPC — pas d'audio, pas de forme d'onde, pas d'édition
+const DETACHED = new URLSearchParams(location.search).has('detached')
 
 let project = newProject()
 let projectPath = null
@@ -116,7 +119,7 @@ function recomputePps() {
 // Hauteur de piste FIXE : une piste a toujours la même hauteur. Moins de pistes =
 // bande plus courte en bas (la vidéo récupère la place).
 const LANE_H = 76
-const NEW_LINE_DUR = 1 // durée (s) par défaut d'une nouvelle réplique
+const NEW_LINE_DUR = 0.25 // durée (s) par défaut d'une nouvelle réplique (1/4 de 1 s)
 const bandHeightFor = (n) => Math.round(RULER_H + n * LANE_H)
 
 // Panneau du bas redimensionnable. Une poignée unique en haut du dock (#panelResizer,
@@ -210,6 +213,7 @@ const BAND_THEMES = {
     handle: '#ffffff', handleAccent: '#7aa2ff', selStroke: '#ffffffcc',
     markIn: '#5fbf6a', markOut: '#e8584a', // flèches d'entrée (vert) / sortie (rouge)
     planMark: '#e8a13a', // marqueur de changement de plan (flèche vers le bas)
+    symbol: '#ffd24a', // signes de détection posés sur le texte
   },
   light: {
     bg: '#f6f2e9', lane: '#ece6d8', grid: '#d8d1c0',
@@ -218,10 +222,26 @@ const BAND_THEMES = {
     handle: '#2b2a25', handleAccent: '#3c5d96', selStroke: '#2b2a25cc',
     markIn: '#2f9e44', markOut: '#d23a30',
     planMark: '#c47d1a',
+    symbol: '#a05a00',
   },
 }
 let theme = 'dark'
 const bandPal = () => BAND_THEMES[theme]
+
+// couleur de texte lisible sur un fond donné : on prend noir ou blanc selon le
+// meilleur contraste réel (WCAG) — noir dès que le fond est clair, blanc sinon.
+function textOn(hex) {
+  const h = String(hex || '').replace('#', '')
+  if (h.length < 6) return '#fff'
+  const lin = [0, 2, 4].map((i) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+  })
+  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+  const contrastBlack = (L + 0.05) / 0.05
+  const contrastWhite = 1.05 / (L + 0.05)
+  return contrastBlack >= contrastWhite ? '#000' : '#fff'
+}
 
 // ---------- polices personnalisées (TTF/OTF) ----------
 // Les polices sont embarquées dans le projet (project.fonts = [{ name, data(base64),
@@ -333,6 +353,7 @@ function updateDiscordActivity() {
 }
 
 function markDirty() {
+  detachedQueueState() // la fenêtre détachée suit les modifications du projet
   if (!dirty) window.api.setDirty(true)
   dirty = true
   updateTitle()
@@ -347,9 +368,10 @@ function setClean() {
 }
 
 function updateTitle() {
+  if (DETACHED) { document.title = 'LibreRythmo - Monitoring'; return } // fenêtre détachée : titre fixe
   const name = projectPath ? projectPath.replace(/^.*[\\/]/, '') : t('untitled')
   const auto = autosaveOn ? `  [${t('autosaveTag')}]` : ''
-  document.title = `LibreRythmo — ${name}${dirty ? ' •' : ''}${auto}`
+  document.title = `LibreRythmo - ${name}${dirty ? ' •' : ''}${auto}`
 }
 
 // ---------- enregistrement automatique (Fichier → Enregistrement automatique)
@@ -360,7 +382,7 @@ function scheduleAutosave() {
   clearTimeout(scheduleAutosave._t)
   scheduleAutosave._t = setTimeout(async () => {
     if (!autosaveOn || !projectPath || !dirty || exp.running) return
-    const p = await window.api.saveProject(JSON.stringify(project, null, 2), projectPath)
+    const p = await window.api.saveProject(projectJson(), projectPath)
     if (p) setClean()
   }, 1500)
 }
@@ -371,7 +393,7 @@ let undoStack = []
 let redoStack = []
 let undoCoalesce = false // les pushUndo d'une même opération (même tick) ne comptent qu'une fois
 
-const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, plans: project.plans, audioTracks: project.audioTracks, defaultFont: project.defaultFont })
+const undoSnap = () => JSON.stringify({ tracks: project.tracks, characters: project.characters, lines: project.lines, loops: project.loops, plans: project.plans, audioTracks: project.audioTracks, defaultFont: project.defaultFont, cues: project.cues, bookmarks: project.bookmarks })
 
 function pushUndo() {
   if (undoCoalesce) return
@@ -400,6 +422,8 @@ function restoreState(snap) {
   project.lines = d.lines
   project.loops = d.loops || []
   project.plans = d.plans || []
+  project.cues = d.cues || []
+  project.bookmarks = d.bookmarks || []
   if (d.audioTracks) project.audioTracks = d.audioTracks
   project.defaultFont = d.defaultFont || null
   waveOffset = (activeAudioTrack()?.offset) || 0 // suit l'offset restauré de la piste active
@@ -439,6 +463,16 @@ function applyLang() {
   document.documentElement.lang = lang
   $('dropHintMain').textContent = t('dropMain')
   $('dropHintSub').textContent = t('dropSub')
+  $('dropBrowseLbl').textContent = t('dropBrowseLbl')
+  $('ytTitle').textContent = t('ytTitle')
+  $('ytGrpSrc').textContent = t('ytGrpSrc')
+  $('ytLblUrl').textContent = t('ytLblUrl')
+  $('ytLblQuality').textContent = t('ytLblQuality')
+  $('ytLblDest').textContent = t('lblDest')
+  $('ytLblTrim').textContent = t('ytLblTrim')
+  $('ytBrowse').textContent = t('expBrowse')
+  $('ytClose').textContent = t('close')
+  if (ytSt.phase !== 'trim') $('ytGo').textContent = t('ytGoImport')
 
   // transport
   $('tStart').title = t('tStart')
@@ -454,6 +488,43 @@ function applyLang() {
   $('btnOnoma').title = t('onomaTitle')
   $('btnMagnet').title = t('magnetTitle')
   buildOnomaPop()
+  $('btnSymbols').textContent = t('symbolsBtn')
+  $('btnSymbols').title = t('symbolsTitle')
+  buildSymbolPop()
+  $('btnAdr').title = t('adrTitle')
+  buildCuePop()
+  updateRecUI()
+  $('trTitle').textContent = t('trTitle')
+  $('trHint').textContent = t('trHint')
+  $('trInLabel').textContent = t('trInLabel')
+  $('trModelLabel').textContent = t('trModelLabel')
+  $('trSpeakersLabel').textContent = t('trSpeakersLabel')
+  $('trLangLabel').textContent = t('trLangLabel')
+  $('trOpenSettings').textContent = t('aiOpenSettings')
+  $('trClose').textContent = t('close')
+  $('trGo').textContent = t('trGoBtn')
+  $('sepModalTitle').textContent = t('sepModalTitle')
+  $('sepInLabel').textContent = t('sepInLabel')
+  $('sepRunModelLabel').textContent = t('sepRunModelLabel')
+  $('sepOutNameLabel').textContent = t('sepOutNameLabel')
+  $('sepOutDirLabel').textContent = t('sepOutDirLabel')
+  $('sepOutBrowse').textContent = t('sepOutBrowse')
+  $('sepOpenSettings').textContent = t('aiOpenSettings')
+  $('sepCloseBtn').textContent = t('close')
+  $('sepGo').textContent = t('sepGoBtn')
+  $('setTitle').textContent = t('setTitle')
+  $('setCapLegend').textContent = t('setCapLegend')
+  $('setCapApiLabel').textContent = t('setCapApiLabel')
+  $('setCapDevLabel').textContent = t('setCapDevLabel')
+  $('setOutDevLabel').textContent = t('setOutDevLabel')
+  $('recOffLabel').textContent = t('recOffLabel')
+  $('recOffLabel').parentElement.title = t('recOffTitle')
+  $('outTest').textContent = t(outTestState ? 'outTestStop' : 'outTestBtn')
+  $('setTrLegend').textContent = t('setTrLegend')
+  $('setTrActiveLabel').textContent = t('setActiveLabel')
+  $('setSepLegend').textContent = t('setSepLegend')
+  $('setSepActiveLabel').textContent = t('setActiveLabel')
+  $('setClose').textContent = t('close')
   $('btnTogglePanel').textContent = t('panelToggle')
   $('btnTogglePanel').title = t('panelToggleTitle')
   $('btnToggleLines').textContent = t('linesTitle')
@@ -483,13 +554,21 @@ function applyLang() {
   // onglets + vue Pistes
   $('tabRythmo').textContent = t('tabRythmo')
   $('tabTracks').textContent = t('tabTracks')
+  $('tabRec').textContent = t('tabRec')
+  $('recEmptyMain').textContent = t('recEmptyMain')
+  $('recEmptySub').textContent = t('recEmptySub')
+  if (activeTab === 'rec') renderRecTab()
   $('btnImportAudio').textContent = t('importAudio')
+  $('btnDubLabel').textContent = t('dubBtn')
+  $('btnDub').title = t('dubBtnTitle')
   $('tracksEmptyMain').textContent = t('tracksEmptyMain')
   $('tracksEmptySub').textContent = t('tracksEmptySub')
   if (activeTab === 'tracks') renderTracks()
   // mode lecture plein écran
   $('btnPlayer').title = t('playerBtn')
   $('pcExit').title = t('pcExitTitle')
+  $('pcDetach').title = t('pcDetachTitle')
+  $('recVu').title = t('recVuTitle')
   $('pcPlay').title = t('pcPlayTitle')
   $('pcPrev').title = t('pcPrevTitle')
   $('pcNext').title = t('pcNextTitle')
@@ -560,14 +639,25 @@ function applyLang() {
   $('lblExpTracks').textContent = t('lblExpTracks')
   $('lblExpLoops').textContent = t('lblExpLoops')
   $('lblExpAudio').textContent = t('lblExpAudio')
+  $('lblExpRecs').textContent = t('lblExpRecs')
   $('lblBandPos').textContent = t('lblBandPos')
   $('optBandBottom').textContent = t('optBandBottom')
   $('optBandTop').textContent = t('optBandTop')
+  $('optBandNone').textContent = t('optBandNone')
   $('lblEnc').textContent = t('lblEnc')
   $('lblSpeed').textContent = t('lblSpeed')
   $('lblSpeedWrap').title = t('speedTitle')
   $('expReset').textContent = t('expReset')
   $('lblDest').textContent = t('lblDest')
+  $('tkTitle').textContent = t('tkTitle')
+  $('tkGrpSrc').textContent = t('tkGrpSrc')
+  $('tkLblChars').textContent = t('tkLblChars')
+  $('tkLblDetached').textContent = t('tkLblDetached')
+  $('tkLblDest').textContent = t('lblDest')
+  $('tkPath').placeholder = t('tkPathPh')
+  $('tkBrowse').textContent = t('expBrowse')
+  $('tkClose').textContent = t('close')
+  $('tkGo').textContent = t('tkGoBtn')
   $('expPath').placeholder = t('expPathPh')
   $('expBrowse').textContent = t('expBrowse')
   $('expGo').textContent = t('expGo')
@@ -645,12 +735,39 @@ function rowIconButton(kind, title, onClick) {
   return b
 }
 
+
+// Tier B : fusion de personnages — toutes les répliques du source passent à la
+// cible, puis le source est supprimé (utile après un import où un rôle apparaît
+// en double sous deux noms). Undoable.
+function mergeCharacter(srcId, dstId) {
+  if (!srcId || !dstId || srcId === dstId) { renderChars(); return }
+  if (!getChar(srcId) || !getChar(dstId)) return
+  pushUndo()
+  for (const l of project.lines) if (l.characterId === srcId) l.characterId = dstId
+  project.characters = project.characters.filter((c) => c.id !== srcId)
+  if (selectedCharId === srcId) selectedCharId = dstId
+  renderChars()
+  refreshInspector()
+  renderLinesLog()
+  markDirty()
+  toast(t('charMerged'))
+}
+
 function renderChars() {
   // outline du groupe « + Réplique | + Réaction » à la couleur du personnage sélectionné
   // (vers quelle voix part la prochaine réplique) ; bordure neutre si aucun personnage
   const sel = getChar(selectedCharId)
   const addGroup = $('btnAddLine').closest('.seg-group')
   if (addGroup) addGroup.style.borderColor = sel ? sel.color : ''
+  // badge « personnage sélectionné » (premier segment du groupe) : fond = couleur du
+  // perso, nom en texte lisible ; taille fixe + ellipsis (ne décale pas l'interface)
+  const badge = $('curCharBadge')
+  if (badge) {
+    badge.textContent = sel ? sel.name : '—'
+    badge.style.background = sel ? sel.color : 'transparent'
+    badge.style.color = sel ? textOn(sel.color) : 'var(--dim)'
+    badge.title = sel ? sel.name : ''
+  }
 
   const list = $('charList')
   list.innerHTML = ''
@@ -736,6 +853,32 @@ function renderChars() {
       markDirty()
     })
 
+    // fusionner ce personnage dans un autre (choix par liste déroulante inline)
+    const mg = document.createElement('button')
+    mg.className = 'edit'
+    mg.textContent = '⇢'
+    mg.title = t('charMerge')
+    mg.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const others = project.characters.filter((k) => k.id !== c.id)
+      if (!others.length) { toast(t('charMergeNone')); return }
+      const msel = document.createElement('select')
+      msel.className = 'nm-input'
+      const ph = document.createElement('option')
+      ph.value = ''; ph.textContent = t('charMergeInto')
+      msel.appendChild(ph)
+      for (const o of others) {
+        const op = document.createElement('option')
+        op.value = o.id; op.textContent = o.name
+        msel.appendChild(op)
+      }
+      nm.replaceWith(msel)
+      msel.focus()
+      msel.addEventListener('click', (ev) => ev.stopPropagation())
+      msel.addEventListener('change', () => mergeCharacter(c.id, msel.value))
+      msel.addEventListener('blur', () => setTimeout(() => { if (document.body.contains(msel)) renderChars() }, 150))
+    })
+
     const x = document.createElement('button')
     x.className = 'x'
     x.textContent = '✕'
@@ -750,13 +893,15 @@ function renderChars() {
       markDirty()
     })
 
-    row.append(sw, nm, trk, edit, x)
+    row.append(sw, nm, trk, mg, edit, x)
     row.addEventListener('click', () => {
       selectedCharId = c.id
       renderChars()
     })
     list.appendChild(row)
   }
+  // la sélection est un mécanisme unique : on répercute sur l'onglet Enregistrement
+  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList() }
 }
 
 $('btnTogglePanel').addEventListener('click', () => {
@@ -764,6 +909,1623 @@ $('btnTogglePanel').addEventListener('click', () => {
   panel.classList.toggle('hidden')
   $('btnTogglePanel').classList.toggle('active', !panel.classList.contains('hidden'))
 })
+
+
+// ============================================================ Tier B — zoom sur l'image
+// Zoom/pan de la vidéo de l'éditeur (transitoire, non enregistré) : Ctrl+molette
+// pour zoomer sur l'image, glisser pour déplacer, double-clic pour réinitialiser.
+// Utile pour inspecter les mouvements de bouche (détection).
+const imgZoom = { scale: 1, x: 0, y: 0 }
+function clampImgPan() {
+  const w = video.clientWidth, h = video.clientHeight
+  const mx = Math.max(0, (w * (imgZoom.scale - 1)) / 2)
+  const my = Math.max(0, (h * (imgZoom.scale - 1)) / 2)
+  imgZoom.x = clamp(imgZoom.x, -mx, mx)
+  imgZoom.y = clamp(imgZoom.y, -my, my)
+}
+function applyImgZoom() {
+  const on = imgZoom.scale > 1.001
+  video.style.transform = on ? `translate(${imgZoom.x}px, ${imgZoom.y}px) scale(${imgZoom.scale})` : ''
+  video.style.cursor = on ? 'grab' : ''
+}
+function resetImgZoom() { imgZoom.scale = 1; imgZoom.x = 0; imgZoom.y = 0; applyImgZoom() }
+
+$('videoWrap').addEventListener('wheel', (e) => {
+  if (!e.ctrlKey || !video.videoWidth) return
+  e.preventDefault()
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+  imgZoom.scale = clamp(imgZoom.scale * factor, 1, 6)
+  clampImgPan()
+  applyImgZoom()
+}, { passive: false })
+
+// Zoom par rectangle (mode Rythmo uniquement, pas en preview) : glisser sur la vidéo
+// dessine la zone à zoomer, relâcher zoome dessus ; re-clic (sans glisser) → zoom par défaut.
+let imgPan = null
+let zoomSel = null // origine (coords du wrap) de la sélection rectangle en cours
+const zoomRectEl = $('zoomRect')
+const wrapPos = (e) => { const r = $('videoWrap').getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+$('videoWrap').addEventListener('pointerdown', (e) => {
+  if (!video.videoWidth || activeTab !== 'rythmo' || player.open || e.button !== 0) return
+  if (imgZoom.scale > 1.001) {
+    imgPan = { sx: e.clientX, sy: e.clientY, ox: imgZoom.x, oy: imgZoom.y, moved: false }
+    video.style.cursor = 'grabbing'
+    return
+  }
+  zoomSel = wrapPos(e)
+})
+window.addEventListener('pointermove', (e) => {
+  if (imgPan) {
+    const dx = e.clientX - imgPan.sx, dy = e.clientY - imgPan.sy
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) imgPan.moved = true
+    imgZoom.x = imgPan.ox + dx
+    imgZoom.y = imgPan.oy + dy
+    clampImgPan()
+    applyImgZoom()
+    return
+  }
+  if (!zoomSel) return
+  const p = wrapPos(e)
+  const x = Math.min(zoomSel.x, p.x), y = Math.min(zoomSel.y, p.y)
+  const w2 = Math.abs(p.x - zoomSel.x), h2 = Math.abs(p.y - zoomSel.y)
+  if (w2 > 6 || h2 > 6) {
+    zoomRectEl.hidden = false
+    Object.assign(zoomRectEl.style, { left: x + 'px', top: y + 'px', width: w2 + 'px', height: h2 + 'px' })
+  }
+})
+window.addEventListener('pointerup', (e) => {
+  if (imgPan) {
+    const wasClick = !imgPan.moved
+    imgPan = null
+    applyImgZoom()
+    if (wasClick) resetImgZoom() // re-clic n'importe où → retour au zoom par défaut
+    return
+  }
+  if (!zoomSel) return
+  const start = zoomSel; zoomSel = null
+  zoomRectEl.hidden = true
+  const p = wrapPos(e)
+  const rw = Math.abs(p.x - start.x), rh = Math.abs(p.y - start.y)
+  if (rw < 12 || rh < 12) return // simple clic sans zone : rien à faire
+  // rect → coords de l'élément vidéo, puis échelle/translation autour du centre
+  const vr = video.getBoundingClientRect(), wr = $('videoWrap').getBoundingClientRect()
+  const w = video.clientWidth, h = video.clientHeight
+  const cx = clamp(Math.min(start.x, p.x) + rw / 2 + wr.left - vr.left, 0, w)
+  const cy = clamp(Math.min(start.y, p.y) + rh / 2 + wr.top - vr.top, 0, h)
+  const s2 = clamp(Math.min(w / rw, h / rh), 1, 6)
+  imgZoom.scale = s2
+  imgZoom.x = -(cx - w / 2) * s2
+  imgZoom.y = -(cy - h / 2) * s2
+  clampImgPan()
+  applyImgZoom()
+})
+window.addEventListener('pointercancel', () => { imgPan = null; zoomSel = null; zoomRectEl.hidden = true })
+$('videoWrap').addEventListener('dblclick', () => { if (imgZoom.scale > 1.001) resetImgZoom() })
+
+// ============================================================ Tier B — signets
+// Repères temporels libres, distincts des scènes/plans : Ctrl+B pose/retire un
+// signet au point de lecture ; Ctrl+, / Ctrl+. sautent au signet préc./suiv.
+// Affichés en chevrons verts sur la barre de progression.
+function toggleBookmark() {
+  if (!project.bookmarks) project.bookmarks = []
+  const now = Math.max(0, effectiveTime())
+  const thr = Math.max(0.2, (seekDur() || 1) * 0.005)
+  const i = project.bookmarks.findIndex((b) => Math.abs(b.time - now) <= thr)
+  pushUndo()
+  if (i >= 0) { project.bookmarks.splice(i, 1); toast(t('bookmarkRemoved')) }
+  else { project.bookmarks.push({ id: uid(), time: now }); toast(t('bookmarkAdded')) }
+  markDirty()
+}
+function gotoBookmark(dir) {
+  const bm = [...(project.bookmarks || [])].sort((a, b) => a.time - b.time)
+  if (!bm.length) { toast(t('bookmarkNone')); return }
+  const now = effectiveTime()
+  let target = dir > 0 ? bm.find((b) => b.time > now + 0.05) : [...bm].reverse().find((b) => b.time < now - 0.05)
+  if (!target) target = dir > 0 ? bm[bm.length - 1] : bm[0]
+  video.pause(); scrubTo(target.time)
+}
+
+
+// ============================================================ enregistrement voix (libre, par personnage)
+// On enregistre librement au fil de la lecture. Chaque enregistrement est un clip
+// rangé dans la « piste » du personnage ciblé : project.recordings = [{ id,
+// characterId, file, startTime, dur, active }]. Les fichiers sont des sidecars
+// (dossier « takes » via window.api.saveTake), jamais dans le JSON. Une piste perso
+// s'entend en lecture comme une piste audio normale et peut être coupée
+// (project.recMuted = [charId]). Chevauchement dans une même piste = prises
+// alternatives (la plus récente reste active) ; enregistrements qui se suivent =
+// ils coexistent. Les clips actifs (pistes non coupées) sont mixés à l'export.
+const recorder = { stream: null, mr: null, chunks: [], active: false, charId: null, mime: 'audio/webm', ext: 'webm', ac: null, analyser: null, raf: 0, level: 0, recStartAt: 0 }
+const takeAudios = new Map() // file -> HTMLAudioElement (cache lecture)
+// durée effective d'un segment = durée du fichier moins les rognages (poignées de crop)
+const recEffDur = (r) => Math.max(0, (r.dur || 0) - (r.trimStart || 0) - (r.trimEnd || 0))
+const recOverlap = (a, b) => a.startTime < b.startTime + recEffDur(b) && b.startTime < a.startTime + recEffDur(a)
+const REC_MAX_LANES = 4 // nombre max de pistes d'enregistrement empilées (takes)
+// piste d'un segment : la 1re (de haut en bas) où il ne chevauche aucun segment déjà posé
+function recAssignLane(clip) {
+  const others = (project.recordings || []).filter((r) => r.characterId === clip.characterId && r.id !== clip.id)
+  for (let ln = 0; ln < REC_MAX_LANES; ln++) {
+    if (!others.some((r) => (r.lane || 0) === ln && recOverlap(r, clip))) return ln
+  }
+  return REC_MAX_LANES - 1
+}
+// nombre de pistes affichées pour un perso (au moins 1)
+const recLaneCount = (charId) => 1 + (project.recordings || []).filter((r) => r.characterId === charId).reduce((m, r) => Math.max(m, r.lane || 0), 0)
+// groupe de chevauchement d'un segment (les autres takes du même passage)
+const recOverlapGroup = (clip) => (project.recordings || []).filter((r) => r.characterId === clip.characterId && r.id !== clip.id && recOverlap(r, clip))
+// fichier joué/exporté : la version traitée par la chaîne voix quand elle est active
+const recPlayFile = (r) => (project.voiceFxOn && r.fxFile) ? r.fxFile : r.file
+
+// config capture (persistée côté main : audio-config.json)
+const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null, recOffsetMs: 0 }
+
+function resetMic() {
+  try { if (recorder.stream) recorder.stream.getTracks().forEach((t2) => t2.stop()) } catch {}
+  try { if (recorder.ac) recorder.ac.close() } catch {}
+  recorder.stream = null; recorder.ac = null; recorder.analyser = null; recorder.procStream = null
+}
+
+// crée un AudioContext calé sur la fréquence d'échantillonnage réelle de l'entrée.
+// Sinon, si le périphérique (ex. MOTU à 44,1 kHz) diffère du taux par défaut du
+// contexte (souvent 48 kHz), le MediaStreamAudioSourceNode n'est pas rééchantillonné
+// par Chromium → la voix est transposée (pitch up/down).
+function makeAcForStream(stream) {
+  const AC = window.AudioContext || window.webkitAudioContext
+  let rate = 0
+  try { const s = stream.getAudioTracks()[0].getSettings(); rate = s && s.sampleRate } catch {}
+  try { return rate ? new AC({ sampleRate: rate }) : new AC() } catch { return new AC() }
+}
+
+// micro mono (ex. « in 1L » d'une MOTU, présent sur le seul canal gauche) → dual-mono :
+// on duplique le canal 0 sur L et R pour l'entendre au centre (deux oreilles)
+function toDualMono(ac, node) {
+  const splitter = ac.createChannelSplitter(2)
+  const merger = ac.createChannelMerger(2)
+  node.connect(splitter)
+  splitter.connect(merger, 0, 0)
+  splitter.connect(merger, 0, 1)
+  return merger
+}
+
+async function ensureMic() {
+  if (recorder.stream) return recorder.stream
+  const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  try { recorder.stream = await openMic(base) } // périphérique mémorisé (par id, sinon par nom)
+  catch (e) { toast(t('recMicDenied')); return null }
+  try {
+    recorder.ac = makeAcForStream(recorder.stream) // même taux que l'entrée (sinon pitch)
+    const src = recorder.ac.createMediaStreamSource(recorder.stream)
+    const mono = toDualMono(recorder.ac, src) // enregistre en dual-mono (L+R)
+    recorder.analyser = recorder.ac.createAnalyser()
+    recorder.analyser.fftSize = 512
+    mono.connect(recorder.analyser)
+    const dest = recorder.ac.createMediaStreamDestination()
+    recorder.analyser.connect(dest) // flux traité (dual-mono) que MediaRecorder enregistre
+    recorder.procStream = dest.stream
+  } catch { recorder.procStream = null }
+  return recorder.stream
+}
+
+function pickMime() {
+  for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m
+  }
+  return 'audio/webm'
+}
+
+// personnage ciblé par l'enregistrement = personnage sélectionné (mécanisme unique)
+function recTargetId() {
+  const has = (id) => project.characters.some((c) => c.id === id)
+  if (selectedCharId && has(selectedCharId)) return selectedCharId
+  return project.characters[0]?.id || null
+}
+async function startRecording() {
+  if (recorder.active) return
+  const chId = recTargetId()
+  if (!chId) { toast(t('recNeedChar')); return }
+  recorder.charId = chId
+  recorder.recStartAt = Math.max(0, effectiveTime()) // enregistrement libre : au playhead courant
+  if ((audioCfg.api || 'system') === 'system') return startRecordingWeb()
+  return startRecordingFfmpeg()
+}
+
+// --- capture navigateur (getUserMedia / WASAPI) ---
+async function startRecordingWeb() {
+  const stream = await ensureMic()
+  if (!stream) return
+  recorder.mode = 'web'
+  recorder.mime = pickMime()
+  recorder.ext = recorder.mime.includes('ogg') ? 'ogg' : 'webm'
+  recorder.chunks = []
+  const recStream = recorder.procStream || stream // dual-mono si dispo
+  try { recorder.mr = new MediaRecorder(recStream, { mimeType: recorder.mime }) }
+  catch { recorder.mr = new MediaRecorder(recStream) }
+  recorder.mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) recorder.chunks.push(ev.data) }
+  recorder.mr.onstop = () => finishRecordingWeb()
+  // compensation de latence : on mesure le temps entre le vrai début de capture et le
+  // vrai démarrage de la lecture (seek+play ne sont pas instantanés) — l'amorce sera rognée
+  recorder.capAt = 0; recorder.playAt = 0
+  recorder.mr.onstart = () => { recorder.capAt = performance.now() }
+  video.addEventListener('playing', recOnPlaying, { once: true })
+  recorder.active = true
+  video.currentTime = recorder.recStartAt
+  recorder.mr.start()
+  video.play().catch(() => {})
+  updateRecUI(); meterLoop()
+}
+function recOnPlaying() { recorder.playAt = performance.now() }
+// latence d'entrée déclarée par le pipeline audio (périphérique → flux), si disponible
+function inputLatencySec() {
+  try { const s = recorder.stream?.getAudioTracks()[0].getSettings(); if (s && isFinite(s.latency) && s.latency > 0 && s.latency < 0.5) return s.latency } catch {}
+  try { if (recorder.ac && isFinite(recorder.ac.baseLatency)) return recorder.ac.baseLatency } catch {}
+  return 0
+}
+// latence matérielle résiduelle NON déclarée par le pipeline (tampons du périphérique,
+// démarrage de l'encodeur, résampleur…) : marge fixe constatée à l'usage, affinable via
+// le réglage « Compensation » des Paramètres
+const REC_HW_LATENCY_MS = 80
+// compensation totale (s) appliquée à la nouvelle prise : amorce mesurée (capture
+// démarrée avant la lecture) + latence d'entrée + marge matérielle + réglage manuel
+function recCompSec() {
+  const gap = recorder.playAt && recorder.capAt ? Math.max(0, recorder.playAt - recorder.capAt) / 1000 : 0
+  return gap + inputLatencySec() + (REC_HW_LATENCY_MS + (Number(audioCfg.recOffsetMs) || 0)) / 1000
+}
+
+// --- capture DirectShow / ASIO (ffmpeg, process principal) ---
+async function startRecordingFfmpeg() {
+  const name = `rec_${recorder.charId}_${uid()}.wav`
+  const r = await window.api.captureStart({ api: audioCfg.api, device: audioCfg.device, projectPath, name })
+  if (!r || r.error) { toast(t(r && r.error === 'no-device' ? 'recNoDevice' : 'recCaptureFail')); return }
+  recorder.mode = 'ffmpeg'
+  recorder.captureName = name
+  recorder.capAt = performance.now() // capture ffmpeg déjà lancée à cet instant
+  recorder.playAt = 0
+  video.addEventListener('playing', recOnPlaying, { once: true })
+  recorder.active = true
+  video.currentTime = recorder.recStartAt
+  video.play().catch(() => {})
+  updateRecUI()
+}
+
+function stopRecording() {
+  if (!recorder.active) return
+  video.removeEventListener('playing', recOnPlaying)
+  if (recorder.mode === 'ffmpeg') return stopRecordingFfmpeg()
+  if (!recorder.mr) return
+  try { recorder.mr.stop() } catch {}
+  video.pause(); recorder.active = false
+}
+
+async function stopRecordingFfmpeg() {
+  video.pause(); recorder.active = false; recorder.mode = null; updateRecUI()
+  const r = await window.api.captureStop()
+  if (!r || r.error || !r.name) { toast(t('recCaptureFail')); return }
+  await addRecording(recorder.charId, r.name, recorder.recStartAt, 0, recCompSec())
+}
+
+async function finishRecordingWeb() {
+  cancelAnimationFrame(recorder.raf)
+  recorder.level = 0
+  recorder.active = false
+  recorder.mode = null
+  updateRecUI()
+  const blob = new Blob(recorder.chunks, { type: recorder.mime })
+  recorder.chunks = []
+  if (!blob.size) return
+  const buf = await blob.arrayBuffer()
+  // durée fiable : le WebM de MediaRecorder n'a pas de durée dans son en-tête
+  // (a.duration = Infinity) → on décode le blob pour obtenir la vraie durée
+  let durHint = 0
+  try { const ac = new (window.AudioContext || window.webkitAudioContext)(); const ab = await ac.decodeAudioData(buf.slice(0)); durHint = ab.duration; ac.close() } catch {}
+  const name = `rec_${recorder.charId}_${uid()}.${recorder.ext}`
+  const r = await window.api.saveTake(projectPath, name, buf)
+  if (!r || r.error) { toast(t('recSaveFail')); return }
+  await addRecording(recorder.charId, r.name, recorder.recStartAt, durHint, recCompSec())
+}
+
+// durée d'un fichier son : métadonnées rapides, sinon décodage complet (WebM sans en-tête)
+async function probeClipDuration(url) {
+  try { const d = await new Promise((res) => { const a = new Audio(); a.onloadedmetadata = () => res(a.duration); a.onerror = () => res(0); a.src = url }); if (isFinite(d) && d > 0) return d } catch {}
+  try { const resp = await fetch(url); const ab = await resp.arrayBuffer(); const ac = new (window.AudioContext || window.webkitAudioContext)(); const b = await ac.decodeAudioData(ab); ac.close(); return b.duration } catch {}
+  return 0
+}
+
+// ajoute un clip enregistré à la piste du personnage (quel que soit le backend).
+// comp (s) = compensation de latence : positif → on rogne l'amorce (la voix se cale
+// plus tôt sur la timeline) ; négatif → le clip est décalé plus tard.
+async function addRecording(charId, fileName, startTime, durHint, comp) {
+  const url = await window.api.takeUrl(projectPath, fileName)
+  let dur = (isFinite(durHint) && durHint > 0) ? durHint : 0
+  if (!dur && url) dur = await probeClipDuration(url)
+  pushUndo()
+  project.recordings ||= []
+  const clip = { id: uid(), characterId: charId, file: fileName, startTime, dur: dur || 0, trimStart: 0, trimEnd: 0, lane: 0, active: true }
+  const c = Number(comp) || 0
+  if (c > 0) clip.trimStart = Math.min(c, Math.max(0, (dur || 0) * 0.9))
+  else if (c < 0) clip.startTime = Math.max(0, startTime - c)
+  // chevauchement = autre take du même passage → le segment descend d'une piste et
+  // devient la take retenue ; sans chevauchement il continue sur la piste 1
+  clip.lane = recAssignLane(clip)
+  for (const r of recOverlapGroup(clip)) r.active = false
+  project.recordings.push(clip)
+  selectedClipId = clip.id // sélectionne le segment qu'on vient d'enregistrer
+  markDirty()
+  if (activeTab === 'rec') renderRecTab()
+  preloadTakeAudios()
+  // sidecar FX généré systématiquement dans la foulée (les exports « FX » l'ont toujours
+  // sous la main) ; la lecture n'en tient compte que si la chaîne voix est active
+  fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); if (project.voiceFxOn) preloadTakeAudios() } })
+  toast(t('recSaved'))
+}
+
+// supprime tous les clips d'une piste perso (fichiers inclus)
+async function deleteRecTrack(charId) {
+  const clips = (project.recordings || []).filter((r) => r.characterId === charId)
+  if (!clips.length) return
+  pushUndo()
+  for (const c of clips) {
+    try { await window.api.deleteTake(projectPath, c.file) } catch {}; takeAudios.delete(c.file)
+    if (c.fxFile) { try { await window.api.deleteTake(projectPath, c.fxFile) } catch {}; takeAudios.delete(c.fxFile) }
+  }
+  project.recordings = (project.recordings || []).filter((r) => r.characterId !== charId)
+  markDirty()
+  if (activeTab === 'rec') renderRecTab()
+}
+const isRecMuted = (id) => (project.recMuted || []).includes(id)
+function toggleRecMute(id) {
+  const was = isRecMuted(id)
+  project.recMuted = (project.recMuted || []).filter((c) => c !== id)
+  if (!was) project.recMuted.push(id)
+  markDirty(); stopAllTakeAudio(); if (activeTab === 'rec') renderRecTab()
+}
+
+function meterLoop() {
+  if (!recorder.active || !recorder.analyser) { updateRecMeter(0); return }
+  const buf = new Uint8Array(recorder.analyser.fftSize)
+  recorder.analyser.getByteTimeDomainData(buf)
+  let peak = 0
+  for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > peak) peak = v }
+  recorder.level = peak
+  updateRecMeter(peak)
+  recorder.raf = requestAnimationFrame(meterLoop)
+}
+let recVuPeakPct = 0, recVuPeakAt = 0
+function updateRecMeter(level) {
+  const pct = Math.min(100, level * 140)
+  // vumètre vertical : le cache descend pour révéler l'échelle de couleur fixe
+  const cover = $('recVuCover'); if (cover) cover.style.height = (100 - pct) + '%'
+  // crête (peak hold ~1,2 s)
+  const now = performance.now()
+  if (pct >= recVuPeakPct || now - recVuPeakAt > 1200) { recVuPeakPct = pct; recVuPeakAt = now }
+  const pk = $('recVuPeak')
+  if (pk) { pk.style.bottom = recVuPeakPct + '%'; pk.style.opacity = recVuPeakPct > 1.5 ? 1 : 0 }
+}
+function updateRecUI() {
+  // rappel du périphérique d'entrée dans le drawer du vumètre
+  const dev = $('recVuDev')
+  if (dev) { const nm = audioCfg.deviceLabel || t('capDefault'); dev.textContent = nm; dev.title = nm }
+  const big = $('recBigBtn')
+  if (big) {
+    big.classList.toggle('recording', recorder.active)
+    big.title = t(recorder.active ? 'recStop' : 'recBtnLabel')
+    const lbl = $('recBigLabel'); if (lbl) lbl.textContent = t(recorder.active ? 'recStopLabel' : 'recBtnLabel')
+  }
+}
+
+// précharge les <audio> des prises retenues (lecture/monitoring sans latence) et
+// purge celles qui ne sont plus référencées
+async function preloadTakeAudios() {
+  const wanted = new Set()
+  let fixed = false
+  for (const r of (project.recordings || [])) {
+    const pf = recPlayFile(r) // version traitée par la chaîne voix si active
+    wanted.add(pf)
+    let url = null
+    if (!takeAudios.has(pf)) { const u2 = await window.api.takeUrl(projectPath, pf); if (u2) takeAudios.set(pf, new Audio(u2)) }
+    // auto-réparation : anciens enregistrements sans durée (WebM sans en-tête) → on la calcule
+    if (!(r.dur > 0)) {
+      url = url || await window.api.takeUrl(projectPath, r.file)
+      if (url) { const d = await probeClipDuration(url); if (d > 0) { r.dur = d; fixed = true } }
+    }
+  }
+  // anciens clips sans piste assignée (modèle pré-lanes) → assignation dans l'ordre
+  for (const r of (project.recordings || [])) if (r.lane == null) { r.lane = recAssignLane(r); fixed = true }
+  if (fixed) { // durées connues → (re)calcule chevauchement->takes (la plus récente active)
+    for (const a of project.recordings) a.active = true
+    for (let i = 0; i < project.recordings.length; i++) for (let k = i + 1; k < project.recordings.length; k++) { const a = project.recordings[i], b = project.recordings[k]; if (a.characterId === b.characterId && recOverlap(a, b)) a.active = false }
+    markDirty(); if (activeTab === 'rec') renderRecTab()
+  }
+  for (const f of [...takeAudios.keys()]) if (!wanted.has(f)) takeAudios.delete(f)
+}
+
+function stopAllTakeAudio() { for (const a of takeAudios.values()) if (!a.paused) a.pause() }
+
+// lecture des enregistrements : pendant la lecture, joue les clips actifs des pistes
+// perso non coupées, calés sur leur position timeline (comme une piste audio normale).
+function syncTakesMonitor() {
+  if (recorder.active || video.paused) { stopAllTakeAudio(); return }
+  const now = effectiveTime()
+  const muted = project.recMuted || []
+  for (const r of (project.recordings || [])) {
+    const a = takeAudios.get(recPlayFile(r)); if (!a) continue
+    const eff = recEffDur(r)
+    const playable = r.active && eff > 0 && !muted.includes(r.characterId) && now >= r.startTime && now < r.startTime + eff
+    if (playable) {
+      const target = now - r.startTime + (r.trimStart || 0) // fenêtre rognée → position dans le fichier
+      if (a.paused) { a.currentTime = target; a.play().catch(() => {}) }
+      else if (Math.abs(a.currentTime - target) > 0.3) a.currentTime = target
+    } else if (!a.paused) a.pause()
+  }
+}
+
+// ---------- onglet Enregistrement ----------
+function toggleRecord() {
+  if (recorder.active) { stopRecording(); return }
+  startRecording()
+}
+
+// ---- bande rythmo en rendu final (comme la preview plein écran) dans l'onglet Enregistrement
+const recBandCanvas = $('recBand')
+const recBandCtx = recBandCanvas.getContext('2d')
+let rbw = 0, rbh = 0
+let recWinSec = 3 // secondes visibles (réglable à la molette Ctrl, comme la bande rythmo)
+const REC_SEC_MIN = 1.2, REC_SEC_MAX = 12
+// Ctrl+molette = zoom/dézoom (partagé entre la bande et l'affichage des prises)
+function recWheelZoom(e) {
+  if (!e.ctrlKey) return false
+  e.preventDefault()
+  recWinSec = clamp(recWinSec * (e.deltaY < 0 ? 1 / 1.12 : 1.12), REC_SEC_MIN, REC_SEC_MAX)
+  return true
+}
+function resizeRecBand() {
+  const wrap = $('recBandWrap'); if (!wrap) return
+  const r = wrap.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  rbw = r.width; rbh = r.height
+  const pw = Math.round(rbw * dpr), ph = Math.round(rbh * dpr)
+  if (recBandCanvas.width !== pw || recBandCanvas.height !== ph) {
+    recBandCanvas.width = pw; recBandCanvas.height = ph
+    recBandCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+}
+new ResizeObserver(() => { if (activeTab === 'rec') resizeRecBand() }).observe($('recBandWrap'))
+function drawRecBand() {
+  if (!rbw) { resizeRecBand(); if (!rbw) return }
+  // piste unique : toutes les répliques du perso sélectionné écrasées au bon timing,
+  // indépendamment de leurs pistes 1-4 de l'éditeur
+  const chId = recTargetId()
+  const squashed = project.lines.filter((l) => l.characterId === chId).map((l) => ({ ...l, track: 0 }))
+  renderBand(recBandCtx, effectiveTime(), rbw, rbh, rbw / recWinSec, { ruler: false, wave: false, handles: false, theme: bandPal(), lines: squashed, trackList: [0] })
+}
+// glisser = déplacer la timeline, comme la bande rythmo (attrape-et-déplace, relatif)
+let recBandDrag = null
+recBandCanvas.addEventListener('pointerdown', (e) => {
+  recBandCanvas.setPointerCapture(e.pointerId); video.pause()
+  recBandDrag = { x0: e.clientX, t0: effectiveTime(), moved: false }
+  recBandCanvas.style.cursor = 'grabbing'
+})
+recBandCanvas.addEventListener('pointermove', (e) => {
+  if (!recBandDrag) return
+  const dx = e.clientX - recBandDrag.x0
+  if (Math.abs(dx) > 3) recBandDrag.moved = true
+  if (recBandDrag.moved) { scrubTo(recBandDrag.t0 - dx / (rbw / recWinSec)); playScrubGrain(scrub.time) }
+})
+const recBandEnd = () => { recBandDrag = null; recBandCanvas.style.cursor = 'grab'; if (!scrub.busy && scrub.pending == null) scrub.time = null }
+recBandCanvas.addEventListener('pointerup', recBandEnd)
+recBandCanvas.addEventListener('pointercancel', recBandEnd)
+recBandCanvas.addEventListener('wheel', (e) => {
+  if (recWheelZoom(e)) return
+  e.preventDefault(); video.pause()
+  scrubTo(effectiveTime() + (e.deltaY || e.deltaX) / (rbw / recWinSec) * 0.8); playScrubGrain(scrub.time)
+}, { passive: false })
+
+// ---- forme d'onde des prises : décodage + peaks, en cache par fichier ----
+const clipWaves = new Map() // file -> {peaks,perSec,duration} | 'pending' | null
+async function ensureClipWave(file) {
+  if (clipWaves.has(file)) return
+  clipWaves.set(file, 'pending')
+  try {
+    const url = await window.api.takeUrl(projectPath, file)
+    const resp = await fetch(url); const ab = await resp.arrayBuffer()
+    const ac = new AudioContext({ sampleRate: 16000 })
+    const audio = await ac.decodeAudioData(ab); ac.close()
+    const PER = 80, n = Math.max(1, Math.ceil(audio.duration * PER))
+    const peaks = new Float32Array(n), d = audio.getChannelData(0), spb = audio.sampleRate / PER
+    for (let i = 0; i < d.length; i++) { const b = Math.min(n - 1, (i / spb) | 0); const v = Math.abs(d[i]); if (v > peaks[b]) peaks[b] = v }
+    let max = 0; for (let i = 0; i < n; i++) if (peaks[i] > max) max = peaks[i]; if (max > 0) for (let i = 0; i < n; i++) peaks[i] /= max
+    clipWaves.set(file, { peaks, perSec: PER, duration: audio.duration })
+  } catch { clipWaves.set(file, null) }
+}
+
+// ---- affichage des prises (blocs sélectionnables/glissables + waveform) ----
+let selectedClipId = null
+const recClipsCanvas = $('recClips')
+const recClipsCtx = recClipsCanvas.getContext('2d')
+let rcw = 0, rch = 0
+function resizeRecClips() {
+  const r = recClipsCanvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  rcw = r.width; rch = r.height
+  const pw = Math.round(rcw * dpr), ph = Math.round(rch * dpr)
+  if (recClipsCanvas.width !== pw || recClipsCanvas.height !== ph) {
+    recClipsCanvas.width = pw; recClipsCanvas.height = ph
+    recClipsCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+}
+new ResizeObserver(() => { if (activeTab === 'rec') resizeRecClips() }).observe(recClipsCanvas)
+const recClipsPps = () => rcw / recWinSec
+const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * recClipsPps()
+// hauteur FIXE d'une piste de takes ; le canvas prend la hauteur du contenu et le
+// conteneur (#recClipsWrap) scrolle verticalement pour parcourir les takes
+const REC_LANE_H = 44
+function syncRecClipsHeight() {
+  // le canvas remplit AU MOINS tout l'espace restant : la zone vide sous les pistes
+  // fait partie de la timeline (la barre de lecture la traverse, les pistes futures
+  // s'y ajouteront) ; au-delà, il grandit et le conteneur scrolle
+  const wrap = $('recClipsWrap')
+  const want = Math.max(recLaneCount(recTargetId()) * REC_LANE_H, wrap ? wrap.clientHeight : 0)
+  if (recClipsCanvas._lanesH !== want) { recClipsCanvas._lanesH = want; recClipsCanvas.style.height = want + 'px' }
+}
+// mini haut-parleur dessiné sur un segment multi-takes (retenue = ondes, sinon barré)
+function drawClipSpk(c, x, y, s, col, on) {
+  c.save(); c.translate(x, y); c.scale(s / 16, s / 16)
+  c.fillStyle = col
+  c.beginPath(); c.moveTo(2, 6); c.lineTo(5, 6); c.lineTo(9, 2.5); c.lineTo(9, 13.5); c.lineTo(5, 10); c.lineTo(2, 10); c.closePath(); c.fill()
+  c.strokeStyle = col; c.lineWidth = 1.6; c.beginPath()
+  if (on) { c.arc(9.5, 8, 4.2, -1.05, 1.05) } else { c.moveTo(11.5, 6); c.lineTo(15, 9.8); c.moveTo(15, 6); c.lineTo(11.5, 9.8) }
+  c.stroke(); c.restore()
+}
+function drawRecClips() {
+  if (!rcw) { resizeRecClips(); if (!rcw) return }
+  syncRecClipsHeight()
+  const pal = bandPal()
+  recClipsCtx.fillStyle = pal.rulerBg || pal.bg; recClipsCtx.fillRect(0, 0, rcw, rch)
+  const chId = recTargetId()
+  const clips = (project.recordings || []).filter((r) => r.characterId === chId)
+  const lanes = recLaneCount(chId)
+  const laneH = REC_LANE_H // hauteur fixe : la zone vide sous les pistes reste de la timeline
+  const isMuted = isRecMuted(chId)
+  const pps = recClipsPps()
+  // fonds de pistes alternés + séparateurs
+  for (let ln = 0; ln <= lanes; ln++) { // <= : trait de clôture sous la dernière piste
+    if (ln < lanes && ln % 2 === 1) { recClipsCtx.fillStyle = pal.lane; recClipsCtx.fillRect(0, ln * laneH, rcw, laneH) }
+    recClipsCtx.strokeStyle = pal.grid; recClipsCtx.beginPath(); recClipsCtx.moveTo(0, ln * laneH + 0.5); recClipsCtx.lineTo(rcw, ln * laneH + 0.5); recClipsCtx.stroke()
+  }
+  const col = getChar(chId)?.color || '#888'
+  for (const r of clips) {
+    const eff = recEffDur(r)
+    const x0 = recClipXAt(r.startTime), x1 = recClipXAt(r.startTime + eff)
+    if (x1 < -20 || x0 > rcw + 20) continue
+    const laneY = (r.lane || 0) * laneH
+    const y = laneY + 3, h = laneH - 6
+    const active = r.active && !isMuted
+    const selected = r.id === selectedClipId
+    const xa = Math.max(-2, x0), wpx = Math.max(3, Math.min(rcw + 2, x1) - xa)
+    recClipsCtx.globalAlpha = active ? 0.9 : 0.45
+    recClipsCtx.fillStyle = col + '2e'
+    recClipsCtx.beginPath(); recClipsCtx.roundRect(xa, y, wpx, h, 4); recClipsCtx.fill()
+    // waveform du fichier, décalée du rognage de début
+    const wv = clipWaves.get(r.file)
+    if (wv && wv.peaks) {
+      const mid = y + h / 2, amp = h / 2 - 3
+      const va = Math.max(0, x0), vb = Math.min(rcw, x1)
+      recClipsCtx.fillStyle = col; recClipsCtx.globalAlpha = active ? 0.85 : 0.4
+      recClipsCtx.beginPath(); recClipsCtx.moveTo(va, mid)
+      for (let x = va; x <= vb; x++) { const tt = (x - x0) / pps + (r.trimStart || 0); let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid - v * amp) }
+      for (let x = vb; x >= va; x--) { const tt = (x - x0) / pps + (r.trimStart || 0); let v = 0; if (tt >= 0 && tt < wv.duration) { const b = (tt * wv.perSec) | 0; if (b < wv.peaks.length) v = wv.peaks[b] } recClipsCtx.lineTo(x, mid + v * amp) }
+      recClipsCtx.closePath(); recClipsCtx.fill()
+    } else if (wv === undefined) { ensureClipWave(r.file) }
+    // bordure (sélection = accent épais) + poignées de crop quand sélectionné
+    recClipsCtx.globalAlpha = 1
+    recClipsCtx.strokeStyle = selected ? pal.handleAccent : col + 'aa'
+    recClipsCtx.lineWidth = selected ? 2 : 1
+    recClipsCtx.beginPath(); recClipsCtx.roundRect(xa + 0.5, y + 0.5, wpx - 1, h - 1, 4); recClipsCtx.stroke()
+    recClipsCtx.lineWidth = 1
+    if (selected) {
+      recClipsCtx.fillStyle = pal.handleAccent
+      recClipsCtx.fillRect(x0 - 2, y + 2, 4, h - 4)
+      recClipsCtx.fillRect(x1 - 2, y + 2, 4, h - 4)
+    }
+    // label « Prise N » (comme le nom sur les phrases) + bouton haut-parleur accolé
+    // (haut-parleur seulement si le segment a plusieurs takes)
+    const multi = recOverlapGroup(r).length > 0
+    const lx = Math.max(2, x0) + 3
+    if (multi) {
+      recClipsCtx.globalAlpha = 0.92
+      recClipsCtx.fillStyle = pal.bg
+      recClipsCtx.beginPath(); recClipsCtx.roundRect(lx, y + 3, 20, 20, 4); recClipsCtx.fill()
+      recClipsCtx.globalAlpha = 1
+      drawClipSpk(recClipsCtx, lx + 2, y + 5, 16, r.active ? pal.handleAccent : pal.tickText, r.active)
+    }
+    recClipsCtx.globalAlpha = 1
+    recClipsCtx.fillStyle = pal.tickText
+    recClipsCtx.font = '11px "Segoe UI", sans-serif'; recClipsCtx.textBaseline = 'middle'; recClipsCtx.textAlign = 'left'
+    recClipsCtx.fillText(t('recTakeN', (r.lane || 0) + 1), lx + (multi ? 25 : 4), y + 13)
+  }
+  const px = rcw * READ_RATIO
+  recClipsCtx.strokeStyle = pal.playhead; recClipsCtx.lineWidth = 1.5
+  recClipsCtx.beginPath(); recClipsCtx.moveTo(px + 0.5, 0); recClipsCtx.lineTo(px + 0.5, rch); recClipsCtx.stroke(); recClipsCtx.lineWidth = 1
+}
+// hit-test : segment + zone (haut-parleur, poignée gauche/droite, corps)
+function recClipHit(px, py) {
+  const chId = recTargetId()
+  const lanes = recLaneCount(chId)
+  const laneH = REC_LANE_H
+  if (py >= lanes * laneH) return null // zone vide sous les pistes
+  const ln = clamp(Math.floor(py / laneH), 0, lanes - 1)
+  for (const r of (project.recordings || [])) {
+    if (r.characterId !== chId || (r.lane || 0) !== ln) continue
+    const x0 = recClipXAt(r.startTime), x1 = recClipXAt(r.startTime + recEffDur(r))
+    if (px < x0 - 5 || px > x1 + 5) continue
+    const y = ln * laneH + 3
+    if (recOverlapGroup(r).length && px >= Math.max(2, x0) + 3 && px <= Math.max(2, x0) + 23 && py >= y + 3 && py <= y + 23) return { clip: r, zone: 'spk' }
+    if (Math.abs(px - x0) <= 5) return { clip: r, zone: 'l' }
+    if (Math.abs(px - x1) <= 5) return { clip: r, zone: 'r' }
+    return { clip: r, zone: 'move' }
+  }
+  return null
+}
+// dans chaque groupe de chevauchement : exactement une take retenue (active)
+function recNormalizeActive(charId) {
+  const clips = (project.recordings || []).filter((r) => r.characterId === charId)
+  for (let i = clips.length - 1; i >= 0; i--) {
+    const c = clips[i]; if (!c.active) continue
+    for (let k = 0; k < i; k++) { const o = clips[k]; if (o.active && recOverlap(o, c)) o.active = false }
+  }
+  for (const c of clips) {
+    const grp = clips.filter((o) => o !== c && recOverlap(o, c))
+    if (!grp.length) c.active = true
+    else if (!c.active && !grp.some((o) => o.active)) c.active = true
+  }
+}
+// sélectionne un segment (sélection visuelle seule — la take retenue se règle au haut-parleur)
+function selectClip(id) {
+  selectedClipId = id
+  const clip = (project.recordings || []).find((r) => r.id === id)
+  if (clip && clip.characterId !== selectedCharId) { selectedCharId = clip.characterId; renderChars() }
+}
+// clic haut-parleur : ce segment devient la take retenue de son groupe
+function retainClip(clip) {
+  pushUndo()
+  for (const r of recOverlapGroup(clip)) r.active = false
+  clip.active = true
+  // chaîne voix active → la take nouvellement retenue est traitée si besoin
+  if (project.voiceFxOn && !clip.fxFile) fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); preloadTakeAudios() } })
+  markDirty()
+}
+let clipDrag = null
+recClipsCanvas.addEventListener('pointerdown', (e) => {
+  const rct = recClipsCanvas.getBoundingClientRect()
+  const hit = recClipHit(e.clientX - rct.left, e.clientY - rct.top)
+  if (!hit) { selectedClipId = null; return }
+  if (hit.zone === 'spk') { selectClip(hit.clip.id); retainClip(hit.clip); return }
+  recClipsCanvas.setPointerCapture(e.pointerId)
+  selectClip(hit.clip.id)
+  clipDrag = { clip: hit.clip, zone: hit.zone, x0: e.clientX, start0: hit.clip.startTime, trimS0: hit.clip.trimStart || 0, trimE0: hit.clip.trimEnd || 0, moved: false, pushed: false }
+})
+recClipsCanvas.addEventListener('pointermove', (e) => {
+  const rct = recClipsCanvas.getBoundingClientRect()
+  if (!clipDrag) {
+    const hit = recClipHit(e.clientX - rct.left, e.clientY - rct.top)
+    recClipsCanvas.style.cursor = !hit ? 'default' : hit.zone === 'move' ? 'grab' : hit.zone === 'spk' ? 'pointer' : 'col-resize'
+    return
+  }
+  const dt = (e.clientX - clipDrag.x0) / recClipsPps()
+  if (Math.abs(e.clientX - clipDrag.x0) > 3) clipDrag.moved = true
+  if (!clipDrag.moved) return
+  if (!clipDrag.pushed) { pushUndo(); clipDrag.pushed = true }
+  const c = clipDrag.clip
+  if (clipDrag.zone === 'move') {
+    c.startTime = Math.max(0, clipDrag.start0 + dt)
+  } else if (clipDrag.zone === 'l') {
+    // poignée gauche : rogne le début (l'audio restant reste calé sur la timeline)
+    const ts = clamp(clipDrag.trimS0 + dt, 0, (c.dur || 0) - (c.trimEnd || 0) - 0.1)
+    c.startTime = Math.max(0, clipDrag.start0 + (ts - clipDrag.trimS0))
+    c.trimStart = ts
+  } else if (clipDrag.zone === 'r') {
+    c.trimEnd = clamp(clipDrag.trimE0 - dt, 0, (c.dur || 0) - (c.trimStart || 0) - 0.1)
+  }
+  markDirty()
+})
+function clipDragEnd() {
+  if (clipDrag && clipDrag.moved) {
+    const clip = clipDrag.clip
+    clip.lane = recAssignLane(clip) // remonte si plus de chevauchement, descend sinon
+    recNormalizeActive(clip.characterId)
+    renderRecCharList()
+  }
+  clipDrag = null; recClipsCanvas.style.cursor = 'default'
+}
+recClipsCanvas.addEventListener('pointerup', clipDragEnd)
+recClipsCanvas.addEventListener('pointercancel', clipDragEnd)
+recClipsCanvas.addEventListener('wheel', (e) => {
+  recWheelZoom(e) // Ctrl+molette = zoom ; molette simple = scroll vertical natif des takes
+}, { passive: false })
+
+function renderRecTab() {
+  const noChars = !project.videoPath || !project.characters.length
+  $('recEmpty').classList.toggle('hidden', !noChars)
+  $('recMain').classList.toggle('hidden', noChars)
+  if (noChars) return
+  resizeRecBand()
+  resizeRecClips()
+  updateRecCharBadge()
+  renderRecCharList()
+  updateRecUI()
+}
+
+// badge du personnage ciblé par l'enregistrement (comme le badge « + Réplique » du menu
+// rythmo) : nom rempli de la couleur du perso, outline porté par le groupe
+function updateRecCharBadge() {
+  const c = getChar(recTargetId())
+  const badge = $('recCharBadge')
+  if (badge) {
+    badge.textContent = c ? c.name : '—'
+    badge.style.background = c ? c.color : 'transparent'
+    badge.style.color = c ? textOn(c.color) : 'var(--dim)'
+    badge.title = c ? c.name : ''
+  }
+  const grp = $('recSegGroup'); if (grp) grp.style.borderColor = c ? c.color : ''
+}
+
+async function deleteClip(id) {
+  const idx = (project.recordings || []).findIndex((r) => r.id === id); if (idx < 0) return
+  const cl = project.recordings[idx]
+  pushUndo()
+  project.recordings.splice(idx, 1)
+  try { await window.api.deleteTake(projectPath, cl.file) } catch {}
+  if (cl.fxFile) { try { await window.api.deleteTake(projectPath, cl.fxFile) } catch {}; takeAudios.delete(cl.fxFile) }
+  takeAudios.delete(cl.file); clipWaves.delete(cl.file)
+  if (selectedClipId === id) selectedClipId = null
+  // réactive la dernière prise restante qui chevauchait, le cas échéant (latest wins)
+  markDirty(); renderRecTab()
+}
+
+// ============================================================ chaîne voix (auto-mix)
+// EQ + compression + niveau calculés automatiquement d'après l'ANALYSE de chaque prise
+// (approche type Auphonic AutoEQ/Leveler) : énergie par bande → filtres correctifs,
+// dé-esseur et anti-plosive dynamiques (tameBand), facteur de crête → compression,
+// puis normalisation vers une cible ≈ -22 dBFS RMS
+// (podcast/US, approx. LUFS) équilibrée avec le niveau moyen de la piste vidéo.
+// Le résultat est PRÉCALCULÉ en WAV sidecar (fx_*.wav) : lecture et export l'utilisent.
+let fxBusy = false
+const dbOf = (x) => 10 * Math.log10(x + 1e-12)
+
+// biquad RBJ minimal (filtrage par bande, O(n), hors WebAudio)
+function biquadFilt(data, sr, type, fc, Q) {
+  const w0 = 2 * Math.PI * fc / sr, cw = Math.cos(w0), sw = Math.sin(w0), al = sw / (2 * Q)
+  let b0, b1, b2
+  if (type === 'bandpass') { b0 = al; b1 = 0; b2 = -al }
+  else if (type === 'lowpass') { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0 }
+  else { b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = b0 } // highpass
+  const a0 = 1 + al, a1 = -2 * cw, a2 = 1 - al
+  b0 /= a0; b1 /= a0; b2 /= a0
+  const na1 = a1 / a0, na2 = a2 / a0
+  const out = new Float32Array(data.length)
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0
+  for (let i = 0; i < data.length; i++) {
+    const x = data[i]
+    const y = b0 * x + b1 * x1 + b2 * x2 - na1 * y1 - na2 * y2
+    x2 = x1; x1 = x; y2 = y1; y1 = y
+    out[i] = y
+  }
+  return out
+}
+function biquadRms(data, sr, type, fc, Q) {
+  const y = biquadFilt(data, sr, type, fc, Q)
+  let sq = 0
+  for (let i = 0; i < y.length; i++) sq += y[i] * y[i]
+  return dbOf(sq / Math.max(1, y.length))
+}
+
+// réduction dynamique d'une bande (dé-esseur sur les aigus, anti-plosive sur les graves) :
+// l'enveloppe de la bande est suivie en dB ; quand elle dépasse de `overDb` le niveau
+// voisé moyen de cette bande, l'excès est soustrait du signal (y = x − (1−g)·bande).
+// La bande n'est atténuée que pendant les pointes — pas de déphasage ni de perte de
+// timbre le reste du temps, contrairement à un EQ statique.
+function tameBand(buf, type, fc, Q, overDb, maxCutDb, attMs, relMs) {
+  const sr = buf.sampleRate
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const x = buf.getChannelData(c)
+    const band = biquadFilt(x, sr, type, fc, Q)
+    // niveau de référence : RMS fenêtré de la bande, fenêtres voisées uniquement
+    const win = Math.max(1, Math.round(sr * 0.05))
+    const w = []
+    for (let i = 0; i + win <= band.length; i += win) {
+      let sq = 0
+      for (let k = i; k < i + win; k++) sq += band[k] * band[k]
+      w.push(dbOf(sq / win))
+    }
+    const mx = w.length ? Math.max(...w) : -90
+    const voiced = w.filter((v) => v > mx - 30)
+    const thr = (voiced.length ? voiced.reduce((a, b) => a + b, 0) / voiced.length : mx) + overDb
+    const ga = Math.exp(-1000 / (sr * attMs)), gr = Math.exp(-1000 / (sr * relMs))
+    let env = 0
+    for (let i = 0; i < x.length; i++) {
+      const a = Math.abs(band[i])
+      env = a > env ? ga * env + (1 - ga) * a : gr * env + (1 - gr) * a
+      const eDb = 20 * Math.log10(env + 1e-12)
+      if (eDb <= thr) continue
+      const cut = Math.min(maxCutDb, (eDb - thr) * 0.8) // pente ≈ compression 4:1
+      x[i] -= (1 - Math.pow(10, -cut / 20)) * band[i]
+    }
+  }
+}
+
+// analyse d'une prise : niveau moyen (fenêtres voisées), crête, énergie par bande →
+// réglages de la chaîne (EQ correctif, compression, seuil)
+function analyzeVoice(buf, light) {
+  const d = buf.getChannelData(0), sr = buf.sampleRate
+  const win = Math.max(1, Math.round(sr * 0.05))
+  const rmsW = []
+  for (let i = 0; i + win <= d.length; i += win) {
+    let sq = 0
+    for (let k = i; k < i + win; k++) sq += d[k] * d[k]
+    rmsW.push(dbOf(sq / win))
+  }
+  const maxW = rmsW.length ? Math.max(...rmsW) : -90
+  const voiced = rmsW.filter((v) => v > maxW - 30)
+  const rmsDb = voiced.length ? voiced.reduce((a, b) => a + b, 0) / voiced.length : maxW
+  let pk = 1e-9
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a }
+  const peakDb = 20 * Math.log10(pk)
+  if (light) return { rmsDb, peakDb }
+  const full = rmsW.length ? rmsW.reduce((a, b) => a + b, 0) / rmsW.length : -90
+  // énergie relative par bande vs référence « voix neutre » (empirique)
+  const lowRel = biquadRms(d, sr, 'lowpass', 90, 0.71) - full   // gronde/pop
+  const mudRel = biquadRms(d, sr, 'bandpass', 300, 1) - full    // boue 200-500 Hz
+  const presRel = biquadRms(d, sr, 'bandpass', 3500, 0.9) - full // présence/intelligibilité
+  const sibRel = biquadRms(d, sr, 'bandpass', 7000, 1.5) - full  // sibilance
+  const crest = peakDb - rmsDb
+  return {
+    rmsDb, peakDb,
+    hpFc: lowRel > -6 ? 110 : 85,                       // coupe-bas plus haut si ça gronde
+    eqMud: clamp(-(mudRel + 6) * 0.9, -6, 0),           // cut boue si excès
+    eqPres: clamp((-10 - presRel) * 0.7, 0, 4),         // boost présence si voix sourde
+    eqSib: clamp(-(sibRel + 14) * 1.0, -5, 0),          // cut statique doux — le dé-esseur dynamique (tameBand) fait le reste
+    ratio: crest >= 18 ? 4 : crest >= 12 ? 3 : 2.2,     // compression selon la dynamique
+    thresh: clamp(rmsDb + 4, -45, -8),
+  }
+}
+
+// cible de niveau : équilibrée avec la piste audio de la vidéo, sinon ≈ -22 dBFS RMS
+// (−6 dB sous la référence podcast : la voix traitée sortait trop fort)
+const fxTargetDb = () => (videoRmsDb != null && isFinite(videoRmsDb)) ? clamp(videoRmsDb - 2, -28, -19) : -22
+
+// rendu offline de la chaîne : anti-plosive → HP → shelf graves → EQ boue → présence →
+// dé-ess statique → comp → dé-esseur dynamique → (pass 2) gain vers la cible → limiteur
+async function renderVoiceChain(buf, A, targetDb) {
+  tameBand(buf, 'lowpass', 120, 0.71, 6, 12, 3, 90) // anti-plosive : ravale les coups de graves (p/b) avant tout
+  const off = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate)
+  const src = off.createBufferSource(); src.buffer = buf
+  const hp = off.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = A.hpFc; hp.Q.value = 0.71
+  const shelf = off.createBiquadFilter(); shelf.type = 'lowshelf'; shelf.frequency.value = 150; shelf.gain.value = -3 // allège les basses (proximité micro)
+  const mud = off.createBiquadFilter(); mud.type = 'peaking'; mud.frequency.value = 300; mud.Q.value = 1; mud.gain.value = A.eqMud
+  const pres = off.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3500; pres.Q.value = 0.9; pres.gain.value = A.eqPres
+  const sib = off.createBiquadFilter(); sib.type = 'peaking'; sib.frequency.value = 7000; sib.Q.value = 2; sib.gain.value = A.eqSib
+  const comp = off.createDynamicsCompressor(); comp.threshold.value = A.thresh; comp.ratio.value = A.ratio; comp.attack.value = 0.004; comp.release.value = 0.18; comp.knee.value = 8
+  src.connect(hp); hp.connect(shelf); shelf.connect(mud); mud.connect(pres); pres.connect(sib); sib.connect(comp); comp.connect(off.destination)
+  src.start()
+  const mid = await off.startRendering()
+  tameBand(mid, 'highpass', 5500, 0.71, 4, 10, 1, 60) // dé-esseur dynamique, après EQ/comp
+  const A2 = analyzeVoice(mid, true)
+  const g = Math.pow(10, clamp(targetDb - A2.rmsDb, -24, 24) / 20)
+  const off2 = new OfflineAudioContext(mid.numberOfChannels, mid.length, mid.sampleRate)
+  const s2 = off2.createBufferSource(); s2.buffer = mid
+  const gn = off2.createGain(); gn.gain.value = g
+  const lim = off2.createDynamicsCompressor(); lim.threshold.value = -2; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1; lim.knee.value = 1
+  s2.connect(gn); gn.connect(lim); lim.connect(off2.destination); s2.start()
+  return off2.startRendering()
+}
+
+// AudioBuffer → WAV PCM 16 bits (sidecar précalculé)
+function encodeWav16(buf) {
+  const ch = buf.numberOfChannels, sr = buf.sampleRate, n = buf.length
+  const bytes = 44 + n * ch * 2
+  const ab = new ArrayBuffer(bytes); const v = new DataView(ab)
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)) }
+  ws(0, 'RIFF'); v.setUint32(4, bytes - 8, true); ws(8, 'WAVE'); ws(12, 'fmt ')
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true)
+  v.setUint32(24, sr, true); v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true)
+  ws(36, 'data'); v.setUint32(40, n * ch * 2, true)
+  const chans = []; for (let c = 0; c < ch; c++) chans.push(buf.getChannelData(c))
+  let o = 44
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) { const s = Math.max(-1, Math.min(1, chans[c][i])); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2 }
+  return ab
+}
+
+// analyse + traite une prise → écrit le sidecar fx_*.wav et le référence sur le clip
+async function fxProcessClip(r) {
+  try {
+    const url = await window.api.takeUrl(projectPath, r.file); if (!url) return false
+    const resp = await fetch(url); const ab = await resp.arrayBuffer()
+    const dc = new (window.AudioContext || window.webkitAudioContext)()
+    const buf = await dc.decodeAudioData(ab); dc.close()
+    const out = await renderVoiceChain(buf, analyzeVoice(buf), fxTargetDb())
+    const name = 'fx_' + r.file.replace(/\.[^.]+$/, '') + '.wav'
+    const res = await window.api.saveTake(projectPath, name, encodeWav16(out))
+    if (!res || res.error) return false
+    r.fxFile = res.name
+    return true
+  } catch { return false }
+}
+
+// garantit les sidecars FX des prises données — générés à l'enregistrement désormais,
+// mais les prises plus anciennes peuvent en manquer : rattrapage avant un export « FX »
+async function ensureFxSidecars(clips) {
+  let n = 0
+  for (const r of clips) if (!r.fxFile && await fxProcessClip(r)) n++
+  if (n) markDirty()
+  return n
+}
+
+// ============================================================ export des enregistrements (ZIP)
+// Même UX que l'export vidéo : options, destination, barre de progression.
+// Mix complet par personnage (prises actives, timeline respectée) + option prises
+// détachées horodatées — le tout dans un ZIP, source brute ou traitée (coche FX).
+const tkModal = $('takesModal')
+let tkBusy = false
+let tkCharSel = new Set() // personnages cochés dans la modale
+const takesCharItems = () => project.characters
+  .filter((c) => (project.recordings || []).some((r) => r.characterId === c.id && recEffDur(r) > 0))
+  .map((c) => ({ value: c.id, label: c.name }))
+function openTakesExport() {
+  if (!(project.recordings || []).length) { toast(t('tkNone')); return }
+  tkModal.classList.remove('hidden')
+  $('tkBar').style.width = '0%'
+  $('tkStatus').textContent = ''
+  $('tkFx').checked = false // toujours sans FX par défaut, même si les pistes perso sont « avec FX »
+  const items = takesCharItems()
+  tkCharSel = new Set(items.map((it) => it.value))
+  const upd = () => { $('ddTkCharsBtn').textContent = summarizeChecks(tkCharSel, items, t('expAllRecs'), (n) => t('expSomeRecs', n)) }
+  fillChecklist($('ddTkCharsMenu'), items, tkCharSel, upd)
+  upd()
+}
+const tkSuggestedName = () => (projectPath ? baseName(projectPath).replace(/\.[^.]+$/, '') : baseName(project.videoPath || 'enregistrements').replace(/\.[^.]+$/, '')) + '-enregistrements.zip'
+$('tkBrowse').addEventListener('click', async () => {
+  const p = await window.api.takesExportPick(tkSuggestedName())
+  if (p) $('tkPath').value = p
+})
+$('tkClose').addEventListener('click', () => { if (!tkBusy) tkModal.classList.add('hidden') })
+window.api.onTakesProgress((p) => {
+  if (!p || tkModal.classList.contains('hidden')) return
+  $('tkBar').style.width = `${Math.round(((p.i || 0) / Math.max(1, p.n || 1)) * 100)}%`
+  $('tkStatus').textContent = p.label === 'zip' ? t('tkPhaseZip') : t('tkPhaseMix', p.label)
+})
+async function runTakesExport() {
+  if (tkBusy) return
+  let outPath = $('tkPath').value.trim()
+  if (!outPath) { const p = await window.api.takesExportPick(tkSuggestedName()); if (!p) return; outPath = p; $('tkPath').value = p }
+  if (!/\.zip$/i.test(outPath)) { outPath += '.zip'; $('tkPath').value = outPath }
+  const useFx = $('tkFx').checked
+  tkBusy = true
+  $('tkGo').disabled = true
+  // export « FX » : rattrape d'abord les sidecars manquants des prises concernées
+  if (useFx) {
+    $('tkStatus').textContent = t('recFxBusy')
+    await ensureFxSidecars((project.recordings || []).filter((r) => tkCharSel.has(r.characterId) && recEffDur(r) > 0))
+  }
+  const pick = (r) => (useFx && r.fxFile) ? r.fxFile : r.file
+  const clipInfo = (r) => ({ name: pick(r), trimStart: r.trimStart || 0, effDur: recEffDur(r), offset: r.startTime, takeN: (r.lane || 0) + 1 })
+  const chars = project.characters
+    .filter((c) => tkCharSel.has(c.id))
+    .map((c) => {
+      const all = (project.recordings || []).filter((r) => r.characterId === c.id && recEffDur(r) > 0)
+      return { name: c.name, active: all.filter((r) => r.active).map(clipInfo), all: all.map(clipInfo) }
+    })
+    .filter((c) => c.all.length)
+  $('tkStatus').textContent = t('tkPhaseMix', '…')
+  const r = await window.api.exportTakes({
+    outPath, projectPath, includeDetached: $('tkDetached').checked, chars,
+    videoDur: (isFinite(video.duration) && video.duration > 0) ? video.duration
+      : Math.max(1, ...(project.recordings || []).map((k) => k.startTime + recEffDur(k))),
+  })
+  tkBusy = false
+  $('tkGo').disabled = false
+  if (r && r.ok) {
+    $('tkBar').style.width = '100%'
+    $('tkStatus').textContent = t('tkDone', r.count)
+    toast(t('tkDone', r.count))
+  } else {
+    $('tkStatus').textContent = t('tkFail') + (r && r.error ? ' — ' + String(r.error).slice(0, 120) : '')
+  }
+}
+$('tkGo').addEventListener('click', runTakesExport)
+
+// bouton « chaîne voix » : traite toutes les takes actives qui ne le sont pas encore
+async function toggleVoiceFx() {
+  if (fxBusy) return
+  if (project.voiceFxOn) {
+    project.voiceFxOn = false
+    markDirty(); stopAllTakeAudio(); preloadTakeAudios(); renderRecCharList()
+    return
+  }
+  fxBusy = true; renderRecCharList()
+  let n = 0
+  for (const r of (project.recordings || [])) {
+    if (!r.active || r.fxFile) continue
+    if (await fxProcessClip(r)) n++
+  }
+  project.voiceFxOn = true
+  fxBusy = false
+  markDirty(); stopAllTakeAudio(); await preloadTakeAudios(); renderRecCharList()
+  toast(t('recFxDone', n))
+}
+
+// encart de gauche : uniquement le personnage sélectionné (la sélection se fait via le
+// drawer Personnages ou les touches 1-9) + mute de sa piste d'enregistrement
+function renderRecCharList() {
+  const list = $('recCharList'); if (!list) return
+  list.innerHTML = ''
+  const c = getChar(recTargetId())
+  if (!c) return
+  const clips = (project.recordings || []).filter((r) => r.characterId === c.id)
+  const row = document.createElement('div')
+  row.className = 'rec-ch target' + (isRecMuted(c.id) ? ' muted' : '')
+  const head = document.createElement('div'); head.className = 'rec-ch-head'
+  const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
+  const nm = document.createElement('span'); nm.className = 'rec-ch-name'; nm.textContent = c.name
+  // bouton FX : chaîne d'effets auto (EQ/comp/niveau) sur les takes retenues —
+  // les nouveaux enregistrements sont traités à la volée tant que c'est actif
+  const fx = document.createElement('button')
+  fx.className = 'rec-fxbtn' + (project.voiceFxOn ? ' on' : '')
+  fx.textContent = 'FX'
+  fx.disabled = fxBusy
+  fx.title = fxBusy ? t('recFxBusy') : t('recFxHint')
+  fx.addEventListener('click', (e) => { e.stopPropagation(); toggleVoiceFx() })
+  const mute = document.createElement('button'); mute.className = 'trk-spk' + (isRecMuted(c.id) ? '' : ' on'); mute.innerHTML = isRecMuted(c.id) ? SPK_OFF_SVG : SPK_ON_SVG
+  mute.title = t('recMuteTrack'); mute.addEventListener('click', (e) => { e.stopPropagation(); toggleRecMute(c.id) })
+  head.append(dot, nm, fx, mute)
+  row.appendChild(head)
+  const meta = document.createElement('div'); meta.className = 'rec-ch-meta'
+  meta.textContent = clips.length ? t('recTakes', clips.length) : t('recNoTakes')
+  row.appendChild(meta)
+  list.appendChild(row)
+}
+
+$('recBigBtn').addEventListener('click', toggleRecord)
+
+
+// ============================================================ transcription automatique
+// Génère le texte depuis l'audio via whisper.cpp (moteur fourni par l'utilisateur,
+// modèle téléchargé à la demande — rien de bundlé). Le résultat SRT est importé par
+// importSubsText (circuit éprouvé). Dégrade proprement si le moteur est absent.
+const trModal = $('transcribeModal')
+let trBusy = false
+
+// prêt à transcrire = moteur configuré ET au moins un modèle installé (tout se
+// configure dans les Paramètres ; la modale ne fait qu'utiliser ce qui est installé)
+async function transcribeReadiness() {
+  let engine = false
+  try { engine = (await window.api.whisperEngineStatus()).installed } catch {}
+  let models = []
+  try { models = (await window.api.whisperListModels()).filter((m) => m.present) } catch {}
+  return { engine, models }
+}
+
+async function openTranscribeDialog() {
+  if (!project.videoPath) { toast(t('trNeedVideo')); return }
+  trModal.classList.remove('hidden')
+  $('trBar').style.width = '0%'
+  $('trStatus').textContent = ''
+  const { engine, models } = await transcribeReadiness()
+  if (models.length && !models.some((m) => m.model === activeWhisper())) setActiveWhisper(models[0].model)
+  const ready = engine && models.length > 0
+  $('trNotReady').classList.toggle('hidden', ready)
+  $('trReady').classList.toggle('hidden', !ready)
+  $('trGo').classList.toggle('hidden', !ready)
+  if (!ready) { $('trNotReadyMsg').textContent = !engine ? t('trNeedEngine') : t('trNeedModel'); return }
+  // piste source
+  trTracks = audioSourceOptions()
+  const tsel = $('trInTrack'); tsel.innerHTML = ''
+  trTracks.forEach((o, i) => { const op = document.createElement('option'); op.value = String(i); op.textContent = o.label; tsel.appendChild(op) })
+  // dropdown modèle (installés) — défaut = modèle actif
+  const msel = $('trModel'); msel.innerHTML = ''
+  for (const m of models) { const o = document.createElement('option'); o.value = m.model; o.textContent = `${m.model} (${fmtDlSize(m.sizeMB)})`; msel.appendChild(o) }
+  msel.value = activeWhisper()
+  // langues en toutes lettres
+  const lsel = $('trLang'); const cur = lsel.value || 'auto'; lsel.innerHTML = ''
+  for (const [code, key] of TR_LANGS) { const o = document.createElement('option'); o.value = code; o.textContent = t(key); lsel.appendChild(o) }
+  lsel.value = cur
+  $('trSpeakers').value = localStorage.getItem('trSpeakers') || '0'
+}
+const TR_LANGS = [['auto', 'langAuto'], ['fr', 'langFr'], ['en', 'langEn'], ['es', 'langEs'], ['de', 'langDe'], ['it', 'langIt'], ['pt', 'langPt'], ['ja', 'langJa'], ['zh', 'langZh'], ['ru', 'langRu'], ['ar', 'langAr'], ['he', 'langHe']]
+let trTracks = []
+$('trModel').addEventListener('change', () => setActiveWhisper($('trModel').value))
+function closeTranscribe() { if (!trBusy) trModal.classList.add('hidden') }
+
+$('trOpenSettings').addEventListener('click', () => { trModal.classList.add('hidden'); openSettings() })
+$('trClose').addEventListener('click', () => {
+  if (trBusy) { window.api.whisperCancel(); trBusy = false; $('trStatus').textContent = t('trCancelled'); $('trClose').textContent = t('close'); $('trGo').disabled = false }
+  else closeTranscribe()
+})
+$('trGo').addEventListener('click', runTranscribe)
+window.api.onWhisperProgress((p) => {
+  if (!p || !trBusy) return // n'affiche que pendant un run de transcription
+  if (p.phase === 'extract') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseExtract') }
+  else if (p.phase === 'transcribe') { $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'; $('trStatus').textContent = t('trTranscribing', p.pct || 0) }
+})
+
+async function runTranscribe() {
+  if (trBusy) return
+  const model = $('trModel').value || activeWhisper()
+  if (!model) { toast(t('trNeedModel')); return }
+  const lang = $('trLang').value
+  const numSpeakers = Number($('trSpeakers').value) || 0
+  localStorage.setItem('trSpeakers', String(numSpeakers))
+  const tr = trTracks[Number($('trInTrack').value) || 0] || trTracks[0] || { source: project.videoPath, aIndex: 0 }
+  trBusy = true; $('trGo').disabled = true; $('trClose').textContent = t('cancel')
+  try {
+    $('trStatus').textContent = t('trTranscribing', 0)
+    const r = await window.api.whisperTranscribe({ source: tr.source, aIndex: tr.aIndex, model, language: lang, numSpeakers })
+    if (!r || r.error) {
+      const map = { 'no-engine': 'trNeedEngine', 'no-model': 'trNeedModel', 'no-source': 'trNeedVideo' }
+      toast(t(map[r && r.error] || 'trFailed'))
+      $('trStatus').textContent = t('trFailed')
+      return
+    }
+    const n = r.segments ? buildLinesFromSegments(r.segments) : (importSubsText(r.srt || ''), 0)
+    $('trBar').style.width = '100%'
+    $('trStatus').textContent = t('trImported', n || 0)
+    trModal.classList.add('hidden')
+  } finally {
+    trBusy = false; $('trGo').disabled = false; $('trClose').textContent = t('close')
+  }
+}
+
+// découpe un segment {start,end,text} en répliques courtes : les onomatopées / bruits
+// entre parenthèses ou crochets (rires, musique, soupir…) deviennent des réacs séparées,
+// le texte parlé est coupé aux phrases pour éviter les pavés. Durées proportionnelles.
+function segToChunks(text) {
+  const chunks = []
+  const re = /\(([^)]{1,60})\)|\[([^\]]{1,60})\]|♪([^♪]{0,60})♪/g
+  let last = 0, m
+  const pushSpoken = (s) => {
+    s = s.trim(); if (!s) return
+    const parts = s.split(/(?<=[.!?…])\s+/).map((x) => x.trim()).filter(Boolean)
+    for (const p of (parts.length ? parts : [s])) chunks.push({ reac: false, text: p })
+  }
+  while ((m = re.exec(text))) {
+    pushSpoken(text.slice(last, m.index))
+    const inner = (m[1] || m[2] || m[3] || '').trim()
+    if (inner) chunks.push({ reac: true, text: '(' + inner.toLowerCase() + ')' })
+    last = re.lastIndex
+  }
+  pushSpoken(text.slice(last))
+  return chunks
+}
+
+function buildLinesFromSegments(segments) {
+  if (!segments || !segments.length) { toast(t('trNone')); return 0 }
+  pushUndo()
+  const speakerChar = new Map()
+  const charFor = (sp) => {
+    const key = sp == null ? 0 : sp
+    if (speakerChar.has(key)) return speakerChar.get(key)
+    const name = t('speakerName', key + 1)
+    let c = project.characters.find((x) => x.name === name)
+    if (!c) {
+      c = { id: uid(), name, color: PALETTE[project.characters.length % PALETTE.length], prefTrack: clamp(key, 0, MAX_TRACKS - 1) }
+      project.characters.push(c)
+    }
+    speakerChar.set(key, c.id)
+    return c.id
+  }
+  // crée d'abord un personnage par locuteur (ordre d'apparition) et ADAPTE le nombre
+  // de pistes AVANT de placer les répliques (pour que findFreeTrack ait les lanes)
+  for (const seg of segments) charFor(seg.speaker)
+  project.tracks = clamp(Math.max(1, speakerChar.size), 1, MAX_TRACKS)
+  let added = 0
+  for (const seg of segments) {
+    const cid = charFor(seg.speaker)
+    const chunks = segToChunks(String(seg.text || ''))
+    if (!chunks.length) continue
+    const a0 = Math.max(0, Number(seg.start) || 0)
+    const b0 = Math.max(a0 + 0.2, Number(seg.end) || a0 + 0.6)
+    // poids par longueur (réac = poids minimal) pour répartir la durée du segment
+    const w = chunks.map((c) => Math.max(c.reac ? 2 : 4, c.text.length))
+    const tot = w.reduce((s, x) => s + x, 0) || 1
+    let cur = a0
+    chunks.forEach((c, i) => {
+      const span = (b0 - a0) * (w[i] / tot)
+      const a = cur, b = Math.max(a + 0.2, cur + span); cur = b
+      const line = { id: uid(), characterId: cid, track: findFreeTrack(a, b, cid), words: splitWords(c.text, a, b) }
+      if (c.reac) line.kind = 'reac'
+      project.lines.push(line); added++
+    })
+  }
+  // assez de pistes pour tous les locuteurs, puis rafraîchir l'UI
+  const maxUsed = project.lines.reduce((mx, l) => Math.max(mx, l.track || 0), -1)
+  project.tracks = clamp(Math.max(project.tracks, maxUsed + 1), 1, MAX_TRACKS)
+  if (!getChar(selectedCharId)) selectedCharId = project.characters[0]?.id || null
+  renderChars(); applyBandHeight(); buildInsTrackOptions(); refreshTrackCountUI(); buildLineFilterOptions(); refreshInspector(); renderLinesLog()
+  markDirty()
+  return added
+}
+
+
+// ============================================================ Paramètres (capture + modèles + séparation)
+const setModal = $('settingsModal')
+let sepActive = false
+
+function setDl(on, msg) {
+  $('setProgress').classList.toggle('hidden', !on)
+  $('setStatus').textContent = msg || ''
+  if (!on) $('setBar').style.width = '0%'
+}
+// estimation de taille de téléchargement lisible (Mo / Go) selon la langue
+function fmtDlSize(mb) {
+  if (!mb) return '?'
+  if (mb >= 1000) { let s = (mb / 1000).toFixed(1); if (lang !== 'en') s = s.replace('.', ',') // virgule décimale (fr/es)
+    return s.replace(/[.,]0$/, '') + ' ' + t('unitGB') }
+  return Math.round(mb) + ' ' + t('unitMB')
+}
+function saveAudioCfg() { window.api.audioConfigSet({ api: audioCfg.api, device: audioCfg.device, deviceLabel: audioCfg.deviceLabel, output: audioCfg.output, outputLabel: audioCfg.outputLabel, recOffsetMs: audioCfg.recOffsetMs || 0 }) }
+
+// ---- préchargement Paramètres : listes en cache pour un affichage instantané ----
+// Les deviceId de Chromium changent d'une session à l'autre (surtout sous file://) :
+// on mémorise aussi le NOM du périphérique et on le retrouve par nom si l'id a changé.
+let capInDevs = []  // périphériques d'entrée (audioinput) en cache
+let capOutDevs = [] // périphériques de sortie (audiooutput) en cache
+const modelCache = { trEngine: null, trModels: null, sepModels: null, python: null }
+
+function pickDevice(devs, id, label) {
+  return devs.find((d) => d.deviceId && d.deviceId === id) || (label ? devs.find((d) => d.label && d.label === label) : null) || null
+}
+async function currentInputId(id, label) {
+  let devs = []
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput') } catch {}
+  const m = pickDevice(devs, id, label)
+  return m ? m.deviceId : null
+}
+// met en cache les listes de périphériques et réconcilie les choix mémorisés par nom
+async function refreshDeviceCaches() {
+  let devs = []
+  try { devs = await navigator.mediaDevices.enumerateDevices() } catch {}
+  capInDevs = devs.filter((d) => d.kind === 'audioinput')
+  capOutDevs = devs.filter((d) => d.kind === 'audiooutput')
+  const mi = pickDevice(capInDevs, audioCfg.device, audioCfg.deviceLabel)
+  if (mi && mi.deviceId !== audioCfg.device) { audioCfg.device = mi.deviceId; if (mi.label) audioCfg.deviceLabel = mi.label; saveAudioCfg() }
+  const mo = pickDevice(capOutDevs, audioCfg.output, audioCfg.outputLabel)
+  if (mo && mo.deviceId !== audioCfg.output) { audioCfg.output = mo.deviceId; if (mo.label) audioCfg.outputLabel = mo.label; saveAudioCfg() }
+  applyOutputSink()
+}
+// ouvre le micro mémorisé (id exact) ; si l'id a changé entre sessions, le retrouve par nom
+async function openMic(base) {
+  const getAudio = (c) => navigator.mediaDevices.getUserMedia({ audio: c })
+  if (!audioCfg.device && !audioCfg.deviceLabel) return getAudio(base)
+  try { return await getAudio({ ...base, deviceId: { exact: audioCfg.device } }) }
+  catch {
+    const id = await currentInputId(audioCfg.device, audioCfg.deviceLabel) // la tentative a accordé la permission → libellés lisibles
+    if (id && id !== audioCfg.device) { audioCfg.device = id; saveAudioCfg() }
+    try { return id ? await getAudio({ ...base, deviceId: { exact: id } }) : await getAudio(base) }
+    catch { return getAudio(base) }
+  }
+}
+// au démarrage : débloque les noms de périphériques (accès micro bref) + précharge les listes
+async function preloadSettings() {
+  refreshTrCache(); refreshSepCache() // modèles (IPC + fs), en tâche de fond
+  try { const s = await navigator.mediaDevices.getUserMedia({ audio: true }); s.getTracks().forEach((tr) => tr.stop()) } catch {}
+  await refreshDeviceCaches()
+}
+
+async function fillCaptureDevices() {
+  const api = $('capApi').value
+  const devSel = $('capDevice')
+  devSel.innerHTML = ''
+  $('capNote').textContent = ''
+  if (api === 'system') {
+    const devs = capInDevs // cache préchargé (affichage instantané)
+    if (!devs.some((d) => d.label)) $('capNote').textContent = t('capGrantMic')
+    const def = document.createElement('option'); def.value = ''; def.textContent = t('capDefault'); devSel.appendChild(def)
+    for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); devSel.appendChild(o) }
+    const m = pickDevice(devs, audioCfg.device, audioCfg.deviceLabel)
+    if (m) {
+      devSel.value = m.deviceId
+      if (m.deviceId !== audioCfg.device || (m.label && m.label !== audioCfg.deviceLabel)) { audioCfg.device = m.deviceId; if (m.label) audioCfg.deviceLabel = m.label; saveAudioCfg() }
+    } else { devSel.value = audioCfg.device || '' }
+  } else {
+    const r = await window.api.listCaptureDevices(api)
+    const devs = (r && r.devices) || []
+    if (!r || !r.available) $('capNote').textContent = t('capNoBackend')
+    for (const name of devs) { const o = document.createElement('option'); o.value = name; o.textContent = name; devSel.appendChild(o) }
+    if (!devs.length) { const o = document.createElement('option'); o.value = ''; o.textContent = t('capNoDevices'); devSel.appendChild(o) }
+    if (devs.length) {
+      // backend dispo : on garde le périphérique mémorisé s'il existe, sinon le 1er
+      devSel.value = devs.includes(audioCfg.device) ? audioCfg.device : devs[0]
+      audioCfg.device = devSel.value || null
+    } else {
+      // backend momentanément indisponible : ne pas écraser le choix mémorisé
+      devSel.value = ''
+    }
+  }
+}
+
+// ---- sortie audio : sélection du périphérique de lecture + test (retour audio + visuel) ----
+function fillOutputDevices() {
+  const sel = $('outDevice')
+  sel.innerHTML = ''
+  const devs = capOutDevs // cache préchargé (affichage instantané)
+  $('outNote').textContent = devs.some((d) => d.label) ? '' : t('capGrantMic')
+  const def = document.createElement('option'); def.value = ''; def.textContent = t('capDefault'); sel.appendChild(def)
+  for (const d of devs) { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 10); sel.appendChild(o) }
+  const m = pickDevice(devs, audioCfg.output, audioCfg.outputLabel)
+  if (m) {
+    sel.value = m.deviceId
+    if (m.deviceId !== audioCfg.output || (m.label && m.label !== audioCfg.outputLabel)) { audioCfg.output = m.deviceId; if (m.label) audioCfg.outputLabel = m.label; saveAudioCfg(); applyOutputSink() }
+  } else { sel.value = '' } // on garde le choix mémorisé (audioCfg.output) même s'il n'est pas listé
+}
+
+// route la lecture vidéo vers le périphérique de sortie choisi (défaut si vide)
+async function applyOutputSink() {
+  if (!video || typeof video.setSinkId !== 'function') return
+  try { await video.setSinkId(audioCfg.output || '') } catch {}
+}
+
+let outTestState = null
+function stopOutputTest() {
+  if (!outTestState) return
+  cancelAnimationFrame(outTestState.raf)
+  try { if (outTestState.audioEl) { outTestState.audioEl.pause(); outTestState.audioEl.srcObject = null } } catch {}
+  try { outTestState.stream.getTracks().forEach((tr) => tr.stop()) } catch {}
+  try { outTestState.ac.close() } catch {}
+  $('outMeterFill').style.width = '0%'
+  $('outTest').textContent = t('outTestBtn')
+  outTestState = null
+}
+// monitoring « à la Discord » : capte l'entrée choisie (ex. in 1L MOTU) et la renvoie
+// vers la sortie choisie, avec un vumètre qui suit le niveau du micro en direct
+async function toggleOutputTest() {
+  if (outTestState) { stopOutputTest(); return }
+  const AC = window.AudioContext || window.webkitAudioContext
+  if (!AC) return
+  const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  let stream
+  try { stream = await openMic(base) } catch { toast(t('recMicDenied')); return }
+  const ac = makeAcForStream(stream) // même taux que l'entrée (sinon pitch)
+  const src = ac.createMediaStreamSource(stream)
+  const mono = toDualMono(ac, src) // mono (canal gauche) entendu sur L et R
+  const analyser = ac.createAnalyser(); analyser.fftSize = 512
+  mono.connect(analyser)
+  let audioEl = null
+  if (typeof ac.setSinkId === 'function') {
+    // route direct vers la sortie choisie : évite le MediaStreamDestination + <audio>,
+    // autre cause possible de transposition (pitch)
+    try { if (audioCfg.output) await ac.setSinkId(audioCfg.output) } catch {}
+    analyser.connect(ac.destination)
+  } else {
+    const dest = ac.createMediaStreamDestination()
+    analyser.connect(dest)
+    audioEl = new Audio(); audioEl.srcObject = dest.stream
+    try { if (audioEl.setSinkId && audioCfg.output) await audioEl.setSinkId(audioCfg.output) } catch {}
+    try { await audioEl.play() } catch {}
+  }
+  const buf = new Uint8Array(analyser.frequencyBinCount)
+  const fill = $('outMeterFill')
+  const tick = () => {
+    analyser.getByteTimeDomainData(buf)
+    let peak = 0; for (const v of buf) { const d = Math.abs(v - 128); if (d > peak) peak = d }
+    fill.style.width = Math.min(100, (peak / 128) * 320) + '%'
+    outTestState.raf = requestAnimationFrame(tick)
+  }
+  outTestState = { ac, audioEl, stream, raf: requestAnimationFrame(tick) }
+  $('outTest').textContent = t('outTestStop')
+}
+
+// ---- modèles actifs (persistés localement), dropdowns qui ne montrent que l'installé ----
+const activeWhisper = () => localStorage.getItem('trActiveModel') || ''
+const setActiveWhisper = (m) => localStorage.setItem('trActiveModel', m)
+const activeSep = () => localStorage.getItem('sepActiveModel') || ''
+const setActiveSep = (m) => localStorage.setItem('sepActiveModel', m)
+
+function fillActiveDropdown(sel, models, getActive, setActive) {
+  sel.innerHTML = ''
+  const installed = models.filter((m) => m.present)
+  for (const m of installed) { const o = document.createElement('option'); o.value = m.model; o.textContent = m.label || m.model; sel.appendChild(o) }
+  if (installed.length) {
+    if (!installed.some((m) => m.model === getActive())) setActive(installed[0].model)
+    sel.value = getActive(); sel.disabled = false
+  } else { const o = document.createElement('option'); o.value = ''; o.textContent = t('mdlNone'); sel.appendChild(o); sel.disabled = true }
+}
+
+// une ligne de modèle : nom · taille · bouton Installer / Désinstaller
+function modelRow(m, onInstall, onUninstall, canInstall) {
+  const row = document.createElement('div'); row.className = 'model-row' + (m.present ? ' installed' : '')
+  const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = m.label || m.model
+  const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = m.present ? fmtDlSize(m.sizeMB) : '~' + fmtDlSize(m.estMB)
+  const sp = document.createElement('div'); sp.className = 'spacer'
+  const btn = document.createElement('button')
+  btn.textContent = m.present ? t('mdlUninstall') : t('mdlInstall')
+  if (!m.present && canInstall === false) { btn.disabled = true; btn.title = t('sepNoPython') }
+  btn.addEventListener('click', () => (m.present ? onUninstall(btn) : onInstall(btn)))
+  row.append(nm, stt, sp, btn)
+  return row
+}
+
+// ligne « Moteur » : peinture depuis le cache (modelCache.trEngine)
+function paintTrEngine() {
+  const el = $('trEngineRow'); if (!el) return
+  const st = modelCache.trEngine || { installed: false, python: null }
+  el.className = 'model-row' + (st.installed ? ' installed' : '')
+  el.innerHTML = ''
+  const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = t('engName')
+  const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = st.installed ? t('engInstalled') : (st.python ? t('engNotInstalled') : t('sepNoPython'))
+  const sp = document.createElement('div'); sp.className = 'spacer'
+  const btn = document.createElement('button')
+  btn.textContent = st.installed ? t('mdlUninstall') : t('mdlInstall')
+  if (!st.installed && !st.python) { btn.disabled = true; btn.title = t('sepNoPython') }
+  btn.addEventListener('click', async () => {
+    btn.disabled = true
+    if (st.installed) { await window.api.whisperEngineUninstall(); refreshTrCache() }
+    else { setDl(true, t('engInstalling')); const r = await window.api.whisperEngineInstall(); setDl(false, ''); toast(r && r.ok ? t('engInstalled') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'engInstallFail')); refreshTrCache() }
+  })
+  el.append(nm, stt, sp, btn)
+}
+// peinture instantanée de la liste des modèles de transcription (depuis le cache)
+function paintTrModels() {
+  paintTrEngine()
+  const list = $('trModelList'); if (!list) return
+  list.innerHTML = ''
+  const models = modelCache.trModels || []
+  const python = modelCache.python
+  for (const m of models) {
+    list.appendChild(modelRow(m,
+      async (btn) => { btn.disabled = true; setDl(true, t('trDownloading', 0)); const r = await window.api.whisperInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'trFailed')); refreshTrCache() },
+      async () => { await window.api.whisperDeleteModel(m.model); refreshTrCache() },
+      !!python))
+  }
+  fillActiveDropdown($('trActive'), models, activeWhisper, setActiveWhisper)
+}
+// rafraîchit le cache transcription (IPC + fs) puis repeint si les Paramètres sont ouverts
+async function refreshTrCache() {
+  try { modelCache.trEngine = await window.api.whisperEngineStatus() } catch { modelCache.trEngine = { installed: false, python: null } }
+  modelCache.python = modelCache.trEngine ? modelCache.trEngine.python : null
+  try { modelCache.trModels = await window.api.whisperListModels() } catch { modelCache.trModels = [] }
+  if (setModal && !setModal.classList.contains('hidden')) paintTrModels()
+}
+function renderTrModels() { paintTrModels(); return refreshTrCache() } // instantané (cache) puis MAJ
+
+function paintSepModels() {
+  const list = $('sepModelList'); if (!list) return
+  list.innerHTML = ''
+  const models = modelCache.sepModels || []
+  const python = modelCache.python
+  for (const m of models) {
+    list.appendChild(modelRow(m,
+      async (btn) => { btn.disabled = true; setDl(true, t('sepInstalling')); const r = await window.api.sepInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'sepInstallFail')); refreshSepCache() },
+      async () => { await window.api.sepDeleteModel(m.model); refreshSepCache() },
+      !!python))
+  }
+  fillActiveDropdown($('sepActive'), models, activeSep, setActiveSep)
+}
+async function refreshSepCache() {
+  try { modelCache.sepModels = await window.api.sepListModels() } catch { modelCache.sepModels = [] }
+  if (modelCache.python == null) { try { modelCache.python = (await window.api.detectPython()).python } catch {} }
+  if (setModal && !setModal.classList.contains('hidden')) paintSepModels()
+}
+function renderSepModels() { paintSepModels(); return refreshSepCache() }
+
+function openSettings() {
+  setModal.classList.remove('hidden')
+  $('capApi').value = audioCfg.api || 'system'
+  $('recOffset').value = String(audioCfg.recOffsetMs || 0)
+  setDl(false, '')
+  // tout se peint immédiatement depuis les caches préchargés ; rafraîchissement en fond
+  fillCaptureDevices(); fillOutputDevices(); renderTrModels(); renderSepModels()
+}
+
+$('capApi').addEventListener('change', () => { audioCfg.api = $('capApi').value; audioCfg.device = null; audioCfg.deviceLabel = null; saveAudioCfg(); resetMic(); fillCaptureDevices() })
+$('capDevice').addEventListener('change', () => {
+  const sel = $('capDevice'); const opt = sel.selectedOptions[0]
+  audioCfg.device = sel.value || null
+  audioCfg.deviceLabel = sel.value && opt ? opt.textContent : null // mémorise aussi le nom (id instable entre sessions)
+  saveAudioCfg(); resetMic()
+})
+$('capRefresh').addEventListener('click', async () => { await refreshDeviceCaches(); fillCaptureDevices() })
+$('outDevice').addEventListener('change', () => {
+  const sel = $('outDevice'); const opt = sel.selectedOptions[0]
+  audioCfg.output = sel.value || null
+  audioCfg.outputLabel = sel.value && opt ? opt.textContent : null
+  saveAudioCfg(); applyOutputSink()
+})
+$('outRefresh').addEventListener('click', async () => { await refreshDeviceCaches(); fillOutputDevices() })
+$('recOffset').addEventListener('change', () => { audioCfg.recOffsetMs = clamp(Number($('recOffset').value) || 0, -500, 500); $('recOffset').value = String(audioCfg.recOffsetMs); saveAudioCfg() })
+$('outTest').addEventListener('click', toggleOutputTest)
+$('trActive').addEventListener('change', () => setActiveWhisper($('trActive').value))
+$('sepActive').addEventListener('change', () => setActiveSep($('sepActive').value))
+$('setClose').addEventListener('click', () => { stopOutputTest(); setModal.classList.add('hidden') })
+window.api.onWhisperProgress((p) => {
+  if (!p || $('setProgress').classList.contains('hidden')) return
+  if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
+  else if (p.phase === 'unpack') { $('setStatus').textContent = t('mdlUnpacking') }
+  else if (p.phase === 'install') { $('setStatus').textContent = p.text || t('engInstalling') }
+})
+window.api.onSepProgress((p) => {
+  if (!p) return
+  if (sepActive) { // modale « retirer les voix » en cours : statut par phase
+    if (p.phase === 'extract') { $('sepBar').style.width = '0%'; $('sepStatus').textContent = t('sepPhaseExtract') }
+    else if (p.phase === 'install') { $('sepStatus').textContent = t('sepPhaseEngine') }
+    else if (p.phase === 'separate') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('sepBar').style.width = pct + '%'; $('sepStatus').textContent = t('sepPhaseSeparate', pct) }
+    return
+  }
+  if ($('setProgress').classList.contains('hidden')) return // sinon = install/download depuis les Paramètres
+  if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
+  else $('setStatus').textContent = p.text || t('sepInstalling')
+})
+
+// ---------- retrait des voix (séparation IA) : modale dédiée ----------
+const sepModal = $('separateModal')
+let sepBusy = false
+let sepTracks = []
+
+// pistes source possibles = les pistes audio du projet (les pistes embarquées
+// incluent déjà l'audio de la vidéo — pas de doublon). Repli sur l'audio vidéo si
+// aucune piste n'a encore été sondée. Partagé par les modales séparation + transcription.
+function audioSourceOptions() {
+  const tracks = project.audioTracks || []
+  if (!tracks.length) return [{ label: t('sepTrackVideo'), source: project.videoPath, aIndex: 0 }]
+  return tracks.map((a) => ({
+    label: (a.label || baseName(a.path || '')) + (a.type === 'file' ? ` (${t('trackExternal')})` : ''),
+    source: a.type === 'file' && a.path ? a.path : project.videoPath,
+    aIndex: a.type === 'file' ? 0 : (a.index || 0),
+  }))
+}
+
+async function openSeparateDialog() {
+  if (!project.videoPath) { toast(t('loadVideoFirst')); return }
+  sepModal.classList.remove('hidden')
+  $('sepBar').style.width = '0%'; $('sepStatus').textContent = ''
+  $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close')
+  let models = []
+  try { models = (await window.api.sepListModels()).filter((m) => m.present) } catch {}
+  const ready = models.length > 0
+  $('sepNotReady').classList.toggle('hidden', ready)
+  $('sepReadyBody').classList.toggle('hidden', !ready)
+  $('sepGo').classList.toggle('hidden', !ready)
+  if (!ready) { $('sepNotReadyMsg').textContent = t('sepNeedModel'); return }
+  const msel = $('sepRunModel'); msel.innerHTML = ''
+  for (const m of models) { const o = document.createElement('option'); o.value = m.model; o.textContent = m.label || m.model; msel.appendChild(o) }
+  msel.value = models.some((m) => m.model === activeSep()) ? activeSep() : models[0].model
+  sepTracks = audioSourceOptions()
+  const tsel = $('sepInTrack'); tsel.innerHTML = ''
+  sepTracks.forEach((o, i) => { const op = document.createElement('option'); op.value = String(i); op.textContent = o.label; tsel.appendChild(op) })
+  $('sepOutName').value = t('sepTrackName')
+  try { $('sepOutDir').value = await window.api.sepDefaultDir(projectPath) } catch { $('sepOutDir').value = '' }
+}
+
+$('sepOpenSettings').addEventListener('click', () => { sepModal.classList.add('hidden'); openSettings() })
+$('sepOutBrowse').addEventListener('click', async () => { const d = await window.api.pickDirectory($('sepOutDir').value || ''); if (d) $('sepOutDir').value = d })
+$('sepCloseBtn').addEventListener('click', () => {
+  if (sepBusy) { window.api.sepCancel(); sepBusy = false; sepActive = false; $('sepStatus').textContent = t('sepCancelled'); $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close') }
+  else if (!sepBusy) sepModal.classList.add('hidden')
+})
+$('sepGo').addEventListener('click', doSeparate)
+
+async function doSeparate() {
+  if (sepBusy) return
+  const model = $('sepRunModel').value
+  if (!model) { toast(t('sepNeedModel')); return }
+  setActiveSep(model)
+  const tr = sepTracks[Number($('sepInTrack').value) || 0] || sepTracks[0]
+  const destBase = (($('sepOutName').value || '').trim()) || t('sepTrackName')
+  const destDir = $('sepOutDir').value || ''
+  sepBusy = true; sepActive = true
+  $('sepGo').disabled = true; $('sepCloseBtn').textContent = t('cancel')
+  $('sepBar').style.width = '0%'; $('sepStatus').textContent = t('sepPhaseStart')
+  const r = await window.api.sepRun({ source: tr.source, aIndex: tr.aIndex, projectPath, model, destBase, destDir })
+  sepBusy = false; sepActive = false
+  $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close')
+  if (!r || r.error) {
+    const map = { 'no-model': 'sepNeedModel', 'no-engine': 'sepNeedModel', 'no-python': 'sepNoPython', 'no-source': 'sepNoSource', 'extract-failed': 'sepExtractFail' }
+    const known = map[r && r.error]
+    $('sepStatus').textContent = known ? t(known) : t('sepFailed') + (r && r.error ? ' — ' + String(r.error).slice(0, 140) : '')
+    return
+  }
+  $('sepBar').style.width = '100%'; $('sepStatus').textContent = t('sepDone')
+  await addExternalAudio(r.path, destBase, { voiceless: true }) // marque la piste générée « sans voix »
+  toast(t('sepDone'))
+  setTimeout(() => { if (!sepBusy) sepModal.classList.add('hidden') }, 700)
+}
 
 $('btnToggleLines').addEventListener('click', () => {
   const panel = $('linesPanel')
@@ -997,6 +2759,7 @@ function refreshInspector() {
   ins.el.classList.toggle('empty', !line && !multi)
   ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
+  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList() } // suit l'ajout/retrait de personnages
   if (multi) { insShownId = null; refreshMultiInspector(selectedLines()); return }
   if (!line) {
     insShownId = null
@@ -1321,10 +3084,10 @@ function loopStats(lp) {
   return { lines: inScene.length, chars: new Set(inScene.map((l) => l.characterId)).size }
 }
 
-// une boucle est « hors normes » : normale trop longue, ou OUT trop courte
+// une boucle est « hors normes » uniquement si un segment OUT est trop court. Une
+// scène normale n'est jamais signalée, même très longue (ce n'est pas un problème).
 function loopWarn(lp) {
-  if (lp.type === 'out') return loopDur(lp) < LOOP_OUT_MIN_SEC
-  return loopDur(lp) > LOOP_WARN_SEC
+  return lp.type === 'out' && loopDur(lp) < LOOP_OUT_MIN_SEC
 }
 
 function addLoopAtPlayhead() {
@@ -1408,7 +3171,7 @@ function renderLoopsPanel() {
     const dur = document.createElement('span')
     dur.className = 'lp-dur' + (loopWarn(lp) ? ' warn' : '')
     dur.textContent = formatTcShort(loopDur(lp))
-    dur.title = loopWarn(lp) ? (lp.type === 'out' ? t('loopOutTooShort', LOOP_OUT_MIN_SEC) : t('loopTooLong', LOOP_WARN_SEC)) : ''
+    dur.title = loopWarn(lp) ? t('loopOutTooShort', LOOP_OUT_MIN_SEC) : ''
     const cnt = document.createElement('span')
     cnt.className = 'lp-count'
     cnt.textContent = t('loopStatLines', st.lines)
@@ -1667,28 +3430,41 @@ $('detGo').addEventListener('click', runDetectScenes)
 let activeTab = 'rythmo'
 let selectedTrackId = null
 const TRK_LANE_H = 56
+// icônes monochromes (haut-parleur actif / muet) — remplacent les emoji 🔊/🔈
+const SPK_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a4 4 0 0 1 0 7"/><path d="M18.7 6a7 7 0 0 1 0 12"/></svg>'
+const SPK_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9.5l4.5 5M21.5 9.5l-4.5 5"/></svg>'
+const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></svg>'
+// icône bouche = marqueur « piste voix par défaut » (monitoring doublage)
+const VOICE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-4 14-4 18 0-4 4-14 4-18 0z"/><path d="M3 12h18"/></svg>'
 const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
 const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + ' ch' : '')
 
 const tcanvas = $('tracksCanvas')
 const tctx = tcanvas.getContext('2d')
-$('tracksPlayhead').style.left = (READ_RATIO * 100) + '%' // ligne de lecture alignée sur tReadX
+$('tracksPlayhead').style.left = '0px' // repositionnée chaque frame par drawTracks (timeline pleine largeur)
 let tcw = 0, tch = 0
 
 function setTab(name) {
-  activeTab = name === 'tracks' ? 'tracks' : 'rythmo'
+  activeTab = (name === 'tracks' || name === 'rec') ? name : 'rythmo'
   const onTracks = activeTab === 'tracks'
+  const onRec = activeTab === 'rec'
   document.body.classList.toggle('on-tracks', onTracks) // cache les contrôles rythmo, montre l'import audio
-  $('tabRythmo').classList.toggle('active', !onTracks)
+  document.body.classList.toggle('on-rec', onRec)
+  $('tabRythmo').classList.toggle('active', activeTab === 'rythmo')
   $('tabTracks').classList.toggle('active', onTracks)
-  $('bandWrap').classList.toggle('hidden', onTracks)
-  $('inspector').classList.toggle('hidden', onTracks)
+  $('tabRec').classList.toggle('active', onRec)
+  $('bandWrap').classList.toggle('hidden', onTracks || onRec)
+  $('inspector').classList.toggle('hidden', onTracks || onRec)
   $('tracksView').classList.toggle('hidden', !onTracks)
+  $('recView').classList.toggle('hidden', !onRec)
   if (onTracks) { hideSubOverlay(); renderTracks() }
+  if (onRec) { hideSubOverlay(); renderRecTab() }
+  $('btnDub').classList.toggle('hidden', !dubVoicelessTrack()) // gating piste sans-voix (tous onglets)
   applyBandHeight() // hauteur du dock constante entre onglets + dimensionne le canvas visible
 }
 $('tabRythmo').addEventListener('click', () => setTab('rythmo'))
 $('tabTracks').addEventListener('click', () => setTab('tracks'))
+$('tabRec').addEventListener('click', () => setTab('rec'))
 
 // lanes affichées : vidéo (référence) puis pistes audio
 const trackLanes = () => [{ id: '__video__', kind: 'video' }, ...(project.audioTracks || [])]
@@ -1697,9 +3473,26 @@ function activeAudioTrack() {
   const list = project.audioTracks || []
   return audioById(project.activeAudioId) || list.find((a) => a.type === 'embedded') || list[0] || null
 }
+// clé stable d'une piste, indépendante de l'id (régénéré au re-sondage) : index de flux
+// pour l'embarqué, chemin pour un fichier importé — sert à restaurer la piste active
+function audioTrackKey(tr) {
+  if (!tr) return null
+  return tr.type === 'embedded' ? `emb:${tr.index}` : `file:${tr.path || tr.label || ''}`
+}
+// s'assure qu'une piste active valide est choisie ; si l'id a disparu (régénéré au
+// re-sondage), on restaure par clé stable (index embarqué / chemin), sinon 1re piste
+function ensureActiveAudio() {
+  if (!audioById(project.activeAudioId)) {
+    const all = project.audioTracks || []
+    const byKey = project.activeAudioKey ? all.find((a) => audioTrackKey(a) === project.activeAudioKey) : null
+    project.activeAudioId = (byKey || all.find((a) => a.type === 'embedded') || all[0] || {}).id || null
+  }
+  project.activeAudioKey = audioTrackKey(audioById(project.activeAudioId))
+}
 function setActiveAudio(id) {
   if (project.activeAudioId === id) return
   project.activeAudioId = id
+  project.activeAudioKey = audioTrackKey(audioById(id)) // clé stable pour la réouverture
   renderTrackHeads()
   markDirty()
   buildWaveform() // la bande rythmo affiche la forme d'onde de la piste active
@@ -1712,7 +3505,7 @@ function embeddedTrackLabel(p) {
 // (re)synchronise les pistes embarquées avec le sondage ffmpeg (offset conservé par
 // index), garde les pistes importées, choisit une piste active par défaut.
 async function probeAndSyncAudio() {
-  if (!project.videoPath) return
+  if (DETACHED || !project.videoPath) return
   const probed = (await window.api.probeAudioTracks(project.videoPath)) || []
   const externals = (project.audioTracks || []).filter((tr) => tr.type === 'file')
   const prev = new Map((project.audioTracks || []).filter((tr) => tr.type === 'embedded').map((tr) => [tr.index, tr]))
@@ -1725,7 +3518,7 @@ async function probeAndSyncAudio() {
     }
   })
   project.audioTracks = [...embedded, ...externals]
-  if (!audioById(project.activeAudioId)) project.activeAudioId = (embedded[0] || externals[0] || {}).id || null
+  ensureActiveAudio()
   if (activeTab === 'tracks') renderTracks()
   // (re)construit la forme d'onde MAINTENANT que les pistes sont connues : buildWaveform()
   // est appelé au chargement AVANT ce sondage (audioTracks encore vide), ce qui le faisait
@@ -1739,6 +3532,7 @@ function renderTracks() {
   const noVideo = !project.videoPath
   $('tracksEmpty').classList.toggle('hidden', !noVideo) // placeholder propre quand pas de vidéo
   $('tracksWrap').classList.toggle('hidden', noVideo)
+  $('btnDub').classList.toggle('hidden', !dubVoicelessTrack()) // « Doublage » visible si piste sans-voix
   renderTrackHeads()
   resizeTracksCanvas()
 }
@@ -1764,17 +3558,28 @@ function renderTrackHeads() {
       const on = tr.id === project.activeAudioId
       const spk = document.createElement('button')
       spk.className = 'trk-spk' + (on ? ' on' : '')
-      spk.textContent = on ? '🔊' : '🔈'
+      spk.innerHTML = on ? SPK_ON_SVG : SPK_OFF_SVG
       spk.title = t('trackActiveTitle')
       spk.addEventListener('click', (e) => { e.stopPropagation(); setActiveAudio(tr.id) })
       const nm = document.createElement('span'); nm.className = 'trk-hname'; nm.textContent = tr.label || baseName(tr.path)
       const meta = document.createElement('span'); meta.className = 'trk-hmeta'
-      meta.textContent = tr.type === 'file' ? t('trackExternal') : `${tr.codec || ''} ${trackChannels(tr.channels)}`.trim()
+      const base = tr.type === 'file' ? t('trackExternal') : `${tr.codec || ''} ${trackChannels(tr.channels)}`.trim()
+      meta.textContent = base + (tr.voiceless ? ' · ' + t('dubVoiceless') : '')
       const txt = document.createElement('span'); txt.className = 'trk-htxt'; txt.append(nm, meta)
-      row.append(spk, txt)
+      row.append(spk)
+      // marqueur « piste voix » : visible seulement s'il existe une piste sans-voix, et pas sur elle
+      if (dubVoicelessTrack() && !tr.voiceless) {
+        const vb = document.createElement('button')
+        const isVoice = (dubVoiceTrack() || {}).id === tr.id
+        vb.className = 'trk-voice' + (isVoice ? ' on' : '')
+        vb.innerHTML = VOICE_SVG; vb.title = t('dubVoiceMark')
+        vb.addEventListener('click', (e) => { e.stopPropagation(); project.voiceTrackId = tr.id; markDirty(); renderTrackHeads(); syncPlaybackAudio() })
+        row.append(vb)
+      }
+      row.append(txt)
       if (tr.type === 'file') {
         const del = document.createElement('button')
-        del.className = 'trk-del'; del.textContent = '🗑'; del.title = t('trackDelete')
+        del.className = 'trk-del'; del.innerHTML = TRASH_SVG; del.title = t('trackDelete')
         del.addEventListener('click', (e) => { e.stopPropagation(); deleteTrack(tr.id) })
         row.appendChild(del)
       }
@@ -1789,11 +3594,49 @@ function deleteTrack(id) {
   if (!tr || tr.type !== 'file') return // seules les pistes importées se suppriment
   pushUndo()
   const wasActive = project.activeAudioId === id
+  const wasDubRelated = tr.voiceless || project.voiceTrackId === id
   project.audioTracks = project.audioTracks.filter((k) => k.id !== id)
   if (selectedTrackId === id) selectedTrackId = null
+  if (project.voiceTrackId === id) project.voiceTrackId = null
   if (wasActive) { project.activeAudioId = (activeAudioTrack() || {}).id || null; buildWaveform() }
+  if (wasDubRelated) { $('dubPop').classList.add('hidden'); syncPlaybackAudio() }
   renderTracks(); markDirty()
 }
+
+// ---------- monitoring doublage : popover « voix par personnage » ----------
+const isDubMuted = (id) => (project.muteChars || []).includes(id)
+function setDubMuted(id, muted) {
+  project.muteChars = (project.muteChars || []).filter((c) => c !== id)
+  if (muted) project.muteChars.push(id)
+  markDirty(); syncPlaybackAudio() // (re)active ou coupe le mode monitoring
+}
+function buildDubPop() {
+  const pop = $('dubPop'); pop.innerHTML = ''
+  const chars = project.characters || []
+  if (!chars.length) { const e = document.createElement('div'); e.className = 'dub-pop-empty'; e.textContent = t('dubNoChars'); pop.appendChild(e); return }
+  for (const c of chars) {
+    const row = document.createElement('label'); row.className = 'dub-row'
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !isDubMuted(c.id)
+    cb.addEventListener('change', () => setDubMuted(c.id, !cb.checked))
+    const dot = document.createElement('span'); dot.className = 'dub-dot'; dot.style.background = c.color || '#888'
+    const nm = document.createElement('span'); nm.className = 'dub-name'; nm.textContent = c.name || '—'
+    row.append(cb, dot, nm); pop.appendChild(row)
+  }
+}
+function toggleDubPop() {
+  const pop = $('dubPop')
+  if (!pop.classList.contains('hidden')) { pop.classList.add('hidden'); return }
+  buildDubPop()
+  const r = $('btnDub').getBoundingClientRect()
+  pop.style.left = Math.round(r.left) + 'px'
+  pop.style.top = Math.round(r.bottom + 4) + 'px'
+  pop.classList.remove('hidden')
+}
+$('btnDub').addEventListener('click', (e) => { e.stopPropagation(); toggleDubPop() })
+document.addEventListener('click', (e) => {
+  const p = $('dubPop')
+  if (!p.classList.contains('hidden') && !p.contains(e.target) && e.target !== $('btnDub')) p.classList.add('hidden')
+})
 
 // ---------- canvas timeline (même zoom/défilement/curseur que la bande) ----------
 function resizeTracksCanvas() {
@@ -1817,34 +3660,65 @@ function resizeTracksCanvas() {
 }
 new ResizeObserver(() => { if (activeTab === 'tracks') resizeTracksCanvas() }).observe($('tracksCanvasWrap'))
 
-const tPps = () => (tcw > 0 ? tcw / clamp(secondsVisible, SEC_MIN, SEC_MAX) : pxPerSec)
-const tReadX = () => tcw * READ_RATIO
-const tTAt = (x, now) => now + (x - tReadX()) / tPps()
+// ---------- timeline « pleine largeur » : toute la vidéo tient dans la largeur, sans zoom ----------
+const TRK_MARGIN = 30 // marge gauche/droite (px) : marque début/fin et laisse offsetter au drag
+const tDurTracks = () => (isFinite(video.duration) && video.duration > 0 ? video.duration : 0)
+const tUsable = () => Math.max(1, tcw - 2 * TRK_MARGIN)
+const tPpsFit = () => { const d = tDurTracks(); return d > 0 ? tUsable() / d : 0 }
+const tXAt = (tt) => TRK_MARGIN + tt * tPpsFit()
+const tTimeAt = (x) => { const p = tPpsFit(); return p > 0 ? clamp((x - TRK_MARGIN) / p, 0, tDurTracks()) : 0 }
+// pas de règle « joli » pour ~une graduation tous les ~100 px
+function niceTimeStep(total) {
+  const target = total / Math.max(3, Math.floor(tUsable() / 100))
+  return [1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600, 900, 1800, 3600].find((s) => s >= target) || 3600
+}
+const fmtMS = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.round(s % 60)).padStart(2, '0')}`
+
+// overlay « carte des répliques » sur la piste vidéo : phrases empilées par piste rythmo,
+// colorées par personnage (comme la barre de progression, mais sur plusieurs niveaux)
+function drawVideoLane(y, x0v, x1v) {
+  const cy = y + 4, chh = TRK_LANE_H - 8
+  tctx.fillStyle = '#6cbf6a22'; tctx.strokeStyle = '#6cbf6acc'
+  tctx.beginPath(); tctx.roundRect(x0v, cy, Math.max(6, x1v - x0v), chh, 5); tctx.fill(); tctx.stroke()
+  const nT = Math.max(1, project.tracks || 1)
+  const lvlH = chh / nT
+  for (const l of project.lines) {
+    if (!l.words || !l.words.length) continue
+    const lx0 = tXAt(lineStart(l))
+    const lx1 = tXAt(lineEnd(l))
+    const lvl = clamp(l.track || 0, 0, nT - 1)
+    const ly = cy + lvl * lvlH + 1
+    tctx.fillStyle = getChar(l.characterId)?.color || '#888'
+    tctx.beginPath(); tctx.roundRect(lx0, ly, Math.max(1.5, lx1 - lx0), Math.max(2, lvlH - 2), 2); tctx.fill()
+  }
+}
 
 function drawTracks() {
   if (!tcw) { resizeTracksCanvas(); if (!tcw) return }
   const pal = bandPal()
   if (!project.videoPath) { tctx.fillStyle = pal.bg; tctx.fillRect(0, 0, tcw, tch); return }
   const now = effectiveTime()
-  const pps = tPps()
-  const dur = isFinite(video.duration) ? video.duration : 0
-  const xAt = (tt) => tReadX() + (tt - now) * pps
+  const dur = tDurTracks()
   const lanes = trackLanes()
+  const x0v = tXAt(0), x1v = tXAt(dur)
 
   tctx.fillStyle = pal.bg; tctx.fillRect(0, 0, tcw, tch)
 
-  // règle (mm:ss)
+  // règle (mm:ss) : graduations réparties sur toute la largeur
   tctx.fillStyle = pal.rulerBg; tctx.fillRect(0, 0, tcw, RULER_H)
-  const step = pps < 70 ? 2 : 1
-  const t0 = Math.max(0, Math.floor(tTAt(0, now)))
-  const t1 = Math.ceil(tTAt(tcw, now))
-  tctx.font = '12px Consolas, monospace'; tctx.textAlign = 'left'; tctx.textBaseline = 'middle'
-  for (let s = t0 - (t0 % step); s <= t1; s += step) {
-    if (s < 0) continue
-    const x = xAt(s)
-    tctx.strokeStyle = pal.tick; tctx.beginPath(); tctx.moveTo(x + 0.5, RULER_H - 8); tctx.lineTo(x + 0.5, RULER_H); tctx.stroke()
-    tctx.fillStyle = pal.tickText
-    tctx.fillText(`${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`, x + 3, RULER_H / 2)
+  tctx.font = '12px Consolas, monospace'; tctx.textBaseline = 'middle'
+  if (dur > 0) {
+    const step = niceTimeStep(dur)
+    tctx.textAlign = 'left'
+    for (let s = 0; s < dur - step * 0.5; s += step) {
+      const x = tXAt(s)
+      tctx.strokeStyle = pal.tick; tctx.beginPath(); tctx.moveTo(x + 0.5, RULER_H - 8); tctx.lineTo(x + 0.5, RULER_H); tctx.stroke()
+      tctx.fillStyle = pal.tickText; tctx.fillText(fmtMS(s), x + 3, RULER_H / 2)
+    }
+    // fin de vidéo : graduation + label calés à droite
+    tctx.strokeStyle = pal.tick; tctx.beginPath(); tctx.moveTo(x1v + 0.5, RULER_H - 8); tctx.lineTo(x1v + 0.5, RULER_H); tctx.stroke()
+    tctx.fillStyle = pal.tickText; tctx.textAlign = 'right'; tctx.fillText(fmtMS(dur), x1v - 3, RULER_H / 2)
+    tctx.textAlign = 'left'
   }
 
   lanes.forEach((tr, i) => {
@@ -1853,47 +3727,51 @@ function drawTracks() {
     if (tr.id === selectedTrackId) { tctx.fillStyle = pal.handleAccent + '22'; tctx.fillRect(0, y, tcw, TRK_LANE_H) }
     tctx.strokeStyle = pal.grid; tctx.beginPath(); tctx.moveTo(0, y + 0.5); tctx.lineTo(tcw, y + 0.5); tctx.stroke()
 
-    const isVideo = tr.kind === 'video'
+    if (tr.kind === 'video') { drawVideoLane(y, x0v, x1v); return }
+
+    // piste audio : clip positionné par offset, glissable librement
     const isActive = tr.id === project.activeAudioId
-    const off = isVideo ? 0 : (tr.offset || 0)
-    const cx0 = xAt(off)
-    const cx1 = xAt(off + (dur || 0))
+    const off = tr.offset || 0
+    const cx0 = tXAt(off)
+    const cx1 = tXAt(off + (dur || 0))
     const cy = y + 5, chh = TRK_LANE_H - 10
-    const col = isVideo ? '#6cbf6a' : isActive ? pal.handleAccent : pal.tickText
+    const col = isActive ? pal.handleAccent : pal.tickText
     tctx.fillStyle = col + '2e'
-    tctx.strokeStyle = col + (isActive || isVideo ? 'cc' : '66')
+    tctx.strokeStyle = col + (isActive ? 'cc' : '66')
     tctx.lineWidth = isActive ? 1.8 : 1
-    tctx.beginPath(); tctx.roundRect(Math.max(-2, cx0), cy, Math.max(6, cx1 - cx0), chh, 5)
+    tctx.beginPath(); tctx.roundRect(cx0, cy, Math.max(6, cx1 - cx0), chh, 5)
     tctx.fill(); tctx.stroke(); tctx.lineWidth = 1
 
-    // forme d'onde de la piste active (identique à celle de la bande)
+    // forme d'onde de la piste active (calée sur le clip via son offset)
     if (isActive && wave) {
       const midY = cy + chh / 2, amp = chh / 2 - 4
-      const x0 = Math.max(0, cx0), x1 = Math.min(tcw, cx1)
-      tctx.fillStyle = col + '66'; tctx.beginPath(); tctx.moveTo(x0, midY)
-      for (let x = x0; x <= x1; x++) {
-        const tt = tTAt(x, now) - off
-        let v = 0
-        if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] }
-        tctx.lineTo(x, midY - v * amp)
-      }
-      for (let x = x1; x >= x0; x--) {
-        const tt = tTAt(x, now) - off
-        let v = 0
-        if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] }
-        tctx.lineTo(x, midY + v * amp)
-      }
+      const pps = tPpsFit() || 1
+      const xa = Math.max(0, cx0), xb = Math.min(tcw, cx1)
+      tctx.fillStyle = col + '66'; tctx.beginPath(); tctx.moveTo(xa, midY)
+      for (let x = xa; x <= xb; x++) { const tt = (x - cx0) / pps; let v = 0; if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] } tctx.lineTo(x, midY - v * amp) }
+      for (let x = xb; x >= xa; x--) { const tt = (x - cx0) / pps; let v = 0; if (tt >= 0 && tt < wave.duration) { const b = (tt * wave.perSec) | 0; if (b < wave.peaks.length) v = wave.peaks[b] } tctx.lineTo(x, midY + v * amp) }
       tctx.closePath(); tctx.fill()
     }
 
     tctx.fillStyle = pal.tickText; tctx.font = '11px "Segoe UI", sans-serif'; tctx.textBaseline = 'middle'
-    tctx.fillText(isVideo ? t('trackVideoName') : (tr.label || baseName(tr.path)), Math.max(4, cx0 + 7), cy + 9)
+    tctx.fillText(tr.label || baseName(tr.path), Math.max(4, cx0 + 7), cy + 9)
   })
 
-  // ligne de lecture : overlay DOM pleine hauteur (#tracksPlayhead), pas dessinée ici
+  // repères début / fin de vidéo : lignes verticales pleine hauteur bien visibles
+  tctx.strokeStyle = pal.handleAccent + 'dd'; tctx.lineWidth = 1.5
+  for (const bx of [x0v, x1v]) { tctx.beginPath(); tctx.moveTo(bx + 0.5, RULER_H); tctx.lineTo(bx + 0.5, tch); tctx.stroke() }
+  tctx.lineWidth = 1
+
+  // ligne de lecture : overlay DOM pleine hauteur, positionné ici (le canvas ne défile plus)
+  const phx = tXAt(now)
+  $('tracksPlayhead').style.left = phx + 'px'
+  // flèche rouge en tête de la ligne de lecture (comme l'onglet rythmo)
+  const aw = 5
+  tctx.fillStyle = pal.playhead
+  tctx.beginPath(); tctx.moveTo(phx - aw, 0); tctx.lineTo(phx + aw, 0); tctx.lineTo(phx, aw * 1.7); tctx.closePath(); tctx.fill()
 }
 
-// ---------- interactions souris (scrub/zoom comme la bande, + glisser offset) ----------
+// ---------- interactions souris : clic/glisser = seek (position absolue), glisser piste = offset ----------
 let tdrag = null
 const tLaneAt = (y) => (y < RULER_H ? -1 : Math.floor((y - RULER_H) / TRK_LANE_H))
 
@@ -1908,7 +3786,8 @@ tcanvas.addEventListener('pointerdown', (e) => {
     tdrag = { kind: 'offset', tr, x0: x, startOff: tr.offset || 0, pushed: false }
   } else {
     video.pause(); scrub.active = true
-    tdrag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: tTAt(x, effectiveTime()), fromRuler: li < 0, moved: false }
+    tdrag = { kind: 'scrub' }
+    scrubTo(tTimeAt(x)); playScrubGrain(scrub.time)
     tcanvas.style.cursor = 'grabbing'
   }
 })
@@ -1916,21 +3795,19 @@ tcanvas.addEventListener('pointermove', (e) => {
   const r = tcanvas.getBoundingClientRect()
   const x = e.clientX - r.left
   if (!tdrag) { tcanvas.style.cursor = tLaneAt(e.clientY - r.top) >= 1 ? 'ew-resize' : 'grab'; return }
-  const dx = x - tdrag.x0
   if (tdrag.kind === 'scrub') {
-    if (Math.abs(dx) > 3) tdrag.moved = true
-    if (tdrag.moved) { scrubTo(tdrag.t0 - dx / tPps()); playScrubGrain(scrub.time) }
+    scrubTo(tTimeAt(x)); playScrubGrain(scrub.time)
   } else if (tdrag.kind === 'offset') {
     if (!tdrag.pushed) { pushUndo(); tdrag.pushed = true }
-    let off = tdrag.startOff + dx / tPps()
-    if (Math.abs(off) < 6 / tPps()) off = 0 // aimant sur l'origine
+    const pps = tPpsFit() || 1
+    let off = tdrag.startOff + (x - tdrag.x0) / pps
+    if (Math.abs(off) < 6 / pps) off = 0 // aimant sur l'origine
     tdrag.tr.offset = off
     if (tdrag.tr.id === project.activeAudioId) { waveOffset = off; playAOffset = off }
     markDirty()
   }
 })
 function tEndDrag() {
-  if (tdrag && tdrag.kind === 'scrub' && tdrag.fromRuler && !tdrag.moved && video.src) scrubTo(tdrag.tClick)
   // fin d'un glisser d'offset sur la piste active → la lecture doit suivre le décalage
   if (tdrag && tdrag.kind === 'offset' && tdrag.tr.id === project.activeAudioId) syncPlaybackAudio()
   tdrag = null; scrub.active = false
@@ -1941,18 +3818,18 @@ tcanvas.addEventListener('pointerup', tEndDrag)
 tcanvas.addEventListener('pointercancel', tEndDrag)
 tcanvas.addEventListener('wheel', (e) => {
   e.preventDefault()
-  if (e.ctrlKey) { secondsVisible = clamp(secondsVisible * (e.deltaY < 0 ? 1 / 1.12 : 1.12), SEC_MIN, SEC_MAX); recomputePps(); syncZoomSlider(); return }
   video.pause()
-  scrubTo(effectiveTime() + (e.deltaY || e.deltaX) / tPps() * 0.8)
+  const pps = tPpsFit() || 1
+  scrubTo(clamp(effectiveTime() + (e.deltaY || e.deltaX) / pps * 0.5, 0, tDurTracks()))
   playScrubGrain(scrub.time)
 }, { passive: false })
 
 // ---------- import d'un fichier audio externe ----------
-async function addExternalAudio(p) {
+async function addExternalAudio(p, label, flags) {
   if (!project.videoPath) { toast(t('loadVideoFirst')); return }
   if (!p) return
   pushUndo()
-  const tr = { id: uid(), type: 'file', path: p, label: baseName(p), offset: 0, channels: 0 }
+  const tr = { id: uid(), type: 'file', path: p, label: label || baseName(p), offset: 0, channels: 0, ...(flags || {}) }
   project.audioTracks.push(tr)
   if (activeTab !== 'tracks') setTab('tracks')
   else renderTracks()
@@ -2059,6 +3936,7 @@ video.addEventListener('error', () => showLoading(false))
 
 // ============================================================ waveform
 let wave = null // { peaks: Float32Array, perSec, duration } — forme d'onde de la piste active
+let videoRmsDb = null // niveau moyen (dBFS) de la piste active — référence d'équilibrage de la chaîne voix
 let waveOffset = 0 // décalage (s) de la piste active, appliqué à l'affichage de la forme d'onde
 let showWave = true
 let waveToken = 0
@@ -2066,6 +3944,7 @@ let scrubCtx = null
 let scrubBuf = null // audio mono décodé, pour entendre le son pendant le scrub
 
 async function buildWaveform() {
+  if (DETACHED) return // pas de forme d'onde dans la fenêtre de rendu
   wave = null
   scrubBuf = null
   const token = ++waveToken
@@ -2121,6 +4000,8 @@ async function buildWaveform() {
     for (let i = 0; i < n; i++) if (peaks[i] > max) max = peaks[i]
     if (max > 0) for (let i = 0; i < n; i++) peaks[i] /= max
     wave = { peaks, perSec: PER_SEC, duration: audio.duration }
+    // niveau moyen absolu (avant normalisation des peaks) : cible de la chaîne voix
+    { let sq = 0, ns = 0; const d0 = audio.getChannelData(0); for (let i = 0; i < d0.length; i += 4) { sq += d0[i] * d0[i]; ns++ }; videoRmsDb = ns ? 10 * Math.log10(sq / ns + 1e-12) : null }
     // mixage mono conservé pour le scrub sonore (rééchantillonné à la lecture)
     const mono = new Float32Array(audio.length)
     for (let ch2 = 0; ch2 < audio.numberOfChannels; ch2++) {
@@ -2156,7 +4037,13 @@ let playAActive = false // le son passe par playA (sinon : audio natif de la vid
 let playAOffset = 0 // décalage (s) de la piste active, appliqué à la position de lecture
 
 function applyVolume() {
+  if (DETACHED) { video.volume = 0; video.muted = true; return } // le son sort de la fenêtre principale
   const vol = Number($('volume').value)
+  if (dub.on) { // monitoring doublage : le son passe par le mix WebAudio
+    video.volume = 0
+    if (dub.master) dub.master.gain.value = video.muted ? 0 : vol
+    return
+  }
   video.volume = playAActive ? 0 : vol
   if (playA) { playA.volume = vol; playA.muted = video.muted }
 }
@@ -2178,7 +4065,16 @@ function syncPlayAPosition(hard) {
 
 // choisit la source de playA selon la piste active (mêmes règles que buildWaveform)
 async function syncPlaybackAudio() {
+  if (DETACHED) { applyVolume(); return }
   const token = ++playAToken
+  // mode monitoring doublage : mix V / sans-voix (prioritaire sur le chemin mono-piste)
+  if (dubEnabled()) {
+    playAActive = false
+    if (playA) { try { playA.pause() } catch {} }
+    await dubBuild()
+    return
+  }
+  dubTeardown() // hors mode doublage : coupe le mix et annule tout build en vol (token++)
   const a = (typeof activeAudioTrack === 'function' && activeAudioTrack()) || null
   playAOffset = (a && a.offset) || 0
   // piste par défaut de la vidéo sans décalage → l'audio natif de la vidéo suffit
@@ -2205,12 +4101,92 @@ async function syncPlaybackAudio() {
   syncPlayAPosition(true)
 }
 
-video.addEventListener('play', () => syncPlayAPosition(true))
-video.addEventListener('pause', () => { if (playA && !playA.paused) playA.pause() })
-video.addEventListener('seeked', () => syncPlayAPosition(true))
-video.addEventListener('ratechange', () => { if (playA) playA.playbackRate = video.playbackRate })
-video.addEventListener('timeupdate', () => syncPlayAPosition(false))
+video.addEventListener('play', () => { syncPlayAPosition(true); if (dub.on) dubSync(true) })
+video.addEventListener('pause', () => { if (playA && !playA.paused) playA.pause(); if (dub.on) dubSync(true) })
+video.addEventListener('seeked', () => { syncPlayAPosition(true); if (dub.on) dubSync(true) })
+video.addEventListener('ratechange', () => { if (playA) playA.playbackRate = video.playbackRate; if (dub.on) dubSync(true) })
+video.addEventListener('timeupdate', () => { syncPlayAPosition(false); if (dub.on) dubSync(false) })
 video.addEventListener('volumechange', applyVolume)
+
+// ============================================================ monitoring doublage
+// Quand une piste « sans voix » existe et qu'au moins un personnage est décoché, la lecture
+// mixe deux sources synchronisées : la piste VOIX (V) et la piste SANS-VOIX (VL), via WebAudio.
+// Pendant une réplique d'un perso décoché → fondu ~30 ms vers VL (voix retirée) ; sinon → V.
+// Le fond sonore étant commun aux deux pistes, le fondu ne crée aucune perte de volume.
+const dub = { ctx: null, v: null, vl: null, srcV: null, srcVL: null, gV: null, gVL: null, master: null, on: false, vUrl: null, vlUrl: null, vOff: 0, vlOff: 0, token: 0 }
+const dubVoicelessTrack = () => (project.audioTracks || []).find((a) => a.voiceless) || null
+function dubVoiceTrack() {
+  const tagged = audioById(project.voiceTrackId)
+  if (tagged && !tagged.voiceless) return tagged
+  const act = audioById(project.activeAudioId)
+  if (act && !act.voiceless) return act
+  const cand = (project.audioTracks || []).filter((a) => !a.voiceless)
+  return cand.find((a) => a.type === 'embedded') || cand[0] || null
+}
+const dubEnabled = () => !!project.videoPath && !!dubVoicelessTrack() && (project.muteChars || []).length > 0 && !!dubVoiceTrack()
+
+async function dubTrackUrl(tr) {
+  if (!tr) return null
+  const src = tr.type === 'file' ? tr.path : await window.api.extractAudioPlay(project.videoPath, tr.index)
+  return src ? await window.api.fileUrl(src) : null
+}
+async function dubBuild() {
+  const token = ++dub.token
+  const V = dubVoiceTrack(), VL = dubVoicelessTrack()
+  const [vUrl, vlUrl] = await Promise.all([dubTrackUrl(V), dubTrackUrl(VL)])
+  if (token !== dub.token) return
+  if (!vUrl || !vlUrl) { dubTeardown(); applyVolume(); return }
+  const AC = window.AudioContext || window.webkitAudioContext
+  dub.ctx ||= new AC()
+  dub.v ||= new Audio(); dub.vl ||= new Audio()
+  dub.v.preload = 'auto'; dub.vl.preload = 'auto'
+  if (dub.vUrl !== vUrl) { dub.vUrl = vUrl; dub.v.src = vUrl }
+  if (dub.vlUrl !== vlUrl) { dub.vlUrl = vlUrl; dub.vl.src = vlUrl }
+  dub.vOff = (V && V.offset) || 0
+  dub.vlOff = (VL && VL.offset) || 0
+  if (!dub.srcV) { dub.srcV = dub.ctx.createMediaElementSource(dub.v); dub.gV = dub.ctx.createGain(); dub.srcV.connect(dub.gV) }
+  if (!dub.srcVL) { dub.srcVL = dub.ctx.createMediaElementSource(dub.vl); dub.gVL = dub.ctx.createGain(); dub.srcVL.connect(dub.gVL) }
+  if (!dub.master) { dub.master = dub.ctx.createGain(); dub.gV.connect(dub.master); dub.gVL.connect(dub.master); dub.master.connect(dub.ctx.destination) }
+  dub.gV.gain.value = 1; dub.gVL.gain.value = 0
+  dub.on = true
+  applyVolume()
+  dubSync(true)
+}
+function dubTeardown() {
+  dub.token++
+  dub.on = false
+  try { if (dub.v) dub.v.pause() } catch {}
+  try { if (dub.vl) dub.vl.pause() } catch {}
+  if (dub.master) dub.master.gain.value = 0
+}
+// une réplique d'un perso décoché est-elle active à l'instant t ?
+function dubWantVL(tt) {
+  const mset = project.muteChars || []
+  if (!mset.length) return false
+  for (const l of project.lines) {
+    if (!l.words || !l.words.length || !mset.includes(l.characterId)) continue
+    if (tt >= lineStart(l) && tt < lineEnd(l)) return true
+  }
+  return false
+}
+function dubSyncPos(el, off, hard) {
+  const tt = video.currentTime - off
+  const inRange = tt >= 0 && tt < (el.duration || Infinity)
+  if (video.paused || !inRange) { if (!el.paused) el.pause(); if (hard && inRange) { try { el.currentTime = tt } catch {} } return }
+  if (Math.abs(el.currentTime - tt) > (hard ? 0.05 : 0.3)) { try { el.currentTime = tt } catch {} }
+  el.playbackRate = video.playbackRate
+  if (el.paused) el.play().catch(() => {})
+}
+function dubSync(hard) {
+  if (!dub.on || !dub.ctx) return
+  if (dub.ctx.state === 'suspended') dub.ctx.resume().catch(() => {})
+  dubSyncPos(dub.v, dub.vOff, hard)
+  dubSyncPos(dub.vl, dub.vlOff, hard)
+  const wantVL = dubWantVL(video.currentTime)
+  const now = dub.ctx.currentTime
+  dub.gV.gain.setTargetAtTime(wantVL ? 0 : 1, now, 0.012) // fondu ~30 ms
+  dub.gVL.gain.setTargetAtTime(wantVL ? 1 : 0, now, 0.012)
+}
 
 // ============================================================ canvas rendering
 let cw = 0, ch = 0 // CSS pixels
@@ -2349,8 +4325,9 @@ function renderBand(c, now, W, H, pps, opts) {
     }
   }
 
-  // répliques
-  for (const line of project.lines) {
+  // répliques (opts.lines : liste alternative, ex. onglet Enregistrement — répliques
+  // du perso sélectionné écrasées sur une piste unique)
+  for (const line of (opts.lines || project.lines)) {
     const row = rowOf(line.track)
     if (row < 0) continue // piste exclue de la sélection d'export
     const s = lineStart(line)
@@ -2390,19 +4367,29 @@ function renderBand(c, now, W, H, pps, opts) {
     c.lineTo(x1 - 2, baseY)
     c.stroke()
 
-    // nom du personnage — compact, tout en haut de la piste
-    const nameFont = Math.max(8, Math.round(th * 0.17))
+    // badge du personnage à gauche du bloc : fond = couleur du perso, nom en texte
+    // lisible (blanc, ou noir sur couleur claire)
+    const nm = char ? char.name : '?'
+    const nameFont = Math.max(9, Math.round(th * 0.18))
     c.font = `bold ${nameFont}px "Segoe UI", sans-serif`
+    const padX = 5
+    const tagH = nameFont + 5
+    const tagW = c.measureText(nm).width + padX * 2
+    const tagX = Math.max(0, x0)
+    const tagY = y + 2
     c.fillStyle = color
+    c.beginPath(); c.roundRect(tagX, tagY, tagW, tagH, 3); c.fill()
+    c.fillStyle = textOn(color)
     c.textAlign = 'left'
-    c.textBaseline = 'top'
-    c.fillText(char ? char.name : '?', Math.max(2, x0 + 4), y + 2)
+    c.textBaseline = 'middle'
+    c.fillText(nm, tagX + padX, tagY + tagH / 2 + 0.5)
 
     // mots — élongation : chaque mot est étiré sur sa durée réelle
     const fontPx = Math.round(th * 0.52)
     c.font = `bold ${fontPx}px ${bandFontFamily(line)}`
     c.textBaseline = 'alphabetic'
-    for (const w of line.words) {
+    for (let wi = 0; wi < line.words.length; wi++) {
+      const w = line.words[wi]
       const wx = xAt(w.start)
       const ww = (w.end - w.start) * pps
       if (wx + ww < 0 || wx > W) continue
@@ -2425,6 +4412,26 @@ function renderBand(c, now, W, H, pps, opts) {
       c.moveTo(wx + 0.5, y + th * 0.36)
       c.lineTo(wx + 0.5, y + th - 4)
       c.stroke()
+
+      // signe de détection posé sur ce mot (articulation à respecter). Contenu
+      // de la bande → dessiné aussi à l'export et en mode lecture plein écran.
+      if (line.symbols && line.symbols[wi] != null && typeof DET_BY_KEY !== 'undefined') {
+        const sym = DET_BY_KEY.get(line.symbols[wi])
+        if (sym) {
+          c.save()
+          c.font = `${Math.max(9, Math.round(th * 0.26))}px "Segoe UI", sans-serif`
+          c.textAlign = 'center'
+          c.textBaseline = 'middle'
+          const sx = wx + Math.max(5, ww / 2)
+          const sy = y + th * 0.27
+          c.lineWidth = Math.max(2, th * 0.03)
+          c.strokeStyle = pal.bg
+          c.strokeText(sym.glyph, sx, sy)
+          c.fillStyle = pal.symbol || '#ffd24a'
+          c.fillText(sym.glyph, sx, sy)
+          c.restore()
+        }
+      }
     }
 
     // voix off (bouche non visible à l'écran) : texte souligné sur toute la réplique
@@ -2533,6 +4540,7 @@ function draw() {
   renderBand(ctx, effectiveTime(), cw, ch, pxPerSec, { ruler: true, wave: showWave, handles: true, blocks: true, theme: bandPal() })
   drawLoops()
   drawPlans()
+  drawCuesTimeline()
   drawHoverCursor()
   drawDragGuide()
   updateSubOverlay()
@@ -2807,6 +4815,7 @@ canvas.addEventListener('pointerdown', (e) => {
   const y = e.clientY - r.top
   const hit = hitTest(x, y)
   hoverEdge = null // pas de surbrillance de poignée pendant un drag
+  selectedCueId = null // toute sélection de réplique/scrub désélectionne un repère ADR
   canvas.setPointerCapture(e.pointerId)
 
   if (hit.kind === 'edge') {
@@ -2862,12 +4871,24 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     canvas.style.cursor = 'grabbing'
   } else {
-    selectedIds.clear()
-    refreshInspector()
-    video.pause()
-    scrub.active = true
-    drag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: timeAtX(x, effectiveTime()), fromRuler: y <= RULER_H, moved: false }
-    canvas.style.cursor = 'grabbing'
+    // bande / règle vide : d'abord un repère ADR sous le curseur (sélection + drag),
+    // sinon scrub / clic-règle
+    const cid = hitCueX(x)
+    if (cid) {
+      selectedCueId = cid
+      selectedIds.clear()
+      refreshInspector()
+      const q = (project.cues || []).find((c) => c.id === cid)
+      drag = { kind: 'cue', id: cid, x0: x, t0: q ? q.time : 0, moved: false }
+      canvas.style.cursor = 'grabbing'
+    } else {
+      selectedIds.clear()
+      refreshInspector()
+      video.pause()
+      scrub.active = true
+      drag = { kind: 'scrub', x0: x, t0: effectiveTime(), tClick: timeAtX(x, effectiveTime()), fromRuler: y <= RULER_H, moved: false }
+      canvas.style.cursor = 'grabbing'
+    }
   }
 })
 
@@ -2882,6 +4903,7 @@ canvas.addEventListener('pointermove', (e) => {
       : null
     let cur = hit.kind === 'edge' ? 'ew-resize' : hit.kind === 'line' ? 'move' : 'grab'
     if (hover.y <= RULER_H) cur = 'pointer' // règle : clic = aller à cet endroit
+    if (hit.kind !== 'edge' && hit.kind !== 'line' && hitCueX(hover.x)) cur = 'ew-resize' // repère ADR déplaçable
     if (hit.kind === 'edge' && !(e.ctrlKey || e.metaKey)) {
       const isFirst = hit.type === 'start' && hit.wi === 0
       const isLast = hit.type === 'end' && hit.wi === hit.line.words.length - 1
@@ -2900,6 +4922,13 @@ canvas.addEventListener('pointermove', (e) => {
     if (drag.moved) {
       scrubTo(drag.t0 - dt)
       playScrubGrain(scrub.time)
+    }
+  } else if (drag.kind === 'cue') {
+    if (Math.abs(dx) > 2) drag.moved = true
+    if (drag.moved) {
+      if (!drag.pushed) { pushUndo(); drag.pushed = true }
+      const q = (project.cues || []).find((c) => c.id === drag.id)
+      if (q) { q.time = clamp(drag.t0 + dt, 0, videoDur()); markDirty() }
     }
   } else if (drag.kind === 'line') {
     if (Math.abs(dx) > 3) drag.moved = true
@@ -3121,6 +5150,12 @@ function drawSeekBar() {
   // plans : traits verticaux ambre pleine hauteur
   c.fillStyle = 'rgba(230, 162, 60, 0.9)'
   for (const pl of project.plans) c.fillRect(px(pl.time) - 0.5, 0, 1, h)
+  // signets (Tier B) : petits chevrons verts en haut, distincts des scènes/plans
+  c.fillStyle = 'rgba(95, 191, 106, 0.95)'
+  for (const b of (project.bookmarks || [])) {
+    const x = px(b.time)
+    c.beginPath(); c.moveTo(x - 4, 0); c.lineTo(x + 4, 0); c.lineTo(x, 5); c.closePath(); c.fill()
+  }
 }
 
 // tooltip : timecode + scène/plan courants + répliques sous le curseur (max 3)
@@ -3146,6 +5181,8 @@ function seekTipUpdate(e) {
   if (lp) addRow(lp.name)
   const pl = sortedPlans().filter((k) => k.time <= t).pop()
   if (pl) addRow(pl.name)
+  const bm = (project.bookmarks || []).find((k) => Math.abs(k.time - t) < (seekDur() || 1) * 0.01)
+  if (bm) addRow('★ ' + (bm.label || formatTcShort(bm.time)))
   let n = 0
   for (const l of project.lines) {
     if (!l.words.length || t < lineStart(l) || t > lineEnd(l)) continue
@@ -3204,11 +5241,11 @@ $('btnAddLine').addEventListener('click', () => {
 // (kind='reac' pour le DETX), sans flèche entrée/sortie par défaut — comme une
 // réplique normale, l'utilisateur les ajoute s'il le souhaite. Insertion à la
 // palette « Réactions » ou directement par la touche du lexique.
-const REAC_DUR = 0.8 // durée par défaut d'une réac insérée
+const REAC_DUR = 0.2 // durée par défaut d'une réac insérée (1/4 de 0,8 s)
 const onomaPop = $('onomaPop')
 
 // token écrit dans le projet/DETX, dans la langue courante
-const reacToken = (r) => (lang === 'en' ? r.en : r.fr)
+const reacToken = (r) => r[lang] || r.fr
 
 function insertReac(r) {
   pushUndo()
@@ -3255,6 +5292,7 @@ $('btnOnoma').addEventListener('click', (e) => {
     onomaPop.classList.add('hidden')
     return
   }
+  symbolPop.classList.add('hidden'); cuePop.classList.add('hidden') // un seul popup ouvert à la fois
   const r = e.currentTarget.getBoundingClientRect()
   onomaPop.style.left = `${r.left}px`
   onomaPop.style.bottom = `${window.innerHeight - r.top + 6}px`
@@ -3263,6 +5301,276 @@ $('btnOnoma').addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (!onomaPop.classList.contains('hidden') && !onomaPop.contains(e.target)) {
     onomaPop.classList.add('hidden')
+  }
+})
+
+
+// ============================================================ signes de détection
+// On pose un signe (voir detection.js) sur un mot de la réplique sélectionnée :
+// celui sous le point de lecture, sinon le plus proche. Un signe déjà posé est
+// retiré si on repose le même (bascule). Persisté dans line.symbols = { [i]: key }
+// et donc dans le .rythmo + l'undo (snapshot des lignes). Rendu dans renderBand.
+const symbolPop = $('symbolPop')
+
+// mot ciblé dans une réplique pour l'instant donné (contient l'instant, sinon proche)
+function symbolTargetWord(line, at) {
+  let best = 0, bestD = Infinity
+  for (let i = 0; i < line.words.length; i++) {
+    const w = line.words[i]
+    if (at >= w.start && at < w.end) return i
+    const cc = (w.start + w.end) / 2
+    const d = Math.abs(cc - at)
+    if (d < bestD) { bestD = d; best = i }
+  }
+  return best
+}
+
+function insertSymbol(sym) {
+  if (selectedIds.size !== 1) { toast(t('symNeedLine')); return }
+  const line = getLine([...selectedIds][0])
+  if (!line || !line.words || !line.words.length) return
+  pushUndo()
+  const wi = symbolTargetWord(line, effectiveTime())
+  if (!line.symbols) line.symbols = {}
+  if (line.symbols[wi] === sym.key) delete line.symbols[wi] // bascule : retire
+  else line.symbols[wi] = sym.key
+  if (!Object.keys(line.symbols).length) delete line.symbols
+  markDirty()
+}
+
+function clearLineSymbols() {
+  if (selectedIds.size !== 1) { toast(t('symNeedLine')); return }
+  const line = getLine([...selectedIds][0])
+  if (!line || !line.symbols) return
+  pushUndo()
+  delete line.symbols
+  markDirty()
+}
+
+function buildSymbolPop() {
+  symbolPop.innerHTML = ''
+  for (const s of DET_SYMBOLS) {
+    const b = document.createElement('button')
+    b.className = 'sym-chip'
+    b.title = t('symChipTitle', s[lang] || s.fr, s.hint, s.key)
+    const g = document.createElement('span')
+    g.className = 'g'
+    g.textContent = s.glyph
+    const nm = document.createElement('span')
+    nm.className = 'nm'
+    nm.textContent = s[lang] || s.fr
+    const k = document.createElement('span')
+    k.className = 'k'
+    k.textContent = s.key
+    b.append(g, nm, k)
+    b.addEventListener('click', () => insertSymbol(s))
+    symbolPop.appendChild(b)
+  }
+  const clr = document.createElement('button')
+  clr.className = 'sym-chip sym-clear'
+  clr.title = t('symClearTitle')
+  clr.textContent = '⌫ ' + t('symClear')
+  clr.addEventListener('click', () => clearLineSymbols())
+  symbolPop.appendChild(clr)
+}
+buildSymbolPop()
+
+$('btnSymbols').addEventListener('click', (e) => {
+  e.stopPropagation()
+  if (!symbolPop.classList.contains('hidden')) { symbolPop.classList.add('hidden'); return }
+  onomaPop.classList.add('hidden'); cuePop.classList.add('hidden') // un seul popup ouvert à la fois
+  const r = e.currentTarget.getBoundingClientRect()
+  symbolPop.style.left = `${r.left}px`
+  symbolPop.style.bottom = `${window.innerHeight - r.top + 6}px`
+  symbolPop.classList.remove('hidden')
+})
+document.addEventListener('click', (e) => {
+  if (!symbolPop.classList.contains('hidden') && !symbolPop.contains(e.target) && e.target !== $('btnSymbols')) {
+    symbolPop.classList.add('hidden')
+  }
+})
+
+
+// ============================================================ A6 — repères ADR (streamers / punches)
+// Repères de studio posés sur l'image pour lancer le comédien sans lip-sync
+// (voice-over, audiodescription, localisation de jeu). Un streamer est une barre
+// verticale qui balaie l'image et atteint le bord au top de départ ; un punch est
+// un flash circulaire au top. project.cues = [{ id, type, time, lead? }].
+const STREAMER_LEAD = 3 // s : durée du balayage du streamer avant le top
+const cuePop = $('cuePop')
+let selectedCueId = null // repère ADR sélectionné sur la bande (déplaçable / supprimable)
+const CUE_COL = '#5cc8f0' // cyan, distinct des plans (ambre) et du playhead (rouge)
+
+// rendu des repères sur la bande (timeline) : ligne guide verticale + marqueur dans la
+// règle (cercle = punch, fanion = streamer, + barre de lead). Le repère sélectionné
+// est mis en valeur. Sélection/déplacement/suppression gérés dans les handlers pointeur.
+function drawCuesTimeline() {
+  const cues = project.cues || []
+  if (!cues.length) return
+  const now = effectiveTime()
+  const cy = 14
+  ctx.save()
+  for (const q of cues) {
+    const x = xAtTime(q.time, now)
+    const sel = q.id === selectedCueId
+    if (q.type === 'streamer') { // barre de lead (de time-lead à time)
+      const x0 = xAtTime(q.time - (q.lead || STREAMER_LEAD), now)
+      ctx.strokeStyle = CUE_COL
+      ctx.globalAlpha = sel ? 0.9 : 0.5
+      ctx.lineWidth = sel ? 3 : 2
+      ctx.beginPath(); ctx.moveTo(Math.max(0, x0), RULER_H - 4.5); ctx.lineTo(Math.min(cw, x), RULER_H - 4.5); ctx.stroke()
+    }
+    if (x < -14 || x > cw + 14) continue
+    ctx.strokeStyle = CUE_COL // ligne guide verticale
+    ctx.globalAlpha = sel ? 0.85 : 0.32
+    ctx.lineWidth = sel ? 2 : 1
+    ctx.beginPath(); ctx.moveTo(x + 0.5, RULER_H); ctx.lineTo(x + 0.5, ch); ctx.stroke()
+    ctx.globalAlpha = 1 // marqueur dans la règle
+    ctx.fillStyle = CUE_COL
+    ctx.strokeStyle = sel ? '#ffffff' : CUE_COL
+    ctx.lineWidth = 1.5
+    if (q.type === 'punch') {
+      ctx.beginPath(); ctx.arc(x, cy, sel ? 6 : 5, 0, Math.PI * 2); ctx.fill()
+      if (sel) ctx.stroke()
+    } else {
+      const s = sel ? 6 : 5
+      ctx.beginPath(); ctx.moveTo(x - s, cy - s); ctx.lineTo(x + s, cy); ctx.lineTo(x - s, cy + s); ctx.closePath(); ctx.fill()
+      if (sel) ctx.stroke()
+    }
+  }
+  ctx.restore()
+}
+
+// id du repère dont le marqueur (ou la ligne guide) est à moins de ~7 px de x, sinon null
+function hitCueX(x) {
+  const cues = project.cues || []
+  if (!cues.length) return null
+  const now = effectiveTime()
+  let best = null, bd = 7
+  for (const q of cues) { const d = Math.abs(xAtTime(q.time, now) - x); if (d <= bd) { bd = d; best = q.id } }
+  return best
+}
+
+function deleteSelectedCue() {
+  if (!selectedCueId) return
+  const cues = project.cues || []
+  const i = cues.findIndex((c) => c.id === selectedCueId)
+  if (i < 0) { selectedCueId = null; return }
+  pushUndo(); cues.splice(i, 1); selectedCueId = null; markDirty(); toast(t('cueRemoved'))
+}
+
+function drawPunchRing(c, r) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2
+  const rad = Math.min(r.w, r.h) * 0.09
+  c.save()
+  c.lineWidth = Math.max(3, rad * 0.22)
+  c.strokeStyle = 'rgba(255,255,255,0.95)'
+  c.fillStyle = 'rgba(255,255,255,0.28)'
+  c.beginPath(); c.arc(cx, cy, rad, 0, Math.PI * 2); c.fill()
+  c.beginPath(); c.arc(cx, cy, rad, 0, Math.PI * 2); c.stroke()
+  c.restore()
+}
+
+// dessine les repères actifs à l'instant `now` dans le rectangle image `r` (x,y,w,h)
+function drawCues(c, r, now) {
+  const cues = project.cues || []
+  if (!cues.length) return
+  const fps = project.fps || 25
+  const flash = Math.max(2 / fps, 0.08) // fenêtre d'affichage d'un flash de punch
+  for (const q of cues) {
+    if (q.type === 'streamer') {
+      const lead = q.lead || STREAMER_LEAD
+      const t0 = q.time - lead
+      if (now >= t0 && now <= q.time + flash) {
+        const p = clamp((now - t0) / lead, 0, 1)
+        const x = r.x + p * r.w
+        c.save()
+        c.strokeStyle = 'rgba(255,228,80,0.95)'
+        c.lineWidth = Math.max(2, r.w * 0.005)
+        c.beginPath(); c.moveTo(x, r.y); c.lineTo(x, r.y + r.h); c.stroke()
+        c.restore()
+      }
+      if (Math.abs(now - q.time) <= flash) drawPunchRing(c, r) // top de fin
+    } else if (q.type === 'punch') {
+      if (Math.abs(now - q.time) <= flash) drawPunchRing(c, r)
+    }
+  }
+}
+
+// overlay ADR de l'éditeur : un canvas calé sur le rectangle vidéo affiché
+function drawCuesEditor() {
+  const ov = $('cueOverlay')
+  if (!ov) return
+  if (!(video.videoWidth > 0) || !(project.cues || []).length) { if (!ov.hidden) ov.hidden = true; return }
+  const vr = video.getBoundingClientRect()
+  const wr = $('videoWrap').getBoundingClientRect()
+  const w = Math.round(vr.width), h = Math.round(vr.height)
+  if (w < 2 || h < 2) { ov.hidden = true; return }
+  ov.hidden = false
+  ov.style.left = (vr.left - wr.left) + 'px'
+  ov.style.top = (vr.top - wr.top) + 'px'
+  ov.style.width = w + 'px'
+  ov.style.height = h + 'px'
+  const dpr = window.devicePixelRatio || 1
+  if (ov.width !== Math.round(w * dpr) || ov.height !== Math.round(h * dpr)) { ov.width = Math.round(w * dpr); ov.height = Math.round(h * dpr) }
+  const c = ov.getContext('2d')
+  c.setTransform(dpr, 0, 0, dpr, 0, 0)
+  c.clearRect(0, 0, w, h)
+  drawCues(c, { x: 0, y: 0, w, h }, effectiveTime())
+}
+
+function addCue(type) {
+  pushUndo()
+  if (!project.cues) project.cues = []
+  const time = Math.max(0, effectiveTime())
+  const cue = { id: uid(), type, time }
+  if (type === 'streamer') cue.lead = STREAMER_LEAD
+  project.cues.push(cue)
+  selectedCueId = cue.id // le nouveau repère est sélectionné (déplaçable / supprimable de suite)
+  markDirty()
+  toast(t(type === 'streamer' ? 'cueStreamerAdded' : 'cuePunchAdded'))
+}
+
+function removeNearestCue() {
+  const cues = project.cues || []
+  if (!cues.length) { toast(t('cueNone')); return }
+  const now = effectiveTime()
+  let bi = -1, bd = Infinity
+  for (let i = 0; i < cues.length; i++) { const d = Math.abs(cues[i].time - now); if (d < bd) { bd = d; bi = i } }
+  if (bi >= 0) { pushUndo(); const [rm] = cues.splice(bi, 1); if (rm && rm.id === selectedCueId) selectedCueId = null; markDirty(); toast(t('cueRemoved')) }
+}
+
+function clearCues() {
+  if (!(project.cues || []).length) { toast(t('cueNone')); return }
+  pushUndo(); project.cues = []; selectedCueId = null; markDirty(); toast(t('cuesCleared'))
+}
+
+function buildCuePop() {
+  cuePop.innerHTML = ''
+  const mk = (label, fn) => {
+    const b = document.createElement('button')
+    b.className = 'cue-item'
+    b.textContent = label
+    b.addEventListener('click', () => { fn(); cuePop.classList.add('hidden') })
+    cuePop.appendChild(b)
+  }
+  mk(t('cueAddStreamer'), () => addCue('streamer'))
+  mk(t('cueAddPunch'), () => addCue('punch'))
+}
+buildCuePop()
+
+$('btnAdr').addEventListener('click', (e) => {
+  e.stopPropagation()
+  if (!cuePop.classList.contains('hidden')) { cuePop.classList.add('hidden'); return }
+  onomaPop.classList.add('hidden'); symbolPop.classList.add('hidden') // un seul popup ouvert à la fois
+  const r = e.currentTarget.getBoundingClientRect()
+  cuePop.style.left = `${r.left}px`
+  cuePop.style.bottom = `${window.innerHeight - r.top + 6}px`
+  cuePop.classList.remove('hidden')
+})
+document.addEventListener('click', (e) => {
+  if (!cuePop.classList.contains('hidden') && !cuePop.contains(e.target) && e.target !== $('btnAdr')) {
+    cuePop.classList.add('hidden')
   }
 })
 
@@ -3305,11 +5613,35 @@ document.addEventListener('keydown', (e) => {
     // on laisse passer Espace / flèches / Page↑↓ / Ctrl+Z·Y (gérés plus bas, indépendants de l'onglet)
   }
 
+  // onglet Enregistrement : Suppr efface le segment sélectionné
+  if (activeTab === 'rec' && (e.key === 'Delete' || e.key === 'Backspace') && selectedClipId) {
+    e.preventDefault(); deleteClip(selectedClipId); return
+  }
+
   // copier / couper / coller des répliques sélectionnées (onglet Rythmo)
   if (activeTab === 'rythmo') {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyLines(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
+  }
+
+  // chiffres 1-9 : sélectionne le Nième personnage (destinataire des nouvelles répliques)
+  // On lit e.code (Digit1..Digit9 / Numpad1..Numpad9), position physique de la touche,
+  // pour que ça marche quelle que soit la disposition (AZERTY : &é"'(-è_ç, etc.)
+  const digitCode = e.code && e.code.match(/^(?:Digit|Numpad)([1-9])$/)
+  if (digitCode && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const idx = Number(digitCode[1]) - 1
+    if (idx < project.characters.length) {
+      if (activeTab === 'rythmo' || activeTab === 'rec') { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
+    }
+  }
+
+  // palette de détection ouverte : les touches posent un signe de détection sur la
+  // réplique sélectionnée (et court-circuitent le lexique des réacs)
+  if (activeTab === 'rythmo' && !symbolPop.classList.contains('hidden') &&
+      !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+    const sym = DET_BY_KEY.get(e.key)
+    if (sym) { e.preventDefault(); insertSymbol(sym); return }
   }
 
   // touche du lexique = insertion directe d'une réac au point de lecture (onglet Rythmo)
@@ -3328,6 +5660,11 @@ document.addEventListener('keydown', (e) => {
     refreshInspector()
     return
   }
+
+  // signets (Tier B) — indépendants de l'onglet : Ctrl+B pose/retire, Ctrl+,/. navigue
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleBookmark(); return }
+  if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); gotoBookmark(-1); return }
+  if ((e.ctrlKey || e.metaKey) && e.key === '.') { e.preventDefault(); gotoBookmark(1); return }
 
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault()
@@ -3372,7 +5709,7 @@ document.addEventListener('keydown', (e) => {
       break
     case 'Delete':
     case 'Backspace':
-      if (activeTab === 'rythmo') deleteSelected()
+      if (activeTab === 'rythmo') { if (selectedCueId) deleteSelectedCue(); else deleteSelected() }
       break
     case 'Escape':
       if (!$('guideModal').classList.contains('hidden')) {
@@ -3464,6 +5801,7 @@ async function setVideo(path, url) {
   videoProxyPath = null
   sourceVideoUrl = url
   showLoading(true, t('loadingVideo'))
+  if (typeof resetImgZoom === 'function') resetImgZoom()
   video.src = url
   $('dropHint').style.display = 'none'
   markDirty()
@@ -3477,9 +5815,129 @@ async function openVideoDialog() {
   if (r) setVideo(r.path, r.url)
 }
 
+// ============================================================ import YouTube (yt-dlp)
+// URL collée → sonde auto (titre, durée, qualités DISPONIBLES) → téléchargement →
+// la modale s'élargit en bas avec un rognage début/fin → Valider charge la vidéo.
+const ytModal = $('ytModal')
+const ytSt = { busy: false, meta: null, file: null, probeTimer: 0, probedUrl: null, phase: 'idle' }
+const YT_RUNGS = [720, 1080, 1440, 2160]
+const ytFmtTc = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+async function openYtModal() {
+  ytModal.classList.remove('hidden')
+  ytSt.phase = 'idle'; ytSt.meta = null; ytSt.file = null; ytSt.probedUrl = null
+  $('ytBar').style.width = '0%'; $('ytStatus').textContent = ''
+  $('ytTrimSec').classList.add('hidden')
+  $('ytQuality').innerHTML = ''; $('ytQuality').disabled = true
+  $('ytInfo').textContent = ''
+  $('ytUrl').value = ''; $('ytUrl').disabled = false
+  $('ytGo').textContent = t('ytGoImport'); $('ytGo').disabled = false
+  if (!$('ytDir').value) $('ytDir').value = await window.api.ytDefaultDir()
+  $('ytUrl').focus()
+}
+// sélecteur de qualité : uniquement les paliers réellement disponibles
+function ytFillQuality(heights) {
+  const maxH = Math.max(0, ...heights)
+  const sel = $('ytQuality'); sel.innerHTML = ''
+  const rungs = YT_RUNGS.filter((h) => maxH >= h - 66)
+  if (!rungs.length && maxH) rungs.push(maxH)
+  for (const h of rungs) {
+    const o = document.createElement('option'); o.value = String(h)
+    o.textContent = h >= 2160 ? '2160p (4K)' : h >= 1440 ? '1440p (2K)' : `${h}p`
+    sel.appendChild(o)
+  }
+  sel.value = String(rungs.includes(1080) ? 1080 : rungs[rungs.length - 1] || 1080)
+  sel.disabled = !rungs.length
+}
+async function ytDoProbe() {
+  const url = $('ytUrl').value.trim()
+  if (!/^https?:\/\//i.test(url)) { toast(t('ytBadUrl')); return null }
+  if (ytSt.meta && ytSt.probedUrl === url) return ytSt.meta
+  ytSt.busy = true; $('ytGo').disabled = true
+  $('ytStatus').textContent = t('ytPhProbe')
+  const r = await window.api.ytProbe(url)
+  ytSt.busy = false; $('ytGo').disabled = false
+  if (!r || r.error) { $('ytStatus').textContent = t('ytFail') + (r && r.error ? ' — ' + String(r.error).slice(0, 80) : ''); return null }
+  ytSt.meta = r; ytSt.probedUrl = url
+  ytFillQuality(r.heights || [])
+  $('ytInfo').textContent = `${r.title.slice(0, 46)} · ${ytFmtTc(r.duration)}`
+  $('ytStatus').textContent = ''
+  return r
+}
+$('ytUrl').addEventListener('input', () => {
+  clearTimeout(ytSt.probeTimer)
+  ytSt.meta = null
+  if (/^https?:\/\/\S+$/i.test($('ytUrl').value.trim())) ytSt.probeTimer = setTimeout(ytDoProbe, 700)
+})
+$('ytBrowse').addEventListener('click', async () => { const p = await window.api.pickDirectory($('ytDir').value || undefined); if (p) $('ytDir').value = p })
+window.api.onYtProgress((p) => {
+  if (!p || ytModal.classList.contains('hidden')) return
+  if (p.phase === 'ytdlp') { $('ytBar').style.width = (p.pct || 0) + '%'; $('ytStatus').textContent = t('ytPhYtdlp', p.pct || 0) }
+  else if (p.phase === 'probe') $('ytStatus').textContent = t('ytPhProbe')
+  else if (p.phase === 'download') { $('ytBar').style.width = (p.pct || 0) + '%'; $('ytStatus').textContent = t('ytPhDl', p.pct || 0) }
+  else if (p.phase === 'trim') $('ytStatus').textContent = t('ytPhTrim')
+})
+function ytSyncTrimLabels() {
+  const dur = ytSt.meta ? ytSt.meta.duration : 0
+  $('ytStartVal').textContent = ytFmtTc((Number($('ytStart').value) / 1000) * dur)
+  $('ytEndVal').textContent = ytFmtTc((Number($('ytEnd').value) / 1000) * dur)
+}
+$('ytStart').addEventListener('input', () => { if (Number($('ytStart').value) > Number($('ytEnd').value) - 10) $('ytStart').value = String(Number($('ytEnd').value) - 10); ytSyncTrimLabels() })
+$('ytEnd').addEventListener('input', () => { if (Number($('ytEnd').value) < Number($('ytStart').value) + 10) $('ytEnd').value = String(Number($('ytStart').value) + 10); ytSyncTrimLabels() })
+async function ytGoClick() {
+  if (ytSt.busy) return
+  if (ytSt.phase === 'trim') {
+    // Valider : rognage éventuel (copie sans ré-encodage) puis chargement de la vidéo
+    const dur = ytSt.meta ? ytSt.meta.duration : 0
+    const s = (Number($('ytStart').value) / 1000) * dur
+    const e2 = (Number($('ytEnd').value) / 1000) * dur
+    ytSt.busy = true; $('ytGo').disabled = true
+    let file = ytSt.file
+    if (dur && (s > 0.2 || e2 < dur - 0.2)) {
+      const r = await window.api.ytTrim({ path: file, start: s, end: e2 })
+      if (!r || r.error) { $('ytStatus').textContent = t('ytFail'); ytSt.busy = false; $('ytGo').disabled = false; return }
+      file = r.path
+    }
+    ytSt.busy = false; $('ytGo').disabled = false
+    ytModal.classList.add('hidden')
+    const url = await window.api.fileUrl(file)
+    if (url) setVideo(file, url)
+    toast(t('ytDone'))
+    return
+  }
+  const meta = await ytDoProbe(); if (!meta) return
+  ytSt.busy = true; $('ytGo').disabled = true; $('ytUrl').disabled = true; $('ytQuality').disabled = true
+  const r = await window.api.ytDownload({ url: ytSt.probedUrl, height: Number($('ytQuality').value) || 1080, destDir: $('ytDir').value.trim(), title: meta.title, id: meta.id })
+  ytSt.busy = false; $('ytGo').disabled = false; $('ytUrl').disabled = false; $('ytQuality').disabled = false
+  if (!r || r.error) { $('ytStatus').textContent = t('ytFail') + (r && r.error ? ' — ' + String(r.error).slice(0, 90) : ''); return }
+  ytSt.file = r.path
+  ytSt.phase = 'trim'
+  $('ytBar').style.width = '100%'
+  $('ytStatus').textContent = t('ytDlDone')
+  $('ytTrimSec').classList.remove('hidden') // la modale s'élargit en bas : rognage début/fin
+  $('ytStart').value = '0'; $('ytEnd').value = '1000'; ytSyncTrimLabels()
+  $('ytGo').textContent = t('ytGoApply')
+}
+$('ytGo').addEventListener('click', ytGoClick)
+$('ytClose').addEventListener('click', () => { if (!ytSt.busy) { window.api.ytCancel(); ytModal.classList.add('hidden') } })
+$('dropBrowse').addEventListener('click', openVideoDialog)
+$('dropYt').addEventListener('click', openYtModal)
+
+// sérialise le projet en estampillant la position de lecture courante, pour reprendre
+// au même timecode à la réouverture du projet
+function projectJson() {
+  project.playhead = Math.max(0, effectiveTime() || 0)
+  project.activeAudioKey = audioTrackKey(activeAudioTrack()) // clé stable de la piste active
+  return JSON.stringify(project, null, 2)
+}
+
+// nom proposé au 1er enregistrement : nom du fichier vidéo (sans extension) + .rythmo
+function suggestedProjectName() {
+  return project.videoPath ? baseName(project.videoPath).replace(/\.[^.]+$/, '') + '.rythmo' : ''
+}
+
 async function saveProject() {
-  const json = JSON.stringify(project, null, 2)
-  const p = await window.api.saveProject(json, projectPath)
+  const json = projectJson()
+  const p = await window.api.saveProject(json, projectPath, suggestedProjectName())
   if (p) {
     projectPath = p
     setClean()
@@ -3488,7 +5946,7 @@ async function saveProject() {
   }
 }
 async function saveProjectAs() {
-  const p = await window.api.saveProjectAs(JSON.stringify(project, null, 2), projectPath)
+  const p = await window.api.saveProjectAs(projectJson(), projectPath)
   if (p) {
     projectPath = p
     setClean()
@@ -3529,6 +5987,7 @@ async function loadProjectData(data, path) {
   projectPath = path || null
   selectedCharId = project.characters[0]?.id || null
   selectedIds = new Set()
+  selectedCueId = null
   undoStack = []
   redoStack = []
   syncUndoMenu()
@@ -3543,6 +6002,7 @@ async function loadProjectData(data, path) {
   renderLinesLog()
   renderLoopsPanel()
   renderPlansPanel()
+  preloadTakeAudios()
   setClean()
   updateDiscordActivity()
   usingProxy = false
@@ -3555,6 +6015,14 @@ async function loadProjectData(data, path) {
       sourceVideoUrl = url
       showLoading(true, t('loadingProject'))
       video.src = url
+      // reprend au timecode enregistré dans le projet (position de lecture au dernier save)
+      const resumeAt = Math.max(0, Number(project.playhead) || 0)
+      if (resumeAt > 0.05) {
+        video.addEventListener('loadedmetadata', function once() {
+          video.removeEventListener('loadedmetadata', once)
+          try { video.currentTime = Math.min(resumeAt, video.duration || resumeAt) } catch {}
+        })
+      }
       $('dropHint').style.display = 'none'
       buildWaveform()
       generateProxy(project.videoPath) // tâche de fond ; bascule sur le proxy quand prêt
@@ -3901,56 +6369,105 @@ async function exportDetxDialog() {
   if (p) toast(t('detxExported', p.replace(/^.*[\\/]/, '')))
 }
 
-// ============================================================ export PDF (script)
-// Script de doublage façon conducteur cinéma : chronologique, timecode + personnage
-// (capitales, pastille couleur) puis dialogue indenté, police machine à écrire.
+// ============================================================ documents PDF — titre commun
+// Titre des documents PDF (grille de présence, relevé de lignes) : nom du projet ou
+// de la vidéo.
 function scriptTitle() {
   return (projectPath || project.videoPath || 'Script').replace(/^.*[\\/]/, '').replace(/\.\w+$/, '') || 'Script'
 }
 
-function buildScriptHtml() {
-  const lines = [...project.lines].filter((l) => l.words.length).sort((a, b) => lineStart(a) - lineStart(b))
-  const title = scriptTitle()
+// ============================================================ A5 — documents de travail
+// Deux documents PDF pour organiser une session d'enregistrement (mêmes rouages
+// que le script : HTML → printToPDF côté process principal via window.api.exportPdf).
+//   · grille de présence : personnages × scènes, qui parle où (nb de répliques)
+//   · relevé de lignes : par personnage, ses répliques (TC + texte) + case cochée
+const DOC_CSS = `* { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; color: #111; margin: 0; }
+  .title { font-size: 17pt; font-weight: bold; margin: 0 0 3pt; }
+  .meta { color: #777; font-size: 9pt; margin-bottom: 14pt; text-transform: uppercase; letter-spacing: .5pt; }
+  .rule { border-bottom: 1.5px solid #111; margin-bottom: 16pt; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #bbb; padding: 4pt 6pt; text-align: center; font-size: 9pt; }
+  thead th { background: #f0f0f0; }
+  th.nm { text-align: left; white-space: nowrap; }
+  td.p { background: #e9f2ff; font-weight: bold; }
+  td.tot, th.tot { background: #f7f7f7; font-weight: bold; }
+  tr.totals td, tr.totals th { background: #f0f0f0; font-weight: bold; }
+  .dot { width: 8pt; height: 8pt; border-radius: 50%; display: inline-block; margin-right: 5pt; transform: translateY(1pt); }
+  h2.grp { font-size: 12pt; margin: 16pt 0 4pt; page-break-after: avoid; }
+  h2.grp .dot { width: 10pt; height: 10pt; }
+  table.tally td.tc { color: #555; width: 88pt; white-space: nowrap; text-align: left; }
+  table.tally td.d { text-align: left; }
+  table.tally td.rec { width: 34pt; }
+  table.tally td.n { width: 26pt; color: #777; }`
+
+function docHead(title, sub, count, unit) {
   let date = ''
-  try { date = new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) } catch {}
-  const rows = lines.map((l) => {
-    const c = getChar(l.characterId)
-    const name = (c ? c.name : '?').toUpperCase()
-    const color = c ? c.color : '#888888'
-    const tc = formatTc(lineStart(l), project.fps)
-    const text = l.words.map((w) => w.text).filter((w) => w !== '_').join(' ')
-    return `<div class="e"><div class="h"><span class="tc">${xmlEsc(tc)}</span>` +
-      `<span class="dot" style="background:${xmlEsc(color)}"></span>` +
-      `<span class="nm">${xmlEsc(name)}</span></div><div class="d">${xmlEsc(text)}</div></div>`
-  }).join('')
-  return `<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><style>
-    * { box-sizing: border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: 11pt; color: #111; margin: 0; }
-    .title { font-size: 17pt; font-weight: bold; margin: 0 0 3pt; }
-    .meta { color: #777; font-size: 9pt; margin-bottom: 14pt; text-transform: uppercase; letter-spacing: .5pt; }
-    .rule { border-bottom: 1.5px solid #111; margin-bottom: 16pt; }
-    .e { margin-bottom: 13pt; page-break-inside: avoid; }
-    .h { display: flex; align-items: baseline; gap: 9pt; }
-    .tc { color: #555; font-size: 9.5pt; min-width: 86pt; }
-    .dot { width: 8pt; height: 8pt; border-radius: 50%; display: inline-block; transform: translateY(1pt); }
-    .nm { font-weight: bold; letter-spacing: 1pt; }
-    .d { margin: 3pt 0 0 95pt; white-space: pre-wrap; line-height: 1.45; }
-  </style></head><body>
-    <div class="title">${xmlEsc(title)}</div>
-    <div class="meta">${xmlEsc(t('pdfSubtitle'))}${date ? ' · ' + xmlEsc(date) : ''} · ${lines.length} ${xmlEsc(t('pdfLines'))}</div>
-    <div class="rule"></div>
-    ${rows}
-  </body></html>`
+  try { date = new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : lang === 'es' ? 'es-ES' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) } catch {}
+  return `<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8"><style>${DOC_CSS}</style></head><body>` +
+    `<div class="title">${xmlEsc(title)}</div>` +
+    `<div class="meta">${xmlEsc(sub)}${date ? ' · ' + xmlEsc(date) : ''} · ${count} ${xmlEsc(unit)}</div>` +
+    `<div class="rule"></div>`
 }
 
-async function exportPdfDialog() {
-  if (!project.lines.length) {
-    toast(t('noLinesToExport'))
-    return
+function docScenes() {
+  const scenes = [...project.loops].sort((a, b) => a.start - b.start)
+  if (scenes.length) return scenes
+  const maxEnd = project.lines.reduce((m, l) => Math.max(m, lineEnd(l)), 0)
+  return [{ id: 'all', name: t('docAllScenes'), start: 0, end: maxEnd || 1 }]
+}
+
+function buildPresenceHtml() {
+  const chars = project.characters.slice()
+  const scenes = docScenes()
+  const inScene = (l, sc) => { const m = (lineStart(l) + lineEnd(l)) / 2; return m >= sc.start && m < sc.end }
+  const header = scenes.map((sc) => `<th>${xmlEsc(sc.name)}</th>`).join('')
+  let body = ''
+  const perScene = scenes.map(() => 0)
+  for (const c of chars) {
+    const lines = project.lines.filter((l) => l.characterId === c.id && l.words.length)
+    const cells = scenes.map((sc, i) => {
+      const n = lines.filter((l) => inScene(l, sc)).length
+      perScene[i] += n
+      return `<td class="${n ? 'p' : ''}">${n ? '●' + (n > 1 ? ' ' + n : '') : ''}</td>`
+    }).join('')
+    body += `<tr><th class="nm"><span class="dot" style="background:${xmlEsc(c.color)}"></span>${xmlEsc(c.name)}</th>${cells}<td class="tot">${lines.length}</td></tr>`
   }
-  const base = (projectPath || project.videoPath || 'script').replace(/\.rythmo(\.json)?$/i, '').replace(/\.\w+$/, '')
-  const r = await window.api.exportPdf(buildScriptHtml(), base + '.pdf')
-  if (r && r.error) { toast(t('pdfFailed')); console.error('pdf:', r.error); return }
+  const totals = `<tr class="totals"><th class="nm">${xmlEsc(t('docTotal'))}</th>` +
+    perScene.map((n) => `<td>${n || ''}</td>`).join('') +
+    `<td class="tot">${project.lines.filter((l) => l.words.length).length}</td></tr>`
+  return docHead(scriptTitle(), t('docPresenceSub'), chars.length, t('docCharsUnit')) +
+    `<table><thead><tr><th class="nm">${xmlEsc(t('docCharacter'))}</th>${header}<th class="tot">${xmlEsc(t('docTotal'))}</th></tr></thead>` +
+    `<tbody>${body}${totals}</tbody></table></body></html>`
+}
+
+function buildTallyHtml() {
+  const chars = project.characters.slice()
+  let body = ''
+  let grand = 0
+  for (const c of chars) {
+    const lines = project.lines.filter((l) => l.characterId === c.id && l.words.length)
+      .sort((a, b) => lineStart(a) - lineStart(b))
+    if (!lines.length) continue
+    grand += lines.length
+    const rows = lines.map((l, i) => {
+      const tc = formatTc(lineStart(l), project.fps)
+      const text = l.words.map((w) => w.text).filter((w) => w !== '_').join(' ')
+      return `<tr><td class="n">${i + 1}</td><td class="tc">${xmlEsc(tc)}</td><td class="d">${xmlEsc(text)}</td><td class="rec">☐</td></tr>`
+    }).join('')
+    body += `<h2 class="grp"><span class="dot" style="background:${xmlEsc(c.color)}"></span>${xmlEsc(c.name.toUpperCase())} · ${lines.length}</h2>` +
+      `<table class="tally"><thead><tr><th class="n">#</th><th class="tc">TC</th><th class="d">${xmlEsc(t('docLine'))}</th><th class="rec">${xmlEsc(t('docRec'))}</th></tr></thead><tbody>${rows}</tbody></table>`
+  }
+  return docHead(scriptTitle(), t('docTallySub'), grand, t('docLinesUnit')) + body + `</body></html>`
+}
+
+async function exportWorkDoc(kind) {
+  if (!project.lines.length) { toast(t('noLinesToExport')); return }
+  const base = (projectPath || project.videoPath || 'librerythmo').replace(/\.rythmo(\.json)?$/i, '').replace(/\.\w+$/, '')
+  const suffix = kind === 'presence' ? '-presence' : '-releve'
+  const html = kind === 'presence' ? buildPresenceHtml() : buildTallyHtml()
+  const r = await window.api.exportPdf(html, base + suffix + '.pdf')
+  if (r && r.error) { toast(t('pdfFailed')); console.error('workdoc:', r.error); return }
   if (r) toast(t('pdfExported', r.replace(/^.*[\\/]/, '')))
 }
 
@@ -3967,9 +6484,15 @@ window.api.onMenu((action, arg) => {
   else if (action === 'import-detx') importDetxDialog()
   else if (action === 'import-detx-roles') importDetxRolesDialog()
   else if (action === 'export-detx') exportDetxDialog()
-  else if (action === 'export-pdf') exportPdfDialog()
+  else if (action === 'export-presence') exportWorkDoc('presence')
+  else if (action === 'export-tally') exportWorkDoc('tally')
+  else if (action === 'transcribe') openTranscribeDialog()
+  else if (action === 'remove-voices') openSeparateDialog()
+  else if (action === 'open-settings') openSettings()
   else if (action === 'toggle-wave') { showWave = !!arg; pushSettings() }
   else if (action === 'export-video') openExportModal()
+  else if (action === 'export-takes') openTakesExport()
+  else if (action === 'import-youtube') openYtModal()
   else if (action === 'set-lang') setLanguage(arg)
   else if (action === 'show-guide') openGuide()
   else if (action === 'undo') undo()
@@ -4149,7 +6672,7 @@ const exp = {
 
 const expCanvas = $('exportPreview')
 const expCtx = expCanvas.getContext('2d')
-const PREVIEW_W = 780
+const PREVIEW_W = 560 // largeur de la preview = largeur de la modale (voir #exportModal .modal-panel) : contenue pour garder une fenêtre basse
 
 const outW = () => Math.max(320, Math.floor(Number($('expW').value) / 2) * 2)
 const outH = () => Math.max(180, Math.floor(Number($('expH').value) / 2) * 2)
@@ -4164,12 +6687,12 @@ function effectiveExportFps() {
   if (m === 'custom') return clamp(Number($('expFps').value) || project.fps, 10, 120)
   return clamp(Number(m) || 60, 10, 120)
 }
-// rafraîchit le libellé « Source (25) » et l'affichage du champ manuel (Custom)
+// rafraîchit le libellé « Source (25) » et l'affichage du champ manuel (Custom).
+// display (et non visibility) : le champ ne réserve aucune place masqué — la largeur
+// de la modale est fixée par la preview, le groupe se contente de replier ses rangées
 function syncFpsModeUI() {
   $('optFpsSource').textContent = `${t('optFpsSource')} (${sourceFps()})`
-  // visibility (et non display) : la place du champ reste réservée même masqué, pour
-  // que passer en « Personnalisée » ne change pas la taille de la modale
-  $('expFps').style.visibility = exp.fpsMode === 'custom' ? 'visible' : 'hidden'
+  $('expFps').style.display = exp.fpsMode === 'custom' ? '' : 'none'
 }
 
 // dispose vidéo + bande à partir de la position (haut/bas) et de la fraction de
@@ -4177,6 +6700,18 @@ function syncFpsModeUI() {
 function layoutExport() {
   const W = outW()
   const H = outH()
+  const ar0 = (video.videoWidth || 16) / (video.videoHeight || 9)
+  if (exp.bandPos === 'none') {
+    // pas de bande : la vidéo occupe tout le cadre (letterbox centré)
+    let vw = W
+    let vh = vw / ar0
+    if (vh > H) { vh = H; vw = vh * ar0 }
+    exp.layout = {
+      video: { x: (W - vw) / 2, y: (H - vh) / 2, w: vw, h: vh },
+      band: { x: 0, y: 0, w: W, h: 0 },
+    }
+    return
+  }
   const bandH = clamp(Math.round(H * exp.bandFrac), 24, H - 24)
   const regionH = H - bandH
   const ar = (video.videoWidth || 16) / (video.videoHeight || 9)
@@ -4209,9 +6744,17 @@ function sizeExportPreview() {
   expCanvas.height = Math.round((PREVIEW_W * outH()) / outW())
 }
 
+// masque les réglages sans objet quand la bande est « Aucune » (compacité du groupe)
+function syncBandUI() {
+  const none = exp.bandPos === 'none'
+  for (const id of ['lblThemeWrap', 'lblSpeedWrap', 'expReset']) $(id).style.display = none ? 'none' : ''
+}
+
 function applyExpPreset() {
   const v = $('expPreset').value
   const custom = v === 'custom'
+  // champs L × H visibles seulement en résolution « Personnalisée » (compacité du groupe)
+  for (const id of ['expW', 'expXsep', 'expH']) $(id).style.display = custom ? '' : 'none'
   $('expW').disabled = !custom
   $('expH').disabled = !custom
   if (!custom) {
@@ -4306,14 +6849,14 @@ function buildExportContent() {
   // pistes rythmo — toutes cochées par défaut
   const trackItems = Array.from({ length: laneCount() }, (_, i) => ({ value: i, label: t('track', i + 1) }))
   exp.tracks = new Set(trackItems.map((it) => it.value))
-  const updTracks = () => { $('ddTracksBtn').textContent = summarizeChecks(exp.tracks, trackItems, t('expAllTracks'), t('expSomeTracks')) }
+  const updTracks = () => { $('ddTracksBtn').textContent = summarizeChecks(exp.tracks, trackItems, t('expAllTracks'), (n) => t('expSomeTracks', n)) }
   fillChecklist($('ddTracksMenu'), trackItems, exp.tracks, updTracks)
   updTracks()
 
   // boucles — toutes cochées = toute la vidéo
   const loopItems = sortedLoops().map((lp) => ({ value: lp.id, label: lp.name + (lp.type === 'out' ? ' (OUT)' : '') }))
   exp.loopSel = new Set(loopItems.map((it) => it.value))
-  const updLoops = () => { $('ddLoopsBtn').textContent = loopItems.length ? summarizeChecks(exp.loopSel, loopItems, t('expAllLoops'), t('expSomeLoops')) : t('expWholeVideo') }
+  const updLoops = () => { $('ddLoopsBtn').textContent = loopItems.length ? summarizeChecks(exp.loopSel, loopItems, t('expAllLoops'), (n) => t('expSomeLoops', n)) : t('expWholeVideo') }
   fillChecklist($('ddLoopsMenu'), loopItems, exp.loopSel, updLoops)
   $('ddLoopsBtn').disabled = !loopItems.length
   updLoops()
@@ -4332,6 +6875,18 @@ function buildExportContent() {
   exp.audioId = def ? def.id : ''
   sel.value = exp.audioId
   sel.disabled = !tracks.length
+
+  // enregistrements — personnages ayant au moins une prise active ; rangée masquée sinon.
+  // Cochés par défaut sauf pistes coupées (mute) ; coche FX toujours décochée à l'ouverture
+  const recItems = project.characters
+    .filter((c) => (project.recordings || []).some((r) => r.characterId === c.id && r.active && recEffDur(r) > 0))
+    .map((c) => ({ value: c.id, label: c.name }))
+  exp.recChars = new Set(recItems.filter((it) => !(project.recMuted || []).includes(it.value)).map((it) => it.value))
+  const updRecs = () => { $('ddRecsBtn').textContent = summarizeChecks(exp.recChars, recItems, t('expAllRecs'), (n) => t('expSomeRecs', n)) }
+  fillChecklist($('ddRecsMenu'), recItems, exp.recChars, updRecs)
+  updRecs()
+  $('expRecsRow').classList.toggle('hidden', !recItems.length)
+  $('expRecFx').checked = false
 }
 
 function openExportModal() {
@@ -4342,6 +6897,7 @@ function openExportModal() {
   buildExportContent()
   exp.open = true
   $('expBandPos').value = exp.bandPos
+  syncBandUI()
   exp.theme = theme // thème de la bande exportée : celui de l'UI par défaut
   $('expTheme').value = exp.theme
   populateEncoderSelect()
@@ -4374,9 +6930,9 @@ $('expFpsMode').addEventListener('change', () => {
 $('expTheme').addEventListener('change', () => { exp.theme = $('expTheme').value === 'light' ? 'light' : 'dark' })
 $('expAudio').addEventListener('change', () => { exp.audioId = $('expAudio').value })
 
-// menus déroulants à cases (pistes / boucles) : ouverture exclusive + fermeture au clic dehors
+// menus déroulants à cases (pistes / boucles / enregistrements) : ouverture exclusive + fermeture au clic dehors
 function closeDropdowns(except) {
-  for (const m of [$('ddTracksMenu'), $('ddLoopsMenu')]) if (m !== except) m.classList.add('hidden')
+  for (const m of [$('ddTracksMenu'), $('ddLoopsMenu'), $('ddRecsMenu'), $('ddTkCharsMenu')]) if (m !== except) m.classList.add('hidden')
 }
 function wireDropdown(btnId, menuId) {
   $(btnId).addEventListener('click', (e) => {
@@ -4390,6 +6946,8 @@ function wireDropdown(btnId, menuId) {
 }
 wireDropdown('ddTracksBtn', 'ddTracksMenu')
 wireDropdown('ddLoopsBtn', 'ddLoopsMenu')
+wireDropdown('ddRecsBtn', 'ddRecsMenu')
+wireDropdown('ddTkCharsBtn', 'ddTkCharsMenu')
 document.addEventListener('click', () => closeDropdowns(null))
 
 $('expBrowse').addEventListener('click', async () => {
@@ -4407,7 +6965,9 @@ $('expW').addEventListener('change', () => { sizeExportPreview(); resetExportLay
 $('expH').addEventListener('change', () => { sizeExportPreview(); resetExportLayout() })
 $('expReset').addEventListener('click', resetExportLayout)
 $('expBandPos').addEventListener('change', () => {
-  exp.bandPos = $('expBandPos').value === 'top' ? 'top' : 'bottom'
+  const v = $('expBandPos').value
+  exp.bandPos = v === 'top' || v === 'none' ? v : 'bottom'
+  syncBandUI()
   layoutExport()
 })
 $('expClose').addEventListener('click', () => {
@@ -4433,17 +6993,19 @@ function exportPreviewLoop() {
   expCtx.drawImage(video, L.video.x * s, L.video.y * s, L.video.w * s, L.video.h * s)
 
   const winSec = Math.max(1, exp.winSec)
-  expCtx.save()
-  expCtx.translate(L.band.x * s, L.band.y * s)
-  expCtx.beginPath()
-  expCtx.rect(0, 0, L.band.w * s, L.band.h * s)
-  expCtx.clip()
-  const previewTrackList = exp.tracks ? [...exp.tracks].sort((a, b) => a - b) : null
-  renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList: previewTrackList })
-  expCtx.restore()
+  if (exp.bandPos !== 'none') {
+    expCtx.save()
+    expCtx.translate(L.band.x * s, L.band.y * s)
+    expCtx.beginPath()
+    expCtx.rect(0, 0, L.band.w * s, L.band.h * s)
+    expCtx.clip()
+    const previewTrackList = exp.tracks ? [...exp.tracks].sort((a, b) => a - b) : null
+    renderBand(expCtx, now, L.band.w * s, L.band.h * s, (L.band.w * s) / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList: previewTrackList })
+    expCtx.restore()
+  }
 
   // barre de séparation glissable entre la vidéo et la bande (masquée pendant l'export)
-  if (!exp.running) {
+  if (!exp.running && exp.bandPos !== 'none') {
     const dy = dividerOutY() * s
     expCtx.strokeStyle = '#ffffffcc'
     expCtx.lineWidth = 2
@@ -4471,6 +7033,7 @@ function expPointerOutY(e) {
   return rc.height ? ((e.clientY - rc.top) / rc.height) * outH() : 0
 }
 function nearDivider(e) {
+  if (exp.bandPos === 'none') return false
   const rc = expCanvas.getBoundingClientRect()
   const dividerCssY = (dividerOutY() / outH()) * rc.height
   return Math.abs((e.clientY - rc.top) - dividerCssY) < 10
@@ -4549,9 +7112,26 @@ async function runExport(outPathOverride) {
     exported: true,
     isDefault: true,
   }] : []
+  // enregistrements : prises actives des personnages cochés dans « Contenu »,
+  // source brute ou FX selon la coche, calées sur la fenêtre d'export
+  const takes = []
+  const recSel = exp.recChars || new Set()
+  const recUseFx = $('expRecFx').checked
+  if (recUseFx) { // rattrape les sidecars FX manquants (prises antérieures à leur génération auto)
+    $('expStatus').textContent = t('recFxBusy')
+    await ensureFxSidecars((project.recordings || []).filter((r) => r.active && recSel.has(r.characterId) && recEffDur(r) > 0))
+    $('expStatus').textContent = ''
+  }
+  for (const r of (project.recordings || [])) {
+    if (!r.active || !recSel.has(r.characterId)) continue
+    const eff = recEffDur(r)
+    if (!eff || r.startTime + eff <= startT) continue // entièrement avant la fenêtre
+    takes.push({ name: (recUseFx && r.fxFile) ? r.fxFile : r.file, offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
+  }
+  const noBand = exp.bandPos === 'none'
   const r = await window.api.exportStart({
     fps, W, H, duration: dur, startTime: startT, layout: L, bandW: bw, bandH: bh,
-    videoPath: project.videoPath, outPath, audio,
+    videoPath: project.videoPath, outPath, audio, takes, projectPath, noBand,
     encoder: $('expEnc').value === 'cpu' ? 'cpu' : 'gpu',
   })
   if (r.error) {
@@ -4579,7 +7159,8 @@ async function runExport(outPathOverride) {
   const closed = new Promise((res) => { exp.closedResolve = res })
 
   let ok = true
-  for (let i = 0; i < total; i++) {
+  // « Aucune » : pas de bande à envoyer, ffmpeg encode seul (aucune entrée pipe)
+  for (let i = 0; !noBand && i < total; i++) {
     if (exp.cancelled) { ok = false; break }
     const tt = startT + i / fps
     renderBand(octx, tt, bw, bh, bw / winSec, { ruler: false, wave: false, handles: false, theme: BAND_THEMES[exp.theme || 'dark'], trackList })
@@ -4667,6 +7248,9 @@ function drawPlayer() {
   const W = pcanvas.clientWidth, H = pcanvas.clientHeight
   pctx.fillStyle = '#000'; pctx.fillRect(0, 0, W, H)
   const L = playerLayout()
+  // remonte la barre de contrôles juste au-dessus de la bande rythmo (bande en bas) pour ne pas la masquer
+  const bh = player.bandPos === 'bottom' ? L.band.h : 0
+  if (player._pcBandH !== bh) { player._pcBandH = bh; $('playerControls').style.setProperty('--pc-band-h', bh + 'px') }
   if (video.videoWidth) pctx.drawImage(video, L.video.x, L.video.y, L.video.w, L.video.h)
   const winSec = clamp(player.winSec, PLR_SEC_MIN, PLR_SEC_MAX)
   pctx.save()
@@ -4674,6 +7258,7 @@ function drawPlayer() {
   pctx.beginPath(); pctx.rect(0, 0, L.band.w, L.band.h); pctx.clip()
   renderBand(pctx, effectiveTime(), L.band.w, L.band.h, L.band.w / winSec, { ruler: false, wave: false, handles: false, theme: bandPal(), trackList: [...playerTracks].sort((a, b) => a - b) })
   pctx.restore()
+  drawCues(pctx, L.video, effectiveTime()) // repères ADR sur l'image
 }
 
 // scène (boucle) contenant le point de lecture courant
@@ -4728,6 +7313,7 @@ function updatePlayerUI() {
 }
 
 function openPlayer() {
+  if (detachedOpenFlag) return // aperçu local indisponible tant que la fenêtre détachée est ouverte
   if (!project.videoPath || !video.videoWidth) { toast(t('loadVideoFirst')); return }
   player.open = true
   hideSubOverlay() // l'overlay sous-titres reste réservé à l'aperçu éditeur
@@ -4752,6 +7338,80 @@ function closePlayer() {
 
 $('btnPlayer').addEventListener('click', openPlayer)
 $('pcExit').addEventListener('click', closePlayer)
+
+// ============================================================ fenêtre détachée (2e écran)
+// La fenêtre principale est maîtresse : elle envoie l'état (projet + source vidéo +
+// réglages du player) et la synchro de lecture ; la fenêtre détachée suit, muette.
+let detachedOpenFlag = false
+let detachedStateTimer = 0
+function detachedState() {
+  return {
+    kind: 'state',
+    project: JSON.parse(projectJson()),
+    src: video.currentSrc || video.src || null,
+    winSec: player.winSec, bandFrac: player.bandFrac, bandPos: player.bandPos,
+    tracks: [...playerTracks],
+  }
+}
+function detachedSendState() { if (detachedOpenFlag) window.api.detachedSend(detachedState()) }
+// état renvoyé (throttlé) à chaque modification du projet → la bande suit l'édition
+function detachedQueueState() {
+  if (!detachedOpenFlag || DETACHED || detachedStateTimer) return
+  detachedStateTimer = setTimeout(() => { detachedStateTimer = 0; detachedSendState() }, 800)
+}
+function detachedSync() {
+  if (detachedOpenFlag) window.api.detachedSend({ kind: 'sync', t: effectiveTime(), paused: video.paused, rate: video.playbackRate })
+}
+function updateDetachedUI() {
+  $('btnPlayer').disabled = detachedOpenFlag // l'aperçu plein écran local est grisé tant que la fenêtre est ouverte
+}
+function openDetached() {
+  if (!project.videoPath || !video.videoWidth) { toast(t('loadVideoFirst')); return }
+  closePlayer()
+  window.api.detachedOpen()
+}
+if (!DETACHED) {
+  window.api.onDetachedReady(() => { detachedOpenFlag = true; updateDetachedUI(); detachedSendState(); detachedSync() })
+  window.api.onDetachedClosed(() => { detachedOpenFlag = false; updateDetachedUI() })
+  video.addEventListener('play', detachedSync)
+  video.addEventListener('pause', detachedSync)
+  video.addEventListener('seeked', detachedSync)
+  video.addEventListener('ratechange', detachedSync)
+  $('pcDetach').addEventListener('click', (e) => { e.stopPropagation(); openDetached() })
+}
+
+// ---- côté fenêtre détachée : rendu seul, piloté par les messages de la principale ----
+async function handleDetachedMsg(m) {
+  if (!m) return
+  if (m.kind === 'state') {
+    if (m.winSec) player.winSec = m.winSec
+    if (m.bandFrac) player.bandFrac = m.bandFrac
+    if (m.bandPos) player.bandPos = m.bandPos
+    if (m.tracks) playerTracks = new Set(m.tracks)
+    if (m.project) await loadProjectData(m.project, null)
+    if (m.src && video.src !== m.src) video.src = m.src
+    applyVolume() // muette (le son sort de la fenêtre principale)
+  } else if (m.kind === 'sync') {
+    if (video.src && Math.abs(video.currentTime - m.t) > 0.1) { try { video.currentTime = m.t } catch {} }
+    if (video.playbackRate !== m.rate) video.playbackRate = m.rate
+    if (m.paused && !video.paused) video.pause()
+    else if (!m.paused && video.paused) video.play().catch(() => {})
+  }
+}
+if (DETACHED) {
+  document.body.classList.add('detached')
+  player.open = true
+  $('playerMode').classList.remove('hidden')
+  // F11 = plein écran sur l'écran de la fenêtre ; Échap = sortir du plein écran / fermer ;
+  // tout autre raccourci de l'appli est neutralisé (la principale garde le contrôle)
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F11') { e.preventDefault(); window.api.detachedToggleFullscreen() }
+    else if (e.key === 'Escape') { window.close() }
+    e.stopImmediatePropagation()
+  }, true)
+  window.api.onDetachedMsg(handleDetachedMsg)
+  window.api.detachedReadySignal()
+}
 $('pcPlay').addEventListener('click', (e) => { e.stopPropagation(); togglePlay(); showPlayerControls() })
 $('pcPrev').addEventListener('click', (e) => { e.stopPropagation(); gotoLoop(-1); showPlayerControls() })
 $('pcNext').addEventListener('click', (e) => { e.stopPropagation(); gotoLoop(1); showPlayerControls() })
@@ -4774,10 +7434,15 @@ $('playerMode').addEventListener('mousemove', showPlayerControls)
 document.addEventListener('fullscreenchange', () => { if (player.open && !document.fullscreenElement) closePlayer() })
 
 // ============================================================ main loop
+let loopN = 0
 function loop() {
+  loopN++
+  if (detachedOpenFlag && loopN % 15 === 0) detachedSync() // synchro périodique (~4 Hz)
   $('timecode').textContent = formatTc(effectiveTime(), project.fps)
   btnPlay.classList.toggle('playing', !video.paused)
   drawSeekBar()
+  syncTakesMonitor()
+  if (dub.on) dubSync(false) // fondu voix/sans-voix suivi finement (bornes de répliques)
   if (player.open) {
     // boucle de scène : revenir au début quand on atteint la fin de la scène courante
     if (player.loopScene && !video.paused) {
@@ -4786,8 +7451,12 @@ function loop() {
     }
     drawPlayer()
     updatePlayerUI()
-  } else if (activeTab === 'tracks') drawTracks()
-  else draw()
+  } else {
+    if (activeTab === 'tracks') drawTracks()
+    else if (activeTab === 'rec') { drawRecBand(); drawRecClips() }
+    else draw()
+    drawCuesEditor() // overlay des repères ADR sur la vidéo de l'éditeur
+  }
   requestAnimationFrame(loop)
 }
 
@@ -4796,7 +7465,10 @@ function loop() {
 // principal — qui a déjà construit le menu avec les mêmes valeurs.
 ;(async () => {
   const st = await window.api.getSettings()
-  lang = st.lang === 'en' ? 'en' : 'fr'
+  try { const ac = await window.api.audioConfigGet(); if (ac) { audioCfg.api = ac.api || 'system'; audioCfg.device = ac.device || null; audioCfg.deviceLabel = ac.deviceLabel || null; audioCfg.output = ac.output || null; audioCfg.outputLabel = ac.outputLabel || null; audioCfg.recOffsetMs = Number(ac.recOffsetMs) || 0 } } catch {}
+  applyOutputSink()
+  if (!DETACHED) preloadSettings() // débloque les noms de périphériques + précharge les listes (Paramètres instantanés)
+  lang = ['en', 'es'].includes(st.lang) ? st.lang : 'fr'
   autosaveOn = !!st.autosave
   autofocusText = st.autofocus !== false
   showSeekBar = st.seekbar !== false

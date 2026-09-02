@@ -3,6 +3,82 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [3.0.1] - 2026-09-02
+
+**« De la préparation à la performance »** - LibreRythmo devient un **studio de
+doublage complet**, avec deux workflows entiers : la **création et l'export de bandes
+rythmo vidéo** (l'éditeur historique, enrichi), et un **mode enregistrement** pour
+faire les prises - chaque personnage sur sa piste, chaîne voix automatique, vidéo
+doublée en sortie.
+
+### Studio d'enregistrement
+
+- **Couper la voix d'un personnage** : la scène continue avec son mix original, mais
+  pendant les répliques du personnage coupé sa voix disparaît (bascule sur la piste
+  instrumentale) - on joue son rôle dans la vraie bande-son, pas par-dessus.
+- **Onglet Enregistrement** dédié : la bande rythmo en rendu final, et on enregistre
+  librement au point de lecture - chaque personnage a sa piste.
+- **Multi-prises** : les enregistrements qui se chevauchent s'empilent en takes ;
+  choix de la prise retenue, rognage, déplacement, formes d'onde par prise.
+- **Chaîne voix automatique (bouton FX)** : chaque prise est analysée puis traitée
+  hors ligne - EQ correctif, dé-esseur et anti-plosive dynamiques, compression,
+  niveau calé sur la piste de la vidéo. Précalculée en sidecar, activable à la
+  lecture, au choix (brut / FX) dans les exports.
+- **Compensation de latence** : amorce mesurée + latence déclarée du pipeline +
+  marge matérielle, affinable dans les Paramètres.
+- **Vumètre d'entrée** vertical façon console (périphérique affiché, tenue de crête),
+  mute par piste personnage, sélection du personnage par touches 1-9.
+- Prises en **sidecars portables** (dossier `takes/` à côté du projet).
+
+### Audio
+
+- **Onglet Audio** (ex-Pistes) : timeline pleine largeur avec carte des répliques.
+- **Suppresseur de voix** : produit un instrumental depuis n'importe quelle piste
+  (moteur local léger MDX-Net ONNX, installable à la demande - rien n'est bundlé).
+- **Paramètres audio** : périphériques d'entrée **et de sortie**, test de monitoring
+  façon Discord, capture Système/WASAPI ou DirectSound/DirectShow, persistance des
+  périphériques par nom.
+
+### Transcription
+
+- **Transcription assistée** (sherpa-onnx) : multi-locuteurs (un personnage créé par
+  voix détectée, nombre de voix réglable), choix de la piste source et de la langue,
+  réactions reconnues, découpage en répliques. Moteur et modèles installables depuis
+  les Paramètres avec estimation des tailles - rien n'est bundlé.
+
+### Préparation
+
+- **Signes de détection** : palette articulatoire (labiale, labio-dentale, arrondie,
+  ouverture, dentale, vélaire, nasale, semi-voyelle) posée sur les syllabes au clic
+  ou au clavier, rendue partout (éditeur, export, plein écran) + bouton
+  « Prononciation » par réplique.
+- **Repères ADR** : streamers (balayage) et punches (flash) sur l'image, éditables
+  sur la timeline (sélection, glisser, Suppr) - pour lancer le comédien sans lip-sync.
+- **Documents de travail (PDF)** : grille de présence (personnages × scènes) et
+  relevé de lignes par personnage.
+
+### Import / export
+
+- **Import depuis YouTube** (yt-dlp embarqué) : URL, choix de la qualité, rognage.
+- **Export vidéo** : les enregistrements des personnages choisis sont **mixés au
+  composite** (brut ou FX), et la bande peut être omise (« Aucune ») pour livrer la
+  vidéo doublée seule.
+- **Export des enregistrements (ZIP)** : une piste mixée par personnage calée sur la
+  timeline (+ prises détachées en option), sélecteur de personnages, brut ou FX.
+
+### Général
+
+- **Fenêtre Paramètres** : périphériques de capture et gestionnaire de modèles.
+- **Fenêtre « Monitoring »** détachée pour afficher le rendu sur un second écran.
+- **Espagnol** : interface complète FR / EN / ES, langue du système par défaut.
+- Menu **Outils**, **reprise au timecode** sauvegardé, **zoom vidéo par rectangle**,
+  **fusion de personnages**, **signets** (Ctrl+B), nom de projet proposé d'après la
+  vidéo.
+
+Le format `.rythmo` s'étend (enregistrements, signes de détection, repères ADR,
+signets, position de lecture) en restant rétrocompatible : les anciens projets
+s'ouvrent inchangés.
+
 ## [2.7.4] - 2026-08-31
 
 ### Ajustements

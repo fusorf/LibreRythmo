@@ -1,0 +1,680 @@
+// Dev tool: functional smoke test. Boots the app under CDP, loads a synthetic
+// project (no video needed), and exercises v3 feature logic through evaluate(),
+// asserting on real state. Extended as features land. Run: node scripts/ftest.js
+'use strict'
+const WebSocket = require('ws')
+const http = require('http')
+const { spawn } = require('child_process')
+const path = require('path')
+
+const PORT = 9223
+const ROOT = path.join(__dirname, '..')
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+const SETUP = `loadProjectData({
+  version: 2, fps: 25, tracks: 2, defaultFont: null, fonts: [],
+  characters: [
+    { id: 'c1', name: 'Alice', color: '#e8443a' },
+    { id: 'c2', name: 'Bob', color: '#3a7ae8' }
+  ],
+  lines: [
+    { id: 'l1', characterId: 'c1', track: 0, words: [
+      { text: 'Bonjour', start: 1.0, end: 1.6 }, { text: 'toi', start: 1.6, end: 2.0 } ] },
+    { id: 'l2', characterId: 'c2', track: 1, words: [
+      { text: 'Salut', start: 2.2, end: 2.8 } ] }
+  ],
+  loops: [], plans: [], audioTracks: []
+}, null); 'ok'`
+
+// Each test: an expression that must evaluate to true. Guarded with typeof so the
+// suite stays green if a feature isn't present yet.
+const TESTS = [
+  // --- S2 detection symbols ---
+  ['S2 insertSymbol places a mark', `(() => {
+    if (typeof insertSymbol !== 'function') return true
+    selectedIds = new Set(['l1']); scrub.time = 1.7
+    insertSymbol(DET_BY_KEY.get('p'))
+    const l = project.lines.find(x => x.id === 'l1')
+    return !!l.symbols && Object.keys(l.symbols).length === 1
+  })()`],
+  ['S2 insertSymbol toggles off', `(() => {
+    if (typeof insertSymbol !== 'function') return true
+    selectedIds = new Set(['l1']); scrub.time = 1.7
+    insertSymbol(DET_BY_KEY.get('p'))
+    const l = project.lines.find(x => x.id === 'l1')
+    return !l.symbols
+  })()`],
+  ['S2 symbols survive save/reload', `(() => {
+    if (typeof insertSymbol !== 'function') return true
+    selectedIds = new Set(['l1']); scrub.time = 1.1
+    insertSymbol(DET_BY_KEY.get('f'))
+    const json = JSON.stringify(project)
+    loadProjectData(JSON.parse(json), null)
+    const l = project.lines.find(x => x.id === 'l1')
+    return !!l.symbols && l.symbols['0'] === 'f'
+  })()`],
+  ['draw() does not throw with marks', `(() => {
+    try { draw(); return true } catch (e) { return 'ERR: ' + e.message }
+  })()`],
+  // --- A5 work documents ---
+  ['A5 presence grid HTML', `(() => {
+    if (typeof buildPresenceHtml !== 'function') return true
+    const h = buildPresenceHtml()
+    return h.includes('Alice') && h.includes('Bob') && h.includes('<table') && h.includes('Total')
+  })()`],
+  ['A5 line tally HTML', `(() => {
+    if (typeof buildTallyHtml !== 'function') return true
+    const h = buildTallyHtml()
+    return h.includes('Bonjour toi') && h.includes('Salut') && h.includes('ALICE')
+  })()`],
+  // --- A6 ADR cues ---
+  ['A6 addCue streamer + punch', `(() => {
+    if (typeof addCue !== 'function') return true
+    project.cues = []; scrub.time = 5
+    addCue('streamer'); addCue('punch')
+    return project.cues.length === 2 && project.cues[0].type === 'streamer' && project.cues[0].lead > 0 && project.cues[1].type === 'punch'
+  })()`],
+  ['A6 cues persist + drawCues no throw', `(() => {
+    if (typeof drawCues !== 'function') return true
+    loadProjectData(JSON.parse(JSON.stringify(project)), null)
+    if ((project.cues || []).length !== 2) return 'lost cues on reload'
+    const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180
+    const cx = cv.getContext('2d')
+    try { drawCues(cx, { x: 0, y: 0, w: 320, h: 180 }, 4); drawCues(cx, { x: 0, y: 0, w: 320, h: 180 }, 5); return true }
+    catch (e) { return 'ERR: ' + e.message }
+  })()`],
+  ['A6 remove nearest + clear', `(() => {
+    if (typeof clearCues !== 'function') return true
+    scrub.time = 5; removeNearestCue()
+    const afterRemove = project.cues.length
+    clearCues()
+    return afterRemove === 1 && project.cues.length === 0
+  })()`],
+  ['A6 cue selected on add + deletable', `(() => {
+    if (typeof addCue !== 'function' || typeof deleteSelectedCue !== 'function') return true
+    project.cues = []; scrub.time = 5
+    addCue('punch')
+    const okSel = !!selectedCueId && project.cues.length === 1 && project.cues[0].id === selectedCueId
+    deleteSelectedCue()
+    return okSel && project.cues.length === 0 && selectedCueId === null
+  })()`],
+  ['A6 timeline render + draw no throw', `(() => {
+    if (typeof drawCuesTimeline !== 'function') return true
+    project.cues = [{ id: 'c1', type: 'streamer', time: 4, lead: 3 }, { id: 'c2', type: 'punch', time: 8 }]
+    selectedCueId = 'c1'
+    let r; try { drawCuesTimeline(); draw(); r = true } catch (e) { r = 'ERR: ' + e.message }
+    project.cues = []; selectedCueId = null
+    return r
+  })()`],
+  ['textOn contrast (black on light/mid, white on dark)', `(() => {
+    if (typeof textOn !== 'function') return true
+    return textOn('#000000') === '#fff' && textOn('#2e6da4') === '#fff'
+      && textOn('#ffffff') === '#000' && textOn('#e0e0e0') === '#000'
+      && textOn('#c2790f') === '#000' && textOn('#f1c40f') === '#000'
+  })()`],
+  ['digit key 1-9 selects character', `(() => {
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'c1', name: 'A', color: '#e8443a' }, { id: 'c2', name: 'B', color: '#3a7ae8' }], lines: [] }, null)
+    activeTab = 'rythmo'; selectedCharId = 'c1'
+    // on lit e.code (position physique) pour marcher en AZERTY ; le caractère 'é'
+    // produit par la touche « 2 » d'un clavier FR porte code 'Digit2'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'é', code: 'Digit2' }))
+    return selectedCharId === 'c2'
+  })()`],
+  ['Transport character badge reflects selection', `(() => {
+    const b = document.getElementById('curCharBadge')
+    return !!b && b.textContent === getChar(selectedCharId).name
+  })()`],
+  // --- Tier B: character merge ---
+  ['B merge characters reassigns lines', `(() => {
+    if (typeof mergeCharacter !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }],
+      lines: [{ id: 'x', characterId: 'a', track: 0, words: [{ text: 'un', start: 0, end: 1 }] },
+              { id: 'y', characterId: 'b', track: 1, words: [{ text: 'deux', start: 1, end: 2 }] }] }, null)
+    mergeCharacter('b', 'a')
+    return project.characters.length === 1 && project.lines.every(l => l.characterId === 'a')
+  })()`],
+  ['Onglet Audio : haut-parleur en icône monochrome (SVG)', `(() => {
+    if (typeof renderTrackHeads !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], characters: [],
+      audioTracks: [{ id: 't1', type: 'file', path: 'x.wav', label: 'X', offset: 0 }], activeAudioId: 't1', lines: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    renderTrackHeads()
+    const spk = document.querySelector('#trackHeads .trk-spk')
+    const ok = !!spk && !!spk.querySelector('svg') && spk.textContent.indexOf('🔊') < 0
+    project.videoPath = null
+    return ok
+  })()`],
+  ['Piste audio active restaurée par clé stable (id régénéré)', `(() => {
+    if (typeof ensureActiveAudio !== 'function') return true
+    // simule une réouverture : les id embarqués ont changé, mais la clé « emb:1 » persiste
+    project.audioTracks = [
+      { id: 'new-a', type: 'embedded', index: 0, offset: 0, label: 'A' },
+      { id: 'new-b', type: 'embedded', index: 1, offset: 0, label: 'B' },
+    ]
+    project.activeAudioId = 'old-b-gone'   // id périmé
+    project.activeAudioKey = 'emb:1'       // clé stable de l'ancienne piste active
+    ensureActiveAudio()
+    return project.activeAudioId === 'new-b' && project.activeAudioKey === 'emb:1'
+  })()`],
+  ['Doublage : dubWantVL vrai pendant la réplique d\'un perso coupé', `(() => {
+    if (typeof dubWantVL !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [],
+      characters: [{ id: 'a', name: 'A', color: '#e00' }, { id: 'b', name: 'B', color: '#00e' }],
+      audioTracks: [{ id: 'vo', type: 'embedded', index: 0, offset: 0 }, { id: 'nv', type: 'file', path: 'nv.wav', offset: 0, voiceless: true }],
+      lines: [{ id: 'l1', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }] }, { id: 'l2', characterId: 'b', track: 0, words: [{ text: 'y', start: 3, end: 4 }] }],
+      muteChars: ['a'] }, null)
+    return dubWantVL(1.5) === true && dubWantVL(3.5) === false && dubWantVL(0.5) === false
+  })()`],
+  ['Doublage : piste voix par défaut ≠ sans-voix + dubEnabled', `(() => {
+    if (typeof dubVoiceTrack !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], characters: [{ id: 'a', name: 'A', color: '#e00' }],
+      audioTracks: [{ id: 'vo', type: 'embedded', index: 0, offset: 0 }, { id: 'nv', type: 'file', path: 'nv.wav', offset: 0, voiceless: true }],
+      lines: [{ id: 'l1', characterId: 'a', track: 0, words: [{ text: 'x', start: 1, end: 2 }] }], muteChars: ['a'] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    const v = dubVoiceTrack()
+    const ok = !!v && v.voiceless !== true && dubEnabled() === true && !!dubVoicelessTrack()
+    project.videoPath = null
+    return ok
+  })()`],
+  ['Doublage : bouton visible si piste sans-voix + popover coche/décoche', `(() => {
+    if (typeof setDubMuted !== 'function' || typeof buildDubPop !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], characters: [{ id: 'a', name: 'A', color: '#e00' }, { id: 'b', name: 'B', color: '#00e' }],
+      audioTracks: [{ id: 'vo', type: 'embedded', index: 0, offset: 0 }, { id: 'nv', type: 'file', path: 'nv.wav', offset: 0, voiceless: true }],
+      lines: [], muteChars: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    renderTracks()
+    const btnShown = !document.getElementById('btnDub').classList.contains('hidden')
+    buildDubPop()
+    const n = document.querySelectorAll('#dubPop .dub-row input').length
+    setDubMuted('a', true)
+    const muted = project.muteChars.includes('a')
+    setDubMuted('a', false)
+    project.videoPath = null
+    return btnShown && n === 2 && muted && !project.muteChars.includes('a')
+  })()`],
+  // --- Tier B: bookmarks ---
+  ['B bookmark toggle + persist', `(() => {
+    if (typeof toggleBookmark !== 'function') return true
+    project.bookmarks = []; scrub.time = 10; toggleBookmark()
+    const added = project.bookmarks.length === 1
+    scrub.time = 10; toggleBookmark()
+    const removed = project.bookmarks.length === 0
+    scrub.time = 10; toggleBookmark()
+    loadProjectData(JSON.parse(JSON.stringify(project)), null)
+    return added && removed && project.bookmarks.length === 1
+  })()`],
+  // --- S1 voice recording (no mic: IPC + data model) ---
+  ['S1 take file IPC roundtrip', `(async () => {
+    if (!window.api.saveTake) return true
+    const buf = new Uint8Array([1, 2, 3, 4, 5]).buffer
+    const r = await window.api.saveTake(null, 'ftest_take.webm', buf)
+    if (!r || r.error) return 'save: ' + (r && r.error)
+    const url = await window.api.takeUrl(null, r.name)
+    const ok = !!url && url.startsWith('file:')
+    await window.api.deleteTake(null, r.name)
+    const gone = await window.api.takeUrl(null, r.name)
+    return ok && !gone
+  })()`],
+  ['Enregistrement : modèle recordings + onglet (pistes perso) + persist', `(() => {
+    if (typeof renderRecTab !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#fff' }, { id: 'b', name: 'B', color: '#0af' }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'rec_a_1.webm', startTime: 1, dur: 1.2, active: true }], recMuted: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec')
+    const recViewShown = !document.getElementById('recView').classList.contains('hidden')
+    const rows = document.querySelectorAll('#recCharList .rec-ch')
+    const okUI = recViewShown && rows.length === 1 // encart = uniquement le perso sélectionné
+    setTab('rythmo'); project.videoPath = null
+    loadProjectData(JSON.parse(JSON.stringify(project)), null)
+    return okUI && project.recordings.length === 1 && project.recordings[0].characterId === 'a'
+  })()`],
+  ['Enregistrement : chevauchement→prises + mute par piste', `(() => {
+    if (typeof toggleRecMute !== 'function' || typeof recOverlap !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#fff' }], recordings: [], recMuted: [] }, null)
+    project.recordings.push({ id: 'r1', characterId: 'a', file: 'f1', startTime: 1, dur: 2, active: true })
+    const c2 = { id: 'r2', characterId: 'a', file: 'f2', startTime: 2, dur: 2, active: true }
+    for (const r of project.recordings) if (r.characterId === c2.characterId && recOverlap(r, c2)) r.active = false
+    project.recordings.push(c2)
+    const overlapOk = project.recordings[0].active === false && project.recordings[1].active === true
+    toggleRecMute('a'); const muted = isRecMuted('a'); toggleRecMute('a'); const unmuted = !isRecMuted('a')
+    return overlapOk && muted && unmuted
+  })()`],
+  ['Enregistrement : lanes (chevauchement→take 2) + retainClip + crop', `(() => {
+    if (typeof recAssignLane !== 'function' || typeof retainClip !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#fff' }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 3, trimStart: 0, trimEnd: 0, lane: 0, active: true }], recMuted: [] }, null)
+    const g = (id) => project.recordings.find((r) => r.id === id)
+    // chevauchant → lane 1 ; disjoint → lane 0 (suite de la take 1)
+    const c2 = { id: 'r2', characterId: 'a', file: 'f2', startTime: 1, dur: 3, trimStart: 0, trimEnd: 0, lane: 0, active: true }
+    c2.lane = recAssignLane(c2); project.recordings.push(c2)
+    const c3 = { id: 'r3', characterId: 'a', file: 'f3', startTime: 10, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }
+    c3.lane = recAssignLane(c3); project.recordings.push(c3)
+    const lanesOk = g('r2').lane === 1 && g('r3').lane === 0 && recLaneCount('a') === 2
+    // retainClip : r1 redevient la take retenue de son groupe
+    g('r1').active = false; g('r2').active = true
+    retainClip(g('r1'))
+    const retainOk = g('r1').active === true && g('r2').active === false && g('r3').active === true
+    // crop : durée effective réduite → plus de chevauchement
+    g('r2').trimStart = 2.5
+    const cropOk = Math.abs(recEffDur(g('r2')) - 0.5) < 1e-9
+    return lanesOk && retainOk && cropOk
+  })()`],
+  ['Enregistrement : compensation de latence (roundtrip config + recCompSec)', `(async () => {
+    if (typeof recCompSec !== 'function') return true
+    const prev = audioCfg.recOffsetMs
+    audioCfg.recOffsetMs = 80
+    recorder.capAt = 1000; recorder.playAt = 1150 // amorce mesurée 150 ms
+    const comp = recCompSec()
+    audioCfg.recOffsetMs = prev
+    // >= 0,31 s (150 ms + 80 ms + 80 ms de marge matérielle + latence d'entrée éventuelle), < 0,8 s (borne de santé)
+    return comp >= 0.309 && comp < 0.8
+  })()`],
+  ['Enregistrement : hauteurs fixes tenues (bande 96, take 44, pas de rétroaction)', `(async () => {
+    if (typeof renderRecTab !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Okabe', color: '#2e6da4' }],
+      lines: [{ id: 'l1', characterId: 'a', track: 1, words: [{ text: 'Bonjour', start: 0.2, end: 0.9 }] }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0.5, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }], recMuted: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec')
+    await new Promise((r) => setTimeout(r, 400)) // layout + boucle de rendu (la rétroaction mettait ~1 frame à se figer)
+    const bandH = Math.round(document.getElementById('recBandWrap').getBoundingClientRect().height)
+    const clipsH = Math.round(recClipsCanvas.getBoundingClientRect().height)
+    const wrapH = Math.round(document.getElementById('recClipsWrap').getBoundingClientRect().height)
+    setTab('rythmo'); project.videoPath = null
+    // le canvas des takes remplit au moins l'espace restant (barre rouge jusqu'en bas)
+    return bandH === 96 && clipsH >= 44 && clipsH >= wrapH - 1
+  })()`],
+  ['Zoom vidéo : rectangle présent + application/reset', `(() => {
+    if (typeof resetImgZoom !== 'function') return true
+    imgZoom.scale = 3; imgZoom.x = 40; imgZoom.y = 20; applyImgZoom()
+    const zoomed = video.style.transform.indexOf('scale(3)') >= 0
+    resetImgZoom()
+    return zoomed && video.style.transform === '' && !!document.getElementById('zoomRect')
+  })()`],
+  ['YouTube : modale + qualités disponibles + dossier par défaut', `(async () => {
+    if (typeof openYtModal !== 'function') return true
+    const dir = await window.api.ytDefaultDir()
+    const okDir = typeof dir === 'string' && dir.indexOf('LibreRythmo-YtDl') >= 0
+    ytFillQuality([360, 720, 1080])
+    const q1 = [...document.getElementById('ytQuality').options].map((o) => o.value).join(',')
+    ytFillQuality([720, 1080, 1440, 2160])
+    const q2 = [...document.getElementById('ytQuality').options].map((o) => o.value).join(',')
+    ytFillQuality([480])
+    const q3 = [...document.getElementById('ytQuality').options].map((o) => o.value).join(',')
+    await openYtModal()
+    const open = !ytModal.classList.contains('hidden') && document.getElementById('ytTrimSec').classList.contains('hidden')
+    ytModal.classList.add('hidden')
+    return okDir && q1 === '720,1080' && q2 === '720,1080,1440,2160' && q3 === '480' && open
+  })()`],
+  ['Espagnol : dictionnaire complet + bascule + lexiques', `(() => {
+    if (!I18N.es) return 'pas de dict es'
+    // complétude : chaque clé FR existe en ES (le repli fr ne doit servir qu'en secours)
+    const missing = Object.keys(I18N.fr).filter((k) => !(k in I18N.es))
+    if (missing.length) return 'manquantes: ' + missing.slice(0, 5).join(',')
+    const prev = lang
+    lang = 'es'
+    const ok = t('setTitle') === 'Ajustes' && t('tabRec') === 'Grabación' && t('recTakeN', 2) === 'Toma 2'
+      && reacToken(REAC_BY_KEY.get('i')) === '(risa)' && (DET_BY_KEY.get('p').es || '').includes('Labial')
+    lang = prev
+    return ok
+  })()`],
+  ['Export prises : mix ffmpeg + ZIP (roundtrip réel)', `(async () => {
+    if (!window.api.exportTakes || typeof encodeWav16 !== 'function') return true
+    // petite prise réelle : 0,3 s de sinus, encodée avec l'encodeur WAV maison
+    const oac = new OfflineAudioContext(1, 4800, 16000)
+    const b = oac.createBuffer(1, 4800, 16000)
+    const d = b.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = 0.25 * Math.sin(2 * Math.PI * 440 * i / 16000)
+    const sv = await window.api.saveTake(null, 'tk_test_in.wav', encodeWav16(b))
+    if (!sv || sv.error) return 'save fail'
+    const url = await window.api.takeUrl(null, sv.name)
+    const p = decodeURIComponent(url.slice(8)) // retire 'file:///'
+    const outPath = p.slice(0, p.lastIndexOf('/')) + '/tk_test_out.zip'
+    const info = { name: sv.name, trimStart: 0, effDur: 0.3, offset: 0.5, takeN: 1 }
+    const r = await window.api.exportTakes({ outPath, projectPath: null, includeDetached: true, videoDur: 2,
+      chars: [{ name: 'Test', active: [info], all: [info] }] })
+    const st = r && r.ok ? await window.api.statFile(outPath) : null
+    await window.api.deleteTake(null, sv.name)
+    await window.api.deleteTake(null, 'tk_test_out.zip')
+    return !!(r && r.ok && r.count === 2 && st && st.size > 1000)
+  })()`],
+  ['Chaîne voix : analyse cohérente + WAV + bascule de fichier', `(async () => {
+    if (typeof analyzeVoice !== 'function') return true
+    const ac = new OfflineAudioContext(1, 16000, 16000)
+    const b = ac.createBuffer(1, 16000, 16000)
+    const d = b.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * 220 * i / 16000)
+    const A = analyzeVoice(b)
+    const okA = A.rmsDb < -5 && A.rmsDb > -30 && A.ratio >= 2 && A.eqMud <= 0 && A.eqPres >= 0 && A.eqSib <= 0
+    const wav = encodeWav16(b)
+    const okW = wav.byteLength === 44 + 16000 * 2
+    project.voiceFxOn = false
+    const r = { file: 'a.webm', fxFile: 'fx_a.wav' }
+    const offOk = recPlayFile(r) === 'a.webm'
+    project.voiceFxOn = true
+    const onOk = recPlayFile(r) === 'fx_a.wav'
+    project.voiceFxOn = false
+    return okA && okW && offOk && onOk
+  })()`],
+  ['Chaîne voix : dé-esseur dynamique (tameBand) cible la pointe sans toucher le reste', `(async () => {
+    if (typeof tameBand !== 'function') return true
+    const sr = 16000
+    const oac = new OfflineAudioContext(1, sr, sr)
+    const b = oac.createBuffer(1, sr, sr)
+    const d = b.getChannelData(0)
+    // voix « neutre » : 220 Hz doux + un souffle d'aigus continu, avec une pointe sifflante à 7 kHz au milieu
+    for (let i = 0; i < sr; i++) d[i] = 0.15 * Math.sin(2 * Math.PI * 220 * i / sr) + 0.02 * Math.sin(2 * Math.PI * 6500 * i / sr)
+    for (let i = 6400; i < 8000; i++) d[i] += 0.5 * Math.sin(2 * Math.PI * 7000 * i / sr)
+    const rmsSeg = (a, s, e) => { let sq = 0; for (let i = s; i < e; i++) sq += a[i] * a[i]; return Math.sqrt(sq / (e - s)) }
+    const before = rmsSeg(d, 6600, 8000)
+    const low0 = rmsSeg(d, 1000, 4000)
+    tameBand(b, 'highpass', 5500, 0.71, 4, 10, 1, 60)
+    const after = rmsSeg(d, 6600, 8000)
+    const low1 = rmsSeg(d, 1000, 4000)
+    // la pointe sifflante est nettement atténuée, les graves hors pointe sont intacts
+    return after < before * 0.9 && Math.abs(low1 - low0) < low0 * 0.02
+  })()`],
+  ['Export enregistrements : coche FX off par défaut + sélecteur de personnages', `(async () => {
+    if (typeof openTakesExport !== 'function' || !document.getElementById('tkFx')) return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }],
+      lines: [],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }],
+      recMuted: [] }, null)
+    project.voiceFxOn = true // même avec la chaîne FX active sur les pistes…
+    openTakesExport()
+    const fxOff = !document.getElementById('tkFx').checked // …la modale part sans FX
+    const names = [...document.getElementById('ddTkCharsMenu').querySelectorAll('label')].map((l) => l.textContent)
+    document.getElementById('takesModal').classList.add('hidden')
+    project.voiceFxOn = false
+    // seule Alice a une prise → seule entrée du sélecteur, cochée par défaut
+    return fxOff && names.length === 1 && names[0] === 'Alice' && tkCharSel.has('a')
+  })()`],
+  ['Export vidéo : dropdown Enregistrements (persos avec prises, mute décoché) + coche FX', `(async () => {
+    if (typeof buildExportContent !== 'function' || !document.getElementById('ddRecsMenu')) return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }, { id: 'c', name: 'Cléa', color: '#3ae87a' }],
+      lines: [],
+      recordings: [
+        { id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true },
+        { id: 'r2', characterId: 'b', file: 'f2', startTime: 3, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true },
+        { id: 'r3', characterId: 'c', file: 'f3', startTime: 6, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }],
+      recMuted: ['b'] }, null)
+    buildExportContent() // sélection partielle (2/3) dès l'ouverture — crashait avant (someLabel non fonction)
+    const row = document.getElementById('expRecsRow')
+    const names = [...document.getElementById('ddRecsMenu').querySelectorAll('label')].map((l) => l.textContent)
+    const ok1 = !row.classList.contains('hidden') && names.join(',') === 'Alice,Bob,Cléa'
+    const ok2 = exp.recChars.has('a') && !exp.recChars.has('b') && exp.recChars.has('c') // piste de Bob coupée → décochée par défaut
+    const ok3 = !document.getElementById('expRecFx').checked
+    const okLbl = document.getElementById('ddRecsBtn').textContent === '2 personnages' // libellé « n personnages »
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }], lines: [], recordings: [], recMuted: [] }, null)
+    buildExportContent()
+    const ok4 = row.classList.contains('hidden') // aucun perso avec prise → rangée masquée
+    return ok1 && ok2 && ok3 && okLbl && ok4
+  })()`],
+  ['Export : modale compacte (largeur bornée par la preview)', `(async () => {
+    if (typeof sizeExportPreview !== 'function' || typeof syncBandUI !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [{ id: 's1', start: 0, end: 5, name: 'Scene 1', type: 'normal' }], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'Alice', color: '#e8443a' }, { id: 'b', name: 'Bob', color: '#3a7ae8' }],
+      lines: [], recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 0, dur: 2, trimStart: 0, trimEnd: 0, lane: 0, active: true }], recMuted: [] }, null)
+    buildExportContent()
+    exp.bandPos = 'bottom'; document.getElementById('expBandPos').value = 'bottom'
+    syncBandUI(); syncFpsModeUI(); applyExpPreset()
+    const modal = document.getElementById('exportModal')
+    modal.classList.remove('hidden')
+    await new Promise((r) => setTimeout(r, 80))
+    const panel = modal.querySelector('.modal-panel')
+    const pw = Math.round(panel.getBoundingClientRect().width)
+    const limit = 622 // largeur CSS du panneau (#exportModal .modal-panel) + bordures
+    // rangées attendues : Encodeur avec Résolution, Réinitialiser avec le Zoom,
+    // Enregistrements/FX avec Audio (comparaison des centres verticaux)
+    const cy = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return r.top + r.height / 2 }
+    const sameRow = (a, b) => Math.abs(cy(a) - cy(b)) < 8
+    const rows = [['lblEnc', 'lblRes'], ['expReset', 'lblSpeedWrap'], ['expRecsRow', 'lblExpAudio']]
+    const broken = rows.filter(([a, b]) => !sameRow(a, b)).map(([a, b]) => a + '≠' + b)
+    modal.classList.add('hidden')
+    if (pw > limit + 2) return 'panel=' + pw + ' > ' + limit
+    return broken.length ? 'rangées cassées : ' + broken.join(', ') : true
+  })()`],
+  ['Fenêtre détachée : bouton aperçu grisé quand ouverte', `(() => {
+    if (typeof updateDetachedUI !== 'function') return true
+    detachedOpenFlag = true; updateDetachedUI()
+    const dis = document.getElementById('btnPlayer').disabled
+    detachedOpenFlag = false; updateDetachedUI()
+    return dis === true && document.getElementById('btnPlayer').disabled === false
+  })()`],
+  ['Enregistrement : bande de clips dessinée sans erreur', `(() => {
+    if (typeof drawRecClips !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [],
+      characters: [{ id: 'a', name: 'A', color: '#fff' }],
+      recordings: [{ id: 'r1', characterId: 'a', file: 'f1', startTime: 1, dur: 2, active: true }], recMuted: [] }, null)
+    project.videoPath = 'X:/fake.mp4'
+    setTab('rec')
+    let ok = true; try { drawRecClips() } catch (e) { ok = false }
+    setTab('rythmo'); project.videoPath = null
+    return ok
+  })()`],
+  // --- A4 transcription (sherpa-onnx; engine/models may be absent in test env) ---
+  ['A4 engine status shape', `(async () => {
+    if (!window.api.whisperEngineStatus) return true
+    const st = await window.api.whisperEngineStatus()
+    return st && typeof st === 'object' && ('installed' in st) && ('python' in st)
+  })()`],
+  ['A4 whisper models list shape', `(async () => {
+    if (!window.api.whisperListModels) return true
+    const m = await window.api.whisperListModels()
+    return Array.isArray(m) && m.length >= 1 && ('present' in m[0]) && ('model' in m[0]) && ('estMB' in m[0]) && m.some(x => x.model === 'turbo')
+  })()`],
+  ['A4 transcribe degrades without engine/model', `(async () => {
+    if (!window.api.whisperTranscribe) return true
+    const r = await window.api.whisperTranscribe({ source: 'C:/nope.mp4', model: 'turbo', language: 'auto' })
+    return r && typeof r.error === 'string'
+  })()`],
+  ['A4 buildLinesFromSegments: speakers→chars, laughs→reacs, split', `(() => {
+    if (typeof buildLinesFromSegments !== 'function') return true
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [], characters: [], lines: [] }, null)
+    const n = buildLinesFromSegments([
+      { start: 1, end: 3, text: 'Bonjour toi. Ça va ?', speaker: 0 },
+      { start: 3, end: 4, text: '(Rires)', speaker: 1 },
+      { start: 4, end: 6, text: 'Oui merci', speaker: 1 },
+    ])
+    const chars = project.characters.length
+    const reac = project.lines.some((l) => l.kind === 'reac')
+    const speakers = new Set(project.lines.map((l) => l.characterId)).size
+    return n >= 4 && chars >= 2 && reac && speakers >= 2 && project.tracks >= 2
+  })()`],
+  ['A4 dialog opens with a video', `(() => {
+    if (typeof openTranscribeDialog !== 'function') return true
+    project.videoPath = 'X:/fake.mp4'
+    openTranscribeDialog()
+    const open = !document.getElementById('transcribeModal').classList.contains('hidden')
+    document.getElementById('transcribeModal').classList.add('hidden')
+    project.videoPath = null
+    return open
+  })()`],
+  ['A4 modal shows exactly one coherent state (ready xor not-ready)', `(async () => {
+    if (typeof openTranscribeDialog !== 'function') return true
+    project.videoPath = 'X:/fake.mp4'
+    await openTranscribeDialog()
+    const nr = !document.getElementById('trNotReady').classList.contains('hidden')
+    const rd = !document.getElementById('trReady').classList.contains('hidden')
+    const goHidden = document.getElementById('trGo').classList.contains('hidden')
+    document.getElementById('transcribeModal').classList.add('hidden')
+    project.videoPath = null
+    return (nr !== rd) && (nr ? goHidden : !goHidden) // état cohérent quel que soit la config
+  })()`],
+  ['Long normal scene is not flagged (OUT-short still is)', `(() => {
+    if (typeof loopWarn !== 'function') return true
+    return loopWarn({ type: 'normal', start: 0, end: 300 }) === false
+      && loopWarn({ type: 'out', start: 0, end: 5 }) === true
+  })()`],
+  // --- resume playhead ---
+  ['Playhead stamped in saved JSON', `(() => {
+    if (typeof projectJson !== 'function') return true
+    scrub.time = 12.34
+    const j = JSON.parse(projectJson())
+    scrub.time = null
+    return Math.abs((j.playhead || 0) - 12.34) < 0.01
+  })()`],
+  ['Playhead persists through reload', `(() => {
+    loadProjectData({ version: 2, fps: 25, tracks: 1, fonts: [], loops: [], plans: [], audioTracks: [], characters: [], lines: [], playhead: 8.5 }, null)
+    return project.playhead === 8.5
+  })()`],
+  ['Suggested project name from video', `(() => {
+    if (typeof suggestedProjectName !== 'function') return true
+    project.videoPath = 'G:\\\\Anime\\\\Steins;Gate\\\\ep 01.mkv'
+    const n = suggestedProjectName()
+    project.videoPath = null
+    return n === 'ep 01.rythmo'
+  })()`],
+  // --- Capture device selector + settings ---
+  ['Cap audio-config roundtrip', `(async () => {
+    if (!window.api.audioConfigSet) return true
+    await window.api.audioConfigSet({ api: 'dshow', device: 'X', asioFfmpeg: null })
+    const c = await window.api.audioConfigGet()
+    await window.api.audioConfigSet({ api: 'system', device: null, asioFfmpeg: null })
+    return c && c.api === 'dshow' && c.device === 'X'
+  })()`],
+  ['Cap dshow enumeration returns list', `(async () => {
+    if (!window.api.listCaptureDevices) return true
+    const r = await window.api.listCaptureDevices('dshow')
+    return r && Array.isArray(r.devices)
+  })()`],
+  ['Settings modal opens', `(() => {
+    if (typeof openSettings !== 'function') return true
+    openSettings()
+    const open = !document.getElementById('settingsModal').classList.contains('hidden')
+    document.getElementById('settingsModal').classList.add('hidden')
+    return open
+  })()`],
+  // --- AI model manager ---
+  ['Models list shape + DL estimate', `(async () => {
+    if (!window.api.whisperListModels) return true
+    const m = await window.api.whisperListModels()
+    return Array.isArray(m) && m.length >= 2 && ('present' in m[0]) && ('model' in m[0]) && ('sizeMB' in m[0]) && ('estMB' in m[0]) && m[0].estMB > 0
+  })()`],
+  ['DL size formatting', `(() => {
+    if (typeof fmtDlSize !== 'function') return true
+    lang = 'fr'
+    const ok = fmtDlSize(142) === '142 Mo' && fmtDlSize(2000) === '2 Go' && fmtDlSize(1500) === '1,5 Go'
+    return ok
+  })()`],
+  // --- Voice removal (separation) ---
+  ['Sep model list shape', `(async () => {
+    if (!window.api.sepListModels) return true
+    const m = await window.api.sepListModels()
+    return Array.isArray(m) && m.length >= 1 && ('present' in m[0]) && ('model' in m[0]) && ('estMB' in m[0])
+  })()`],
+  ['Sep run degrades without installed model', `(async () => {
+    if (!window.api.sepRun) return true
+    const r = await window.api.sepRun({ source: 'C:/nope.mp4', projectPath: null, model: 'UVR-MDX-NET-Inst_HQ_3.onnx' })
+    return r && r.error === 'no-model'
+  })()`],
+  ['Popups mutually exclusive (reaction xor prononciation)', `(() => {
+    const clk = (id) => document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const hidden = (id) => document.getElementById(id).classList.contains('hidden')
+    clk('btnOnoma')
+    const step1 = !hidden('onomaPop') && hidden('symbolPop')
+    clk('btnSymbols')
+    const step2 = !hidden('symbolPop') && hidden('onomaPop')
+    document.getElementById('symbolPop').classList.add('hidden')
+    return step1 && step2
+  })()`],
+  ['Sep modal opens with coherent state', `(async () => {
+    if (typeof openSeparateDialog !== 'function') return true
+    project.videoPath = 'X:/fake.mp4'
+    await openSeparateDialog()
+    const nr = !document.getElementById('sepNotReady').classList.contains('hidden')
+    const rb = !document.getElementById('sepReadyBody').classList.contains('hidden')
+    document.getElementById('separateModal').classList.add('hidden')
+    project.videoPath = null
+    return nr !== rb
+  })()`],
+  ['Sortie audio : liste peuplée + test dispo', `(async () => {
+    if (typeof fillOutputDevices !== 'function' || typeof toggleOutputTest !== 'function') return true
+    await fillOutputDevices()
+    const sel = document.getElementById('outDevice')
+    // au minimum l'option « périphérique par défaut »
+    return !!sel && sel.options.length >= 1 && sel.options[0].value === '' && sel.options[0].textContent.length > 0
+  })()`],
+  ['Réglages audio persistés (set/get roundtrip)', `(async () => {
+    if (!window.api.audioConfigSet || !window.api.audioConfigGet) return true
+    const prev = await window.api.audioConfigGet()
+    await window.api.audioConfigSet({ api: 'system', device: 'dev-XYZ', output: 'out-XYZ', asioFfmpeg: null })
+    const got = await window.api.audioConfigGet()
+    await window.api.audioConfigSet(prev || {}) // restaure l'état d'origine
+    return got && got.device === 'dev-XYZ' && got.output === 'out-XYZ' && got.api === 'system'
+  })()`],
+  ['Export « Aucune » : pas de bande, vidéo plein cadre', `(() => {
+    if (typeof layoutExport !== 'function') return true
+    const prev = exp.bandPos
+    exp.bandPos = 'none'
+    layoutExport()
+    const L = exp.layout
+    const W = outW(), H = outH()
+    const okNoBand = L.band.h === 0
+    const okFits = L.video.w <= W + 1 && L.video.h <= H + 1 && L.video.w > 0 && L.video.h > 0
+    exp.bandPos = prev; layoutExport()
+    return okNoBand && okFits
+  })()`],
+]
+
+function getJson() {
+  return new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${PORT}/json`, (res) => {
+      let d = ''; res.on('data', (c) => (d += c)); res.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { reject(e) } })
+    }).on('error', reject)
+  })
+}
+
+async function main() {
+  const electron = require('electron')
+  const child = spawn(electron, ['.', `--remote-debugging-port=${PORT}`], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+  let page = null
+  for (let i = 0; i < 40; i++) {
+    await sleep(500)
+    try { const ts = await getJson(); page = ts.find((t) => t.type === 'page'); if (page) break } catch {}
+  }
+  if (!page) { console.error('FTEST FAIL: no page target'); try { child.kill() } catch {} process.exit(1) }
+
+  const ws = new WebSocket(page.webSocketDebuggerUrl, { maxPayload: 64 * 1024 * 1024 })
+  let id = 0
+  const pending = new Map()
+  const send = (method, params = {}) => new Promise((resolve, reject) => {
+    const mid = ++id; pending.set(mid, { resolve, reject }); ws.send(JSON.stringify({ id: mid, method, params }))
+  })
+  ws.on('message', (raw) => {
+    const msg = JSON.parse(raw)
+    if (msg.id && pending.has(msg.id)) { const { resolve, reject } = pending.get(msg.id); pending.delete(msg.id); msg.error ? reject(new Error(JSON.stringify(msg.error))) : resolve(msg.result) }
+  })
+  await new Promise((r) => ws.on('open', r))
+  const evaluate = async (expr) => {
+    const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
+    if (r.exceptionDetails) return { ok: false, err: JSON.stringify(r.exceptionDetails).slice(0, 300) }
+    return { ok: true, value: r.result.value }
+  }
+  await sleep(3500)
+
+  const boot = await evaluate(SETUP)
+  if (!boot.ok || boot.value !== 'ok') { console.error('FTEST FAIL: setup', boot.err || boot.value); ws.close(); try { child.kill() } catch {}; process.exit(1) }
+  await sleep(200)
+
+  let failed = 0
+  for (const [name, expr] of TESTS) {
+    const r = await evaluate(expr)
+    const pass = r.ok && r.value === true
+    if (!pass) failed++
+    console.log(`  ${pass ? 'PASS' : 'FAIL'}  ${name}${pass ? '' : '  <' + (r.ok ? JSON.stringify(r.value) : r.err) + '>'}`)
+  }
+  ws.close(); try { child.kill() } catch {}; await sleep(300)
+  if (failed) { console.error(`\nFTEST FAIL: ${failed}`); process.exit(1) }
+  console.log('\nFTEST OK'); process.exit(0)
+}
+main().catch((e) => { console.error('FTEST FAIL:', e.message); process.exit(1) })

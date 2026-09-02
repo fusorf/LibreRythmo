@@ -1,13 +1,14 @@
 {
   "name": "librerythmo",
   "productName": "LibreRythmo",
-  "version": "2.7.4",
+  "version": "3.0.1",
   "description": "LibreRythmo — bande rythmo libre pour le doublage",
   "author": "fusorf",
   "license": "GPL-3.0-or-later",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "postinstall": "node scripts/fetch-ytdlp.js",
     "package": "node scripts/make-buildinfo.js && electron-packager . LibreRythmo --platform=win32 --arch=x64 --out=dist --icon=assets/icon.ico --overwrite --no-asar --ignore=\"^/media($|/)\" --ignore=\"^/dist($|/)\" --ignore=\"^/scripts($|/)\"",
     "dist": "node scripts/make-buildinfo.js && electron-builder --publish never"
   },
@@ -42,7 +43,10 @@
       "!.gitignore"
     ],
     "win": {
-      "target": ["nsis", "zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "icon": "assets/icon.ico"
     },
     "nsis": {
@@ -52,7 +56,9 @@
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "build/icon.png",
       "identity": null,
       "category": "public.app-category.video",
@@ -62,7 +68,11 @@
       "writeUpdateInfo": false
     },
     "linux": {
-      "target": ["AppImage", "deb", "pacman"],
+      "target": [
+        "AppImage",
+        "deb",
+        "pacman"
+      ],
       "icon": "build/icon.png",
       "category": "AudioVideo",
       "synopsis": "Bande rythmo libre pour le doublage",
