@@ -890,8 +890,12 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-big.recording { background: #e0453a; color: #fff; border-color: #e0453a; }
 .rec-big.recording .rec-dot { background: #fff; animation: recPulse 1s ease-in-out infinite; }
 @keyframes recPulse { 50% { opacity: .35; } }
-.rec-big-meter { flex: 0 0 auto; width: 120px; height: 10px; align-self: center; background: var(--panel); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
-#recBigMeterBar { height: 100%; width: 0%; background: linear-gradient(90deg, #3fae5a 0%, #d8c53a 70%, #e0533a 100%); transition: width .05s linear; }
+/* vumètre d'entrée vertical (droite de la bande + segments), façon logiciel de montage :
+   échelle de couleur fixe (vert→jaune→rouge), niveau révélé par un cache + crête (peak hold) */
+#recVu { flex: 0 0 12px; position: relative; margin: 10px 8px 10px 2px; border-radius: 3px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+#recVuGrad { position: absolute; inset: 0; opacity: .95; background: linear-gradient(to top, #3fae5a 0%, #3fae5a 55%, #d8c53a 78%, #e0533a 100%); }
+#recVuCover { position: absolute; left: 0; right: 0; top: 0; height: 100%; background: var(--panel); }
+#recVuPeak { position: absolute; left: 0; right: 0; height: 2px; bottom: 0; background: rgba(255, 255, 255, .65); opacity: 0; transition: opacity .25s; }
 .rec-charlbl { align-items: center; gap: 6px; }
 .rec-charlbl span { font-size: 12px; color: var(--dim); }
 /* liste des personnages (colonne gauche, pleine hauteur) */

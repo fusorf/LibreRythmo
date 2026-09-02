@@ -1173,10 +1173,17 @@ function meterLoop() {
   updateRecMeter(peak)
   recorder.raf = requestAnimationFrame(meterLoop)
 }
+let recVuPeakPct = 0, recVuPeakAt = 0
 function updateRecMeter(level) {
-  const w = Math.min(100, Math.round(level * 140)) + '%'
-  const bar = $('recMeterBar'); if (bar) bar.style.width = w
-  const bar2 = $('recBigMeterBar'); if (bar2) bar2.style.width = w
+  const pct = Math.min(100, level * 140)
+  const bar = $('recMeterBar'); if (bar) bar.style.width = Math.round(pct) + '%'
+  // vumètre vertical : le cache descend pour révéler l'échelle de couleur fixe
+  const cover = $('recVuCover'); if (cover) cover.style.height = (100 - pct) + '%'
+  // crête (peak hold ~1,2 s)
+  const now = performance.now()
+  if (pct >= recVuPeakPct || now - recVuPeakAt > 1200) { recVuPeakPct = pct; recVuPeakAt = now }
+  const pk = $('recVuPeak')
+  if (pk) { pk.style.bottom = recVuPeakPct + '%'; pk.style.opacity = recVuPeakPct > 1.5 ? 1 : 0 }
 }
 function updateRecUI() {
   const m = $('recMeter'); if (m) m.hidden = !recorder.active
