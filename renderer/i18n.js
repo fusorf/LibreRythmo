@@ -386,9 +386,9 @@ const I18N = {
       {
         icon: '🎬', title: 'Prise en main',
         items: [
-          ['', "Glisse une vidéo dans la fenêtre (ou Ctrl+O) - la cadence et la forme d'onde sont détectées automatiquement."],
+          ['', "Glisse une vidéo dans la fenêtre (ou Ctrl+O) - la cadence et la forme d'onde sont détectées automatiquement. Fichier → Importer depuis YouTube pour télécharger directement une vidéo (qualité, rognage)."],
           ['', 'Crée les personnages dans le panneau de droite : le personnage sélectionné est attribué aux nouvelles répliques.'],
-          ['', 'Importe un sous-titrage existant (Fichier → Sous-titres) pour partir d\'une base déjà synchronisée.'],
+          ['', 'Importe un sous-titrage existant (Fichier → Sous-titres) pour partir d\'une base déjà synchronisée - ou génère le texte depuis l\'audio (Outils → Transcription).'],
         ],
       },
       {
@@ -420,6 +420,7 @@ const I18N = {
           ['Maj + ← / →', '−1 s / +1 s'],
           ['panneau Répliques', 'Cliquer sur une réplique pour sauter à son début'],
           ['F5', 'Mode lecture plein écran : vidéo + bande incrustée, contrôles auto-masqués (lecture, scène préc./suiv., boucle de scène, pistes). Échap pour quitter'],
+          ['Monitoring', 'Depuis le mode lecture : bouton pour détacher la fenêtre « Monitoring » et afficher le rendu sur un second écran'],
         ],
       },
       {
@@ -446,13 +447,36 @@ const I18N = {
         ],
       },
       {
-        icon: '🎚️', title: 'Pistes audio / vidéo',
+        icon: '🎚️', title: 'Audio',
         items: [
-          ['Onglet Pistes', 'Vue façon montage : vidéo de référence + pistes audio, avec le même zoom / défilement / curseur que la bande rythmo'],
+          ['Onglet Audio', 'Vue façon montage : vidéo de référence + pistes audio, avec le même zoom / défilement / curseur que la bande rythmo'],
           ['glisser une piste audio', 'Régler son offset d\'alignement (aimanté à l\'origine) - molette = défiler, Ctrl+molette = zoomer, glisser la règle = se déplacer'],
           ['🔊 haut-parleur', 'Choisit la piste audio active : sa forme d\'onde s\'affiche sur la bande et son est entendu au scrub'],
           ['+ Importer un audio…', 'Ajouter un fichier audio externe (VF témoin, musique, voix à part) - ou le glisser sur la fenêtre'],
           ['🗑 / Suppr', 'Supprimer une piste importée (sélectionner la piste puis Suppr, ou le bouton corbeille)'],
+          ['Voix par personnage', 'Associe la piste voix et la piste sans voix : c\'est ce qui permet de couper la voix d\'un personnage pendant ses répliques (voir Enregistrement)'],
+        ],
+      },
+      {
+        icon: '🎤', title: 'Enregistrement',
+        items: [
+          ['🔇 couper un personnage', 'Coupe sa piste : sa voix originale disparaît pendant ses répliques (bascule sur la piste sans voix) - on joue son rôle dans la vraie bande-son. La piste sans voix vient du Suppresseur de voix, et se choisit dans « Voix par personnage »'],
+          ['Onglet Enregistrement', 'La bande en rendu final + une piste de prises par personnage - touches 1-9 ou l\'encart Personnages pour choisir qui enregistrer'],
+          ['⏺ Enregistrer', 'Enregistre au point de lecture ; les prises qui se chevauchent s\'empilent en takes, la plus récente est retenue - clic sur une take pour en retenir une autre'],
+          ['glisser / bords', 'Déplacer une prise, rogner ses bords ; Suppr pour la supprimer'],
+          ['FX', 'Chaîne voix automatique (EQ, dé-esseur, anti-plosive, compression, niveau calé sur la vidéo), précalculée pour chaque prise - active-la pour l\'écoute, coche « FX » dans les exports'],
+          ['Compensation', 'Prises en retard / en avance sur la bande → règle la compensation de latence dans les Paramètres'],
+          ['Fichier → Exporter les enregistrements', 'ZIP : une piste mixée par personnage calée sur la timeline (+ prises détachées en option)'],
+        ],
+      },
+      {
+        icon: '🧰', title: 'Outils',
+        items: [
+          ['+ Prononciation', 'Palette de signes de détection (labiale, dentale, arrondie…) posés sur les syllabes de la réplique sélectionnée - rendus sur la bande partout (éditeur, export, plein écran)'],
+          ['ADR', 'Streamers (balayage) et punches (flash) posés sur l\'image pour lancer le comédien sans lip-sync - éditables sur la timeline (glisser, Suppr)'],
+          ['Outils → Transcription', 'Génère les répliques depuis l\'audio, un personnage par voix détectée - moteur et modèles à installer depuis les Paramètres'],
+          ['Outils → Suppresseur de voix', 'Produit une piste instrumentale depuis une piste audio (nécessaire pour couper la voix d\'un personnage)'],
+          ['Fichier → Documents de travail', 'PDF : grille de présence (personnages × scènes) et relevé de lignes par personnage'],
         ],
       },
       {
@@ -460,7 +484,7 @@ const I18N = {
         items: [
           ['Ctrl + N', 'Nouveau projet (propose d\'enregistrer les modifications en cours)'],
           ['Ctrl + S / Ctrl + Maj + S', 'Enregistrer le projet / Enregistrer sous - Fichier → Enregistrement automatique pour ne plus y penser'],
-          ['Ctrl + E', 'Exporter la vidéo avec la bande incrustée (disposition libre, encodage GPU)'],
+          ['Ctrl + E', 'Exporter la vidéo avec la bande incrustée (disposition libre, encodage GPU) - les enregistrements des personnages cochés sont mixés (brut ou FX) ; bande « Aucune » pour livrer la vidéo doublée seule'],
           ['', "Fichier → Sous-titres → Exporter (SRT) pour corriger l'orthographe ailleurs, puis Mettre à jour depuis un SRT corrigé pour réinjecter les corrections sans toucher au calage."],
         ],
       },
@@ -850,9 +874,9 @@ const I18N = {
       {
         icon: '🎬', title: 'Getting started',
         items: [
-          ['', 'Drop a video into the window (or Ctrl+O) - frame rate and waveform are detected automatically.'],
+          ['', 'Drop a video into the window (or Ctrl+O) - frame rate and waveform are detected automatically. File → Import from YouTube to download a video directly (quality, trim).'],
           ['', 'Create characters in the right-hand panel: the selected character is assigned to new lines.'],
-          ['', 'Import existing subtitles (File → Subtitles) to start from an already-synced base.'],
+          ['', 'Import existing subtitles (File → Subtitles) to start from an already-synced base - or generate the text from the audio (Tools → Transcription).'],
         ],
       },
       {
@@ -884,6 +908,7 @@ const I18N = {
           ['Shift + ← / →', '−1 s / +1 s'],
           ['Lines panel', 'Click a line to jump to its start'],
           ['F5', 'Fullscreen playback mode: video + composited band, auto-hiding controls (play, prev/next scene, loop scene, tracks). Esc to exit'],
+          ['Monitoring', 'From playback mode: a button detaches the “Monitoring” window to put the rendered picture on a second screen'],
         ],
       },
       {
@@ -910,13 +935,36 @@ const I18N = {
         ],
       },
       {
-        icon: '🎚️', title: 'Audio / video tracks',
+        icon: '🎚️', title: 'Audio',
         items: [
-          ['Tracks tab', 'Editing-software view: reference video + audio tracks, with the same zoom / scroll / cursor as the rythmo band'],
+          ['Audio tab', 'Editing-software view: reference video + audio tracks, with the same zoom / scroll / cursor as the rythmo band'],
           ['drag an audio track', 'Set its alignment offset (snaps to origin) - wheel = scroll, Ctrl+wheel = zoom, drag the ruler = move'],
           ['🔊 speaker', 'Picks the active audio track: its waveform shows on the band and its audio is heard while scrubbing'],
           ['+ Import audio…', 'Add an external audio file (reference dub, music, separate voice) - or drop it on the window'],
           ['🗑 / Del', 'Delete an imported track (select it then Del, or the trash button)'],
+          ['Voice per character', 'Pairs the voiced track with the voiceless one: this is what lets you mute a character\'s voice during their lines (see Recording)'],
+        ],
+      },
+      {
+        icon: '🎤', title: 'Recording',
+        items: [
+          ['🔇 mute a character', 'Cut their track: their original voice drops out during their lines (playback swaps to the voiceless track) - act their part inside the real soundtrack. The voiceless track comes from the Voice remover, picked in “Voice per character”'],
+          ['Recording tab', 'The band in final-render mode + one take track per character - keys 1-9 or the Characters panel to pick who to record'],
+          ['⏺ Record', 'Records at the reading point; overlapping recordings stack up as takes, the latest is retained - click a take to retain another one'],
+          ['drag / edges', 'Move a take, trim its edges; Del to delete it'],
+          ['FX', 'Automatic voice chain (EQ, de-esser, plosive tamer, compression, loudness matched to the video), pre-rendered for every take - toggle it for playback, tick “FX” in the exports'],
+          ['Latency offset', 'Takes landing late / early against the band → adjust the latency compensation in Settings'],
+          ['File → Export recordings', 'ZIP: one mixed track per character laid out on the timeline (+ detached takes optionally)'],
+        ],
+      },
+      {
+        icon: '🧰', title: 'Tools',
+        items: [
+          ['+ Pronunciation', 'Detection-mark palette (labial, dental, rounded…) placed on the syllables of the selected line - drawn on the band everywhere (editor, export, fullscreen)'],
+          ['ADR', 'Streamers (sweeping wipe) and punches (flash) over the picture to cue the actor without lip-sync - editable on the timeline (drag, Del)'],
+          ['Tools → Transcription', 'Generates the lines from the audio, one character per detected voice - engine and models install from Settings'],
+          ['Tools → Voice remover', 'Produces an instrumental track from an audio track (needed to mute a character\'s voice)'],
+          ['File → Work documents', 'PDFs: presence grid (characters × scenes) and per-character line tally'],
         ],
       },
       {
@@ -924,7 +972,7 @@ const I18N = {
         items: [
           ['Ctrl + N', 'New project (offers to save pending changes first)'],
           ['Ctrl + S / Ctrl + Shift + S', 'Save the project / Save As - File → Autosave to stop thinking about it'],
-          ['Ctrl + E', 'Export the video with the band composited (free layout, GPU encoding)'],
+          ['Ctrl + E', 'Export the video with the band composited (free layout, GPU encoding) - the recordings of the ticked characters are mixed in (raw or FX); band “None” to deliver the dubbed video alone'],
           ['', 'File → Subtitles → Export (SRT) to spell-check elsewhere, then Update from corrected SRT to bring corrections back without touching the timing.'],
         ],
       },
@@ -1314,9 +1362,9 @@ const I18N = {
       {
         icon: '🎬', title: 'Primeros pasos',
         items: [
-          ['', 'Arrastra un vídeo a la ventana (o Ctrl+O) - la cadencia y la forma de onda se detectan automáticamente.'],
+          ['', 'Arrastra un vídeo a la ventana (o Ctrl+O) - la cadencia y la forma de onda se detectan automáticamente. Archivo → Importar desde YouTube para descargar un vídeo directamente (calidad, recorte).'],
           ['', 'Crea los personajes en el panel derecho: el personaje seleccionado se asigna a las nuevas líneas.'],
-          ['', 'Importa un subtitulado existente (Archivo → Subtítulos) para partir de una base ya sincronizada.'],
+          ['', 'Importa un subtitulado existente (Archivo → Subtítulos) para partir de una base ya sincronizada - o genera el texto desde el audio (Herramientas → Transcripción).'],
         ],
       },
       {
@@ -1348,6 +1396,7 @@ const I18N = {
           ['Mayús + ← / →', '−1 s / +1 s'],
           ['panel Líneas', 'Clic en una línea para saltar a su inicio'],
           ['F5', 'Modo lectura a pantalla completa: vídeo + banda integrada, controles auto-ocultos. Esc para salir'],
+          ['Monitoring', 'Desde el modo lectura: un botón separa la ventana « Monitoring » para mostrar el render en una segunda pantalla'],
         ],
       },
       {
@@ -1374,13 +1423,36 @@ const I18N = {
         ],
       },
       {
-        icon: '🎚️', title: 'Pistas de audio / vídeo',
+        icon: '🎚️', title: 'Audio',
         items: [
           ['Pestaña Audio', 'Vista tipo montaje: vídeo de referencia + pistas de audio'],
           ['arrastrar una pista de audio', 'Ajustar su desfase de alineación (imantado al origen)'],
           ['🔊 altavoz', 'Elige la pista de audio activa: su forma de onda se muestra en la banda'],
           ['+ Importar un audio…', 'Añadir un archivo de audio externo - o arrastrarlo a la ventana'],
           ['🗑 / Supr', 'Eliminar una pista importada'],
+          ['Voz por personaje', 'Asocia la pista con voz y la pista sin voz: es lo que permite silenciar la voz de un personaje durante sus líneas (ver Grabación)'],
+        ],
+      },
+      {
+        icon: '🎤', title: 'Grabación',
+        items: [
+          ['🔇 silenciar un personaje', 'Corta su pista: su voz original desaparece durante sus líneas (la lectura cambia a la pista sin voz) - interpretas su papel dentro de la banda sonora real. La pista sin voz viene del Supresor de voces, elegida en « Voz por personaje »'],
+          ['Pestaña Grabación', 'La banda en render final + una pista de tomas por personaje - teclas 1-9 o el panel Personajes para elegir a quién grabar'],
+          ['⏺ Grabar', 'Graba en el punto de lectura; las tomas que se solapan se apilan y la más reciente queda retenida - clic en una toma para retener otra'],
+          ['arrastrar / bordes', 'Mover una toma, recortar sus bordes; Supr para eliminarla'],
+          ['FX', 'Cadena de voz automática (EQ, de-esser, anti-plosivas, compresión, nivel ajustado al vídeo), precalculada para cada toma - actívala para la escucha, marca « FX » en las exportaciones'],
+          ['Compensación', '¿Tomas retrasadas / adelantadas respecto a la banda? → ajusta la compensación de latencia en los Ajustes'],
+          ['Archivo → Exportar las grabaciones', 'ZIP: una pista mezclada por personaje sobre la línea de tiempo (+ tomas sueltas opcionalmente)'],
+        ],
+      },
+      {
+        icon: '🧰', title: 'Herramientas',
+        items: [
+          ['+ Pronunciación', 'Paleta de signos de detección (labial, dental, redondeada…) colocados en las sílabas de la línea seleccionada - dibujados en la banda en todas partes'],
+          ['ADR', 'Streamers (barrido) y punches (flash) sobre la imagen para lanzar al actor sin lip-sync - editables en la línea de tiempo (arrastrar, Supr)'],
+          ['Herramientas → Transcripción', 'Genera las líneas desde el audio, un personaje por voz detectada - motor y modelos se instalan desde los Ajustes'],
+          ['Herramientas → Supresor de voces', 'Produce una pista instrumental desde una pista de audio (necesaria para silenciar la voz de un personaje)'],
+          ['Archivo → Documentos de trabajo', 'PDF: cuadro de presencia (personajes × escenas) y recuento de líneas por personaje'],
         ],
       },
       {
@@ -1388,7 +1460,7 @@ const I18N = {
         items: [
           ['Ctrl + N', 'Nuevo proyecto (propone guardar los cambios pendientes)'],
           ['Ctrl + S / Ctrl + Mayús + S', 'Guardar el proyecto / Guardar como - Archivo → Guardado automático para no pensar más en ello'],
-          ['Ctrl + E', 'Exportar el vídeo con la banda integrada (disposición libre, codificación GPU)'],
+          ['Ctrl + E', 'Exportar el vídeo con la banda integrada (disposición libre, codificación GPU) - las grabaciones de los personajes marcados se mezclan (sin procesar o FX); banda « Ninguna » para entregar el vídeo doblado solo'],
           ['', 'Archivo → Subtítulos → Exportar (SRT) para corregir la ortografía en otro sitio, luego Actualizar desde un SRT corregido para reinyectar las correcciones sin tocar la sincronización.'],
         ],
       },
