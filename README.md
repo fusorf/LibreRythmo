@@ -124,6 +124,7 @@ a Windows installer + portable zip, macOS `.dmg` (Apple Silicon), and Linux
 | [Electron](https://www.electronjs.org/) | Desktop shell (Chromium + Node.js) | MIT |
 | [FFmpeg](https://ffmpeg.org/) | Video compositing and encoding | GPL v3 (bundled binary) |
 | [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static) | FFmpeg binary distribution | GPL v3 (binary) |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | YouTube video import | Unlicense (bundled binary) |
 | [@electron/packager](https://github.com/electron/packager) | Executable packaging (dev) | BSD-2-Clause |
 | [ws](https://github.com/websockets/ws) | CDP driving in dev scripts | MIT |
 
@@ -139,3 +140,6 @@ GPL-3.0-or-later, (c) 2026 fusorf. See [LICENSE](LICENSE).
 
 The bundled FFmpeg binary keeps its own license (GPL v3, it includes x264): it is invoked as an
 external program and its source is available at [ffmpeg.org](https://ffmpeg.org/).
+
+The bundled yt-dlp binary is released under the [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE)
+(public domain); it is likewise invoked as an external program.
