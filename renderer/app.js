@@ -1337,13 +1337,12 @@ function resizeRecClips() {
 new ResizeObserver(() => { if (activeTab === 'rec') resizeRecClips() }).observe(recClipsCanvas)
 const recClipsPps = () => rcw / recWinSec
 const recClipXAt = (t) => rcw * READ_RATIO + (t - effectiveTime()) * recClipsPps()
-// hauteur d'une piste d'enregistrement + ajustement du conteneur au nb de pistes
+// hauteur FIXE d'une piste de takes ; le canvas prend la hauteur du contenu et le
+// conteneur (#recClipsWrap) scrolle verticalement pour parcourir les takes
 const REC_LANE_H = 44
 function syncRecClipsHeight() {
-  const lanes = recLaneCount(recTargetId())
-  const want = lanes * REC_LANE_H
-  const wrap = $('recClipsWrap')
-  if (wrap && wrap._lanes !== lanes) { wrap._lanes = lanes; wrap.style.flexBasis = want + 'px' }
+  const want = recLaneCount(recTargetId()) * REC_LANE_H
+  if (recClipsCanvas._lanesH !== want) { recClipsCanvas._lanesH = want; recClipsCanvas.style.height = want + 'px' }
 }
 // mini haut-parleur dessiné sur un segment multi-takes (retenue = ondes, sinon barré)
 function drawClipSpk(c, x, y, s, col, on) {
@@ -1405,14 +1404,21 @@ function drawRecClips() {
       recClipsCtx.fillRect(x0 - 2, y + 2, 4, h - 4)
       recClipsCtx.fillRect(x1 - 2, y + 2, 4, h - 4)
     }
-    // segment multi-takes : bouton haut-parleur (take retenue) sur l'objet
-    if (recOverlapGroup(r).length) {
+    // label « Prise N » (comme le nom sur les phrases) + bouton haut-parleur accolé
+    // (haut-parleur seulement si le segment a plusieurs takes)
+    const multi = recOverlapGroup(r).length > 0
+    const lx = Math.max(2, x0) + 3
+    if (multi) {
       recClipsCtx.globalAlpha = 0.92
       recClipsCtx.fillStyle = pal.bg
-      recClipsCtx.beginPath(); recClipsCtx.roundRect(Math.max(2, x0) + 3, y + 3, 20, 20, 4); recClipsCtx.fill()
+      recClipsCtx.beginPath(); recClipsCtx.roundRect(lx, y + 3, 20, 20, 4); recClipsCtx.fill()
       recClipsCtx.globalAlpha = 1
-      drawClipSpk(recClipsCtx, Math.max(2, x0) + 5, y + 5, 16, r.active ? pal.handleAccent : pal.tickText, r.active)
+      drawClipSpk(recClipsCtx, lx + 2, y + 5, 16, r.active ? pal.handleAccent : pal.tickText, r.active)
     }
+    recClipsCtx.globalAlpha = 1
+    recClipsCtx.fillStyle = pal.tickText
+    recClipsCtx.font = '11px "Segoe UI", sans-serif'; recClipsCtx.textBaseline = 'middle'; recClipsCtx.textAlign = 'left'
+    recClipsCtx.fillText(t('recTakeN', (r.lane || 0) + 1), lx + (multi ? 25 : 4), y + 13)
   }
   const px = rcw * READ_RATIO
   recClipsCtx.strokeStyle = pal.playhead; recClipsCtx.lineWidth = 1.5
@@ -1508,9 +1514,7 @@ function clipDragEnd() {
 recClipsCanvas.addEventListener('pointerup', clipDragEnd)
 recClipsCanvas.addEventListener('pointercancel', clipDragEnd)
 recClipsCanvas.addEventListener('wheel', (e) => {
-  if (recWheelZoom(e)) return
-  e.preventDefault(); video.pause()
-  scrubTo(effectiveTime() + (e.deltaY || e.deltaX) / (rcw / recWinSec) * 0.8); playScrubGrain(scrub.time)
+  recWheelZoom(e) // Ctrl+molette = zoom ; molette simple = scroll vertical natif des takes
 }, { passive: false })
 
 function renderRecTab() {
