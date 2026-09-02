@@ -200,6 +200,13 @@ button.active {
 }
 .drop-btn svg { width: 17px; height: 17px; display: block; }
 .drop-btn:hover { color: #fff; border-color: #4a4a50; background: #17171a; }
+/* rectangle de sélection du zoom vidéo (mode Rythmo) */
+#zoomRect {
+  position: absolute; z-index: 5; pointer-events: none;
+  border: 1.5px solid rgba(122, 162, 255, .9);
+  background: rgba(122, 162, 255, .14);
+}
+#zoomRect[hidden] { display: none; }
 
 #videoInfo {
   position: absolute;

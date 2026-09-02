@@ -290,6 +290,13 @@ const TESTS = [
     // le canvas des takes remplit au moins l'espace restant (barre rouge jusqu'en bas)
     return bandH === 96 && clipsH >= 44 && clipsH >= wrapH - 1
   })()`],
+  ['Zoom vidéo : rectangle présent + application/reset', `(() => {
+    if (typeof resetImgZoom !== 'function') return true
+    imgZoom.scale = 3; imgZoom.x = 40; imgZoom.y = 20; applyImgZoom()
+    const zoomed = video.style.transform.indexOf('scale(3)') >= 0
+    resetImgZoom()
+    return zoomed && video.style.transform === '' && !!document.getElementById('zoomRect')
+  })()`],
   ['YouTube : modale + qualités disponibles + dossier par défaut', `(async () => {
     if (typeof openYtModal !== 'function') return true
     const dir = await window.api.ytDefaultDir()

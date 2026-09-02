@@ -939,20 +939,67 @@ $('videoWrap').addEventListener('wheel', (e) => {
   applyImgZoom()
 }, { passive: false })
 
+// Zoom par rectangle (mode Rythmo uniquement, pas en preview) : glisser sur la vidéo
+// dessine la zone à zoomer, relâcher zoome dessus ; re-clic (sans glisser) → zoom par défaut.
 let imgPan = null
+let zoomSel = null // origine (coords du wrap) de la sélection rectangle en cours
+const zoomRectEl = $('zoomRect')
+const wrapPos = (e) => { const r = $('videoWrap').getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
 $('videoWrap').addEventListener('pointerdown', (e) => {
-  if (imgZoom.scale <= 1.001 || !video.videoWidth) return
-  imgPan = { sx: e.clientX, sy: e.clientY, ox: imgZoom.x, oy: imgZoom.y }
-  video.style.cursor = 'grabbing'
+  if (!video.videoWidth || activeTab !== 'rythmo' || player.open || e.button !== 0) return
+  if (imgZoom.scale > 1.001) {
+    imgPan = { sx: e.clientX, sy: e.clientY, ox: imgZoom.x, oy: imgZoom.y, moved: false }
+    video.style.cursor = 'grabbing'
+    return
+  }
+  zoomSel = wrapPos(e)
 })
 window.addEventListener('pointermove', (e) => {
-  if (!imgPan) return
-  imgZoom.x = imgPan.ox + (e.clientX - imgPan.sx)
-  imgZoom.y = imgPan.oy + (e.clientY - imgPan.sy)
+  if (imgPan) {
+    const dx = e.clientX - imgPan.sx, dy = e.clientY - imgPan.sy
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) imgPan.moved = true
+    imgZoom.x = imgPan.ox + dx
+    imgZoom.y = imgPan.oy + dy
+    clampImgPan()
+    applyImgZoom()
+    return
+  }
+  if (!zoomSel) return
+  const p = wrapPos(e)
+  const x = Math.min(zoomSel.x, p.x), y = Math.min(zoomSel.y, p.y)
+  const w2 = Math.abs(p.x - zoomSel.x), h2 = Math.abs(p.y - zoomSel.y)
+  if (w2 > 6 || h2 > 6) {
+    zoomRectEl.hidden = false
+    Object.assign(zoomRectEl.style, { left: x + 'px', top: y + 'px', width: w2 + 'px', height: h2 + 'px' })
+  }
+})
+window.addEventListener('pointerup', (e) => {
+  if (imgPan) {
+    const wasClick = !imgPan.moved
+    imgPan = null
+    applyImgZoom()
+    if (wasClick) resetImgZoom() // re-clic n'importe où → retour au zoom par défaut
+    return
+  }
+  if (!zoomSel) return
+  const start = zoomSel; zoomSel = null
+  zoomRectEl.hidden = true
+  const p = wrapPos(e)
+  const rw = Math.abs(p.x - start.x), rh = Math.abs(p.y - start.y)
+  if (rw < 12 || rh < 12) return // simple clic sans zone : rien à faire
+  // rect → coords de l'élément vidéo, puis échelle/translation autour du centre
+  const vr = video.getBoundingClientRect(), wr = $('videoWrap').getBoundingClientRect()
+  const w = video.clientWidth, h = video.clientHeight
+  const cx = clamp(Math.min(start.x, p.x) + rw / 2 + wr.left - vr.left, 0, w)
+  const cy = clamp(Math.min(start.y, p.y) + rh / 2 + wr.top - vr.top, 0, h)
+  const s2 = clamp(Math.min(w / rw, h / rh), 1, 6)
+  imgZoom.scale = s2
+  imgZoom.x = -(cx - w / 2) * s2
+  imgZoom.y = -(cy - h / 2) * s2
   clampImgPan()
   applyImgZoom()
 })
-window.addEventListener('pointerup', () => { if (imgPan) { imgPan = null; applyImgZoom() } })
+window.addEventListener('pointercancel', () => { imgPan = null; zoomSel = null; zoomRectEl.hidden = true })
 $('videoWrap').addEventListener('dblclick', () => { if (imgZoom.scale > 1.001) resetImgZoom() })
 
 // ============================================================ Tier B — signets
