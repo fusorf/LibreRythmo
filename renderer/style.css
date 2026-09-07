@@ -921,16 +921,25 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-ch-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
 .rec-ch-head .trk-spk { flex: 0 0 auto; }
 .rec-ch-meta { margin-top: 4px; font-size: 11px; color: var(--dim); }
-/* bouton FX (effets auto sur les prises) — même gabarit que le haut-parleur mute */
+/* bouton FX scindé : gauche = activer la chaîne du perso, droite = engrenage (réglages) */
 .rec-fxbtn {
-  flex: 0 0 auto; width: 30px; height: 26px; padding: 0;
-  font: 700 11px "Segoe UI", sans-serif; letter-spacing: .03em;
-  background: var(--inset); border: 1px solid var(--border); border-radius: 5px;
-  color: var(--dim); opacity: .8; cursor: pointer;
+  flex: 0 0 auto; box-sizing: border-box; display: inline-flex; align-items: stretch; height: 26px; overflow: hidden;
+  background: var(--inset); border: 1px solid var(--border); border-radius: 5px; color: var(--dim);
 }
-.rec-fxbtn:hover:not(:disabled) { color: var(--text); opacity: 1; }
-.rec-fxbtn.on { color: var(--toggle-text); border-color: var(--toggle-border); background: color-mix(in srgb, var(--toggle-text) 16%, transparent); opacity: 1; }
-.rec-fxbtn:disabled { opacity: .5; cursor: default; }
+.rec-fxbtn.on { border-color: color-mix(in srgb, #3fae5a 55%, var(--border)); }
+.rec-fxbtn.busy { opacity: .5; }
+.rec-fx-main, .rec-fx-cog {
+  height: 100%; background: none; border: none; color: inherit; cursor: pointer; padding: 0; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.rec-fx-main { min-width: 30px; padding: 0 9px; font: 700 11px "Segoe UI", sans-serif; letter-spacing: .04em; opacity: .8; }
+.rec-fx-cog { width: 26px; }
+.rec-fx-cog svg { width: 13px; height: 13px; display: block; }
+.rec-fx-main:hover:not(:disabled), .rec-fx-cog:hover:not(:disabled) { color: var(--text); opacity: 1; }
+.rec-fx-main:disabled, .rec-fx-cog:disabled { cursor: default; }
+.rec-fx-sep { flex: 0 0 auto; width: 1px; background: var(--border); }
+/* actif : halo vert sur « FX » (l'engrenage reste monochrome) */
+.rec-fxbtn.on .rec-fx-main { color: #3fae5a; opacity: 1; text-shadow: 0 0 6px rgba(63, 174, 90, .85), 0 0 12px rgba(63, 174, 90, .45); }
 /* bande rythmo en rendu final (dubbing) : hauteur fixe, ancrée en haut.
    Canvas en ABSOLU : sa taille interne (attributs width/height) ne doit jamais
    nourrir la taille min du wrap, sinon boucle de rétroaction layout↔canvas
@@ -1375,7 +1384,20 @@ button.primary:disabled { opacity: .45; cursor: default; }
 .cap-refresh { flex: 0 0 auto; padding: 4px 8px; line-height: 1; }
 .out-test-row { display: flex; align-items: center; gap: 10px; }
 .out-test-btn { flex: 0 0 auto; }
+.rec-off-row { display: flex; align-items: center; gap: 8px; }
 .rec-off-row input { width: 76px; }
+.rec-off-row .calib-btn { margin-left: auto; }
+/* modale de calibration de latence (test tape-en-rythme) */
+#calibModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 22; }
+#calibModal.hidden { display: none; }
+.calib-panel { width: 400px; max-width: 92vw; }
+.calib-intro { line-height: 1.5; }
+/* métronome anticipable : la barre défile vers le repère, le battement = quand elle l'atteint */
+.calib-lane { position: relative; width: 100%; height: 120px; border-radius: 8px; background: #000; border: 1px solid var(--border); overflow: hidden; }
+.calib-runner { position: absolute; top: 10%; bottom: 10%; left: 0; width: 4px; border-radius: 2px; background: #d8dade; transform: translateX(-50%); }
+.calib-marker { position: absolute; top: 0; bottom: 0; right: 0; width: 3px; background: #e0433a; box-shadow: 0 0 8px rgba(224, 67, 58, .55); }
+.calib-marker.hit { width: 4px; box-shadow: 0 0 16px rgba(224, 67, 58, .95); }
+.calib-status { min-height: 18px; text-align: center; color: var(--dim); font-variant-numeric: tabular-nums; }
 .out-meter { flex: 1 1 auto; height: 10px; min-width: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
 #outMeterFill { height: 100%; width: 0%; background: linear-gradient(90deg, #3fae5a 0%, #d8c53a 70%, #e0533a 100%); transition: width .05s linear; }
 .set-row { display: flex; align-items: center; gap: 8px; }
@@ -1388,6 +1410,39 @@ button.primary:disabled { opacity: .45; cursor: default; }
 .model-row .mdl-name { flex: 1 1 auto; font-weight: 600; }
 .model-row .mdl-state { color: var(--dim); font-size: 12px; }
 .model-row.installed .mdl-state { color: var(--toggle-text); }
+
+/* ---------- chaîne voix (FX) ---------- */
+#voiceFxModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 21; }
+#voiceFxModal.hidden { display: none; }
+.vfx-panel { width: 780px; max-width: 94vw; max-height: 90vh; overflow-y: auto; gap: 16px; padding: 20px; }
+/* en-tête : pastille couleur du perso + titre + interrupteur d'activation */
+.vfx-header { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.vfx-header h2 { margin: 0; }
+.vfx-color-dot { flex: 0 0 auto; width: 15px; height: 15px; border-radius: 50%; background: var(--dim); box-shadow: 0 0 0 3px color-mix(in srgb, var(--panel2) 60%, transparent); }
+/* grille d'étages : deux colonnes qui aèrent, une seule si étroit */
+#vfxBody { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.vfx-footer { padding-top: 2px; }
+/* étage : titre (interrupteur + nom) puis lignes de réglage, sur toute la largeur */
+.vfx-stage { gap: 12px; padding: 10px 14px 14px; }
+.vfx-stage > legend { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--text); }
+.vfx-stage.off { opacity: .55; }
+.vfx-stage.off .vfx-row { pointer-events: none; }
+.vfx-row { display: flex; align-items: center; gap: 10px; flex-basis: 100%; }
+.vfx-row > .vfx-label { flex: 0 0 104px; color: var(--dim); }
+.vfx-row input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.vfx-row > .vfx-val { flex: 0 0 62px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.vfx-row.vfx-inline { color: var(--dim); }
+@media (max-width: 640px) { #vfxBody { grid-template-columns: 1fr; } }
+
+/* interrupteur activé / désactivé (réutilisable) */
+.switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
+.switch > input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track { position: relative; flex: 0 0 auto; width: 34px; height: 18px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); transition: background .15s, border-color .15s; }
+.switch-thumb { position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; border-radius: 50%; background: var(--dim); transition: transform .15s, background .15s; }
+.switch > input:checked + .switch-track { background: color-mix(in srgb, var(--toggle-text) 40%, transparent); border-color: var(--toggle-border); }
+.switch > input:checked + .switch-track .switch-thumb { transform: translateX(16px); background: var(--toggle-text); }
+.switch > input:focus-visible + .switch-track { box-shadow: 0 0 0 2px color-mix(in srgb, var(--toggle-text) 45%, transparent); }
+.switch-label { color: var(--dim); font-weight: 600; }
 
 /* ---------- guide ---------- */
 #guideModal {

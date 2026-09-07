@@ -509,10 +509,11 @@
           <div id="outMeter" class="out-meter"><div id="outMeterFill"></div></div>
         </div>
         <div class="set-note"><span id="outNote" class="dim-val"></span></div>
-        <label class="rec-off-row"><span id="recOffLabel">Compensation</span>
+        <div class="rec-off-row"><span id="recOffLabel">Compensation</span>
           <input id="recOffset" type="number" step="5" min="-500" max="500" value="0">
           <span class="dim-val">ms</span>
-        </label>
+          <button id="calibBtn" class="calib-btn">Calibrer</button>
+        </div>
       </fieldset>
 
       <fieldset class="opt-group set-block">
@@ -534,6 +535,49 @@
       </div>
       <hr class="modal-sep">
       <div class="export-row"><div class="spacer"></div><button id="setClose" class="primary">Fermer</button></div>
+    </div>
+  </div>
+
+  <div id="calibModal" class="hidden">
+    <div class="modal-panel calib-panel">
+      <h2 id="calibTitle">Calibrer la latence</h2>
+      <p id="calibIntro" class="modal-hint calib-intro"></p>
+      <div class="calib-lane">
+        <div id="calibRunner" class="calib-runner"></div>
+        <div id="calibMarker" class="calib-marker"></div>
+      </div>
+      <div id="calibStatus" class="calib-status"></div>
+      <hr class="modal-sep">
+      <div class="export-row">
+        <button id="calibClose">Fermer</button>
+        <div class="spacer"></div>
+        <button id="calibRedo" class="hidden">Recommencer</button>
+        <button id="calibGo" class="primary">Commencer</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="voiceFxModal" class="hidden">
+    <div class="modal-panel vfx-panel">
+      <div class="vfx-header">
+        <span id="vfxColorDot" class="vfx-color-dot"></span>
+        <h2 id="vfxTitle">Chaîne voix</h2>
+        <div class="spacer"></div>
+        <label class="switch">
+          <input id="vfxEnabled" type="checkbox">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span id="vfxEnabledLabel" class="switch-label">Activer la chaîne pour ce personnage</span>
+        </label>
+      </div>
+      <div id="vfxBody"></div>
+      <hr class="modal-sep">
+      <div class="export-row vfx-footer">
+        <button id="vfxReset" title="Réinitialiser">Réinitialiser</button>
+        <button id="vfxSetDefault" title="Définir comme réglages par défaut du projet">Par défaut du projet</button>
+        <div class="spacer"></div>
+        <span id="vfxStatus" class="dim-val"></span>
+        <button id="vfxApply" class="primary">Appliquer</button>
+      </div>
     </div>
   </div>
 
@@ -599,6 +643,7 @@
   <script src="i18n.js"></script>
   <script src="reacs.js"></script>
   <script src="detection.js"></script>
+  <script src="voicefx.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

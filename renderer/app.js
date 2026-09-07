@@ -87,7 +87,7 @@ function showLoading(on, text) {
 
 // ============================================================ state
 function newProject() {
-  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null, recordings: [], recMuted: [], voiceFxOn: false }
+  return { version: 2, videoPath: null, fps: 25, tracks: DEFAULT_TRACKS, characters: [], lines: [], loops: [], plans: [], audioTracks: [], defaultFont: null, fonts: [], cues: [], bookmarks: [], playhead: 0, muteChars: [], voiceTrackId: null, recordings: [], recMuted: [], voiceFxDefault: VoiceFx.clone(VoiceFx.DEFAULTS) }
 }
 
 // Boucles (= scènes, unité de travail à l'enregistrement). Durée de référence du
@@ -1053,8 +1053,8 @@ function recAssignLane(clip) {
 const recLaneCount = (charId) => 1 + (project.recordings || []).filter((r) => r.characterId === charId).reduce((m, r) => Math.max(m, r.lane || 0), 0)
 // groupe de chevauchement d'un segment (les autres takes du même passage)
 const recOverlapGroup = (clip) => (project.recordings || []).filter((r) => r.characterId === clip.characterId && r.id !== clip.id && recOverlap(r, clip))
-// fichier joué/exporté : la version traitée par la chaîne voix quand elle est active
-const recPlayFile = (r) => (project.voiceFxOn && r.fxFile) ? r.fxFile : r.file
+// fichier joué/exporté : la version traitée quand la chaîne du personnage est active
+const recPlayFile = (r) => (charFxOn(r.characterId) && r.fxFile) ? r.fxFile : r.file
 
 // config capture (persistée côté main : audio-config.json)
 const audioCfg = { api: 'system', device: null, deviceLabel: null, output: null, outputLabel: null, recOffsetMs: 0 }
@@ -1252,9 +1252,8 @@ async function addRecording(charId, fileName, startTime, durHint, comp) {
   markDirty()
   if (activeTab === 'rec') renderRecTab()
   preloadTakeAudios()
-  // sidecar FX généré systématiquement dans la foulée (les exports « FX » l'ont toujours
-  // sous la main) ; la lecture n'en tient compte que si la chaîne voix est active
-  fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); if (project.voiceFxOn) preloadTakeAudios() } })
+  // sidecar FX généré dans la foulée si la chaîne du personnage est active
+  if (charFxOn(clip.characterId)) fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); preloadTakeAudios() } })
   toast(t('recSaved'))
 }
 
@@ -1589,8 +1588,8 @@ function retainClip(clip) {
   pushUndo()
   for (const r of recOverlapGroup(clip)) r.active = false
   clip.active = true
-  // chaîne voix active → la take nouvellement retenue est traitée si besoin
-  if (project.voiceFxOn && !clip.fxFile) fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); preloadTakeAudios() } })
+  // chaîne du personnage active → la take nouvellement retenue est traitée si besoin
+  if (charFxOn(clip.characterId) && !clip.fxFile) fxProcessClip(clip).then((ok) => { if (ok) { markDirty(); preloadTakeAudios() } })
   markDirty()
 }
 let clipDrag = null
@@ -1681,142 +1680,22 @@ async function deleteClip(id) {
   markDirty(); renderRecTab()
 }
 
-// ============================================================ chaîne voix (auto-mix)
-// EQ + compression + niveau calculés automatiquement d'après l'ANALYSE de chaque prise
-// (approche type Auphonic AutoEQ/Leveler) : énergie par bande → filtres correctifs,
-// dé-esseur et anti-plosive dynamiques (tameBand), facteur de crête → compression,
-// puis normalisation vers une cible ≈ -22 dBFS RMS
-// (podcast/US, approx. LUFS) équilibrée avec le niveau moyen de la piste vidéo.
-// Le résultat est PRÉCALCULÉ en WAV sidecar (fx_*.wav) : lecture et export l'utilisent.
+// ============================================================ chaîne voix (FX)
+// DSP par étages : renderer/voicefx.js (window.VoiceFx). Chaîne de doublage/voix-off
+// bypassable étage par étage, réglée PAR PERSONNAGE (char.fx, stockée dans le .rythmo),
+// pré-calculée en WAV sidecar (fx_*.wav) : lecture et export l'utilisent quand la chaîne
+// du personnage est active. Le preset par défaut du projet (project.voiceFxDefault) sème
+// chaque nouveau personnage.
 let fxBusy = false
-const dbOf = (x) => 10 * Math.log10(x + 1e-12)
 
-// biquad RBJ minimal (filtrage par bande, O(n), hors WebAudio)
-function biquadFilt(data, sr, type, fc, Q) {
-  const w0 = 2 * Math.PI * fc / sr, cw = Math.cos(w0), sw = Math.sin(w0), al = sw / (2 * Q)
-  let b0, b1, b2
-  if (type === 'bandpass') { b0 = al; b1 = 0; b2 = -al }
-  else if (type === 'lowpass') { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0 }
-  else { b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = b0 } // highpass
-  const a0 = 1 + al, a1 = -2 * cw, a2 = 1 - al
-  b0 /= a0; b1 /= a0; b2 /= a0
-  const na1 = a1 / a0, na2 = a2 / a0
-  const out = new Float32Array(data.length)
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0
-  for (let i = 0; i < data.length; i++) {
-    const x = data[i]
-    const y = b0 * x + b1 * x1 + b2 * x2 - na1 * y1 - na2 * y2
-    x2 = x1; x1 = x; y2 = y1; y1 = y
-    out[i] = y
-  }
-  return out
+// réglages FX d'un personnage (créés paresseusement à partir du défaut projet)
+function getCharFx(c) {
+  if (!c) return VoiceFx.DEFAULTS
+  if (!c.fx) c.fx = VoiceFx.clone(project.voiceFxDefault || VoiceFx.DEFAULTS)
+  return c.fx
 }
-function biquadRms(data, sr, type, fc, Q) {
-  const y = biquadFilt(data, sr, type, fc, Q)
-  let sq = 0
-  for (let i = 0; i < y.length; i++) sq += y[i] * y[i]
-  return dbOf(sq / Math.max(1, y.length))
-}
-
-// réduction dynamique d'une bande (dé-esseur sur les aigus, anti-plosive sur les graves) :
-// l'enveloppe de la bande est suivie en dB ; quand elle dépasse de `overDb` le niveau
-// voisé moyen de cette bande, l'excès est soustrait du signal (y = x − (1−g)·bande).
-// La bande n'est atténuée que pendant les pointes — pas de déphasage ni de perte de
-// timbre le reste du temps, contrairement à un EQ statique.
-function tameBand(buf, type, fc, Q, overDb, maxCutDb, attMs, relMs) {
-  const sr = buf.sampleRate
-  for (let c = 0; c < buf.numberOfChannels; c++) {
-    const x = buf.getChannelData(c)
-    const band = biquadFilt(x, sr, type, fc, Q)
-    // niveau de référence : RMS fenêtré de la bande, fenêtres voisées uniquement
-    const win = Math.max(1, Math.round(sr * 0.05))
-    const w = []
-    for (let i = 0; i + win <= band.length; i += win) {
-      let sq = 0
-      for (let k = i; k < i + win; k++) sq += band[k] * band[k]
-      w.push(dbOf(sq / win))
-    }
-    const mx = w.length ? Math.max(...w) : -90
-    const voiced = w.filter((v) => v > mx - 30)
-    const thr = (voiced.length ? voiced.reduce((a, b) => a + b, 0) / voiced.length : mx) + overDb
-    const ga = Math.exp(-1000 / (sr * attMs)), gr = Math.exp(-1000 / (sr * relMs))
-    let env = 0
-    for (let i = 0; i < x.length; i++) {
-      const a = Math.abs(band[i])
-      env = a > env ? ga * env + (1 - ga) * a : gr * env + (1 - gr) * a
-      const eDb = 20 * Math.log10(env + 1e-12)
-      if (eDb <= thr) continue
-      const cut = Math.min(maxCutDb, (eDb - thr) * 0.8) // pente ≈ compression 4:1
-      x[i] -= (1 - Math.pow(10, -cut / 20)) * band[i]
-    }
-  }
-}
-
-// analyse d'une prise : niveau moyen (fenêtres voisées), crête, énergie par bande →
-// réglages de la chaîne (EQ correctif, compression, seuil)
-function analyzeVoice(buf, light) {
-  const d = buf.getChannelData(0), sr = buf.sampleRate
-  const win = Math.max(1, Math.round(sr * 0.05))
-  const rmsW = []
-  for (let i = 0; i + win <= d.length; i += win) {
-    let sq = 0
-    for (let k = i; k < i + win; k++) sq += d[k] * d[k]
-    rmsW.push(dbOf(sq / win))
-  }
-  const maxW = rmsW.length ? Math.max(...rmsW) : -90
-  const voiced = rmsW.filter((v) => v > maxW - 30)
-  const rmsDb = voiced.length ? voiced.reduce((a, b) => a + b, 0) / voiced.length : maxW
-  let pk = 1e-9
-  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a }
-  const peakDb = 20 * Math.log10(pk)
-  if (light) return { rmsDb, peakDb }
-  const full = rmsW.length ? rmsW.reduce((a, b) => a + b, 0) / rmsW.length : -90
-  // énergie relative par bande vs référence « voix neutre » (empirique)
-  const lowRel = biquadRms(d, sr, 'lowpass', 90, 0.71) - full   // gronde/pop
-  const mudRel = biquadRms(d, sr, 'bandpass', 300, 1) - full    // boue 200-500 Hz
-  const presRel = biquadRms(d, sr, 'bandpass', 3500, 0.9) - full // présence/intelligibilité
-  const sibRel = biquadRms(d, sr, 'bandpass', 7000, 1.5) - full  // sibilance
-  const crest = peakDb - rmsDb
-  return {
-    rmsDb, peakDb,
-    hpFc: lowRel > -6 ? 110 : 85,                       // coupe-bas plus haut si ça gronde
-    eqMud: clamp(-(mudRel + 6) * 0.9, -6, 0),           // cut boue si excès
-    eqPres: clamp((-10 - presRel) * 0.7, 0, 4),         // boost présence si voix sourde
-    eqSib: clamp(-(sibRel + 14) * 1.0, -5, 0),          // cut statique doux — le dé-esseur dynamique (tameBand) fait le reste
-    ratio: crest >= 18 ? 4 : crest >= 12 ? 3 : 2.2,     // compression selon la dynamique
-    thresh: clamp(rmsDb + 4, -45, -8),
-  }
-}
-
-// cible de niveau : équilibrée avec la piste audio de la vidéo, sinon ≈ -22 dBFS RMS
-// (−6 dB sous la référence podcast : la voix traitée sortait trop fort)
-const fxTargetDb = () => (videoRmsDb != null && isFinite(videoRmsDb)) ? clamp(videoRmsDb - 2, -28, -19) : -22
-
-// rendu offline de la chaîne : anti-plosive → HP → shelf graves → EQ boue → présence →
-// dé-ess statique → comp → dé-esseur dynamique → (pass 2) gain vers la cible → limiteur
-async function renderVoiceChain(buf, A, targetDb) {
-  tameBand(buf, 'lowpass', 120, 0.71, 6, 12, 3, 90) // anti-plosive : ravale les coups de graves (p/b) avant tout
-  const off = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate)
-  const src = off.createBufferSource(); src.buffer = buf
-  const hp = off.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = A.hpFc; hp.Q.value = 0.71
-  const shelf = off.createBiquadFilter(); shelf.type = 'lowshelf'; shelf.frequency.value = 150; shelf.gain.value = -3 // allège les basses (proximité micro)
-  const mud = off.createBiquadFilter(); mud.type = 'peaking'; mud.frequency.value = 300; mud.Q.value = 1; mud.gain.value = A.eqMud
-  const pres = off.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3500; pres.Q.value = 0.9; pres.gain.value = A.eqPres
-  const sib = off.createBiquadFilter(); sib.type = 'peaking'; sib.frequency.value = 7000; sib.Q.value = 2; sib.gain.value = A.eqSib
-  const comp = off.createDynamicsCompressor(); comp.threshold.value = A.thresh; comp.ratio.value = A.ratio; comp.attack.value = 0.004; comp.release.value = 0.18; comp.knee.value = 8
-  src.connect(hp); hp.connect(shelf); shelf.connect(mud); mud.connect(pres); pres.connect(sib); sib.connect(comp); comp.connect(off.destination)
-  src.start()
-  const mid = await off.startRendering()
-  tameBand(mid, 'highpass', 5500, 0.71, 4, 10, 1, 60) // dé-esseur dynamique, après EQ/comp
-  const A2 = analyzeVoice(mid, true)
-  const g = Math.pow(10, clamp(targetDb - A2.rmsDb, -24, 24) / 20)
-  const off2 = new OfflineAudioContext(mid.numberOfChannels, mid.length, mid.sampleRate)
-  const s2 = off2.createBufferSource(); s2.buffer = mid
-  const gn = off2.createGain(); gn.gain.value = g
-  const lim = off2.createDynamicsCompressor(); lim.threshold.value = -2; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1; lim.knee.value = 1
-  s2.connect(gn); gn.connect(lim); lim.connect(off2.destination); s2.start()
-  return off2.startRendering()
-}
+// non mutant (ne crée pas c.fx) : la simple lecture ne doit pas peupler tous les persos
+const charFxOn = (charId) => { const c = getChar(charId); return !!(c && c.fx && c.fx.enabled) }
 
 // AudioBuffer → WAV PCM 16 bits (sidecar précalculé)
 function encodeWav16(buf) {
@@ -1834,27 +1713,35 @@ function encodeWav16(buf) {
   return ab
 }
 
-// analyse + traite une prise → écrit le sidecar fx_*.wav et le référence sur le clip
+// traite une prise avec la chaîne de SON personnage → écrit le sidecar fx_*.wav,
+// le référence sur le clip et mémorise la signature des réglages (détection de péremption)
 async function fxProcessClip(r) {
   try {
+    const c = getChar(r.characterId); if (!c) return false
+    const P = getCharFx(c)
     const url = await window.api.takeUrl(projectPath, r.file); if (!url) return false
     const resp = await fetch(url); const ab = await resp.arrayBuffer()
     const dc = new (window.AudioContext || window.webkitAudioContext)()
     const buf = await dc.decodeAudioData(ab); dc.close()
-    const out = await renderVoiceChain(buf, analyzeVoice(buf), fxTargetDb())
+    const { buffer } = await VoiceFx.process(buf, P)
     const name = 'fx_' + r.file.replace(/\.[^.]+$/, '') + '.wav'
-    const res = await window.api.saveTake(projectPath, name, encodeWav16(out))
+    const res = await window.api.saveTake(projectPath, name, encodeWav16(buffer))
     if (!res || res.error) return false
     r.fxFile = res.name
+    r.fxSig = VoiceFx.sig(P)
     return true
   } catch { return false }
 }
 
-// garantit les sidecars FX des prises données — générés à l'enregistrement désormais,
-// mais les prises plus anciennes peuvent en manquer : rattrapage avant un export « FX »
+// garantit les sidecars FX à jour des prises données (personnages à chaîne active) :
+// (re)génère ceux qui manquent OU dont la signature des réglages a changé : appelé
+// avant un export « FX » et à l'application des réglages dans la modale
 async function ensureFxSidecars(clips) {
   let n = 0
-  for (const r of clips) if (!r.fxFile && await fxProcessClip(r)) n++
+  for (const r of clips) {
+    if (!charFxOn(r.characterId)) continue
+    if ((!r.fxFile || r.fxSig !== VoiceFx.sig(getCharFx(getChar(r.characterId)))) && await fxProcessClip(r)) n++
+  }
   if (n) markDirty()
   return n
 }
@@ -1905,7 +1792,7 @@ async function runTakesExport() {
     $('tkStatus').textContent = t('recFxBusy')
     await ensureFxSidecars((project.recordings || []).filter((r) => tkCharSel.has(r.characterId) && recEffDur(r) > 0))
   }
-  const pick = (r) => (useFx && r.fxFile) ? r.fxFile : r.file
+  const pick = (r) => (useFx && charFxOn(r.characterId) && r.fxFile) ? r.fxFile : r.file
   const clipInfo = (r) => ({ name: pick(r), trimStart: r.trimStart || 0, effDur: recEffDur(r), offset: r.startTime, takeN: (r.lane || 0) + 1 })
   const chars = project.characters
     .filter((c) => tkCharSel.has(c.id))
@@ -1932,25 +1819,158 @@ async function runTakesExport() {
 }
 $('tkGo').addEventListener('click', runTakesExport)
 
-// bouton « chaîne voix » : traite toutes les takes actives qui ne le sont pas encore
-async function toggleVoiceFx() {
-  if (fxBusy) return
-  if (project.voiceFxOn) {
-    project.voiceFxOn = false
-    markDirty(); stopAllTakeAudio(); preloadTakeAudios(); renderRecCharList()
-    return
-  }
-  fxBusy = true; renderRecCharList()
-  let n = 0
-  for (const r of (project.recordings || [])) {
-    if (!r.active || r.fxFile) continue
-    if (await fxProcessClip(r)) n++
-  }
-  project.voiceFxOn = true
-  fxBusy = false
-  markDirty(); stopAllTakeAudio(); await preloadTakeAudios(); renderRecCharList()
-  toast(t('recFxDone', n))
+// ---------- modale « Chaîne voix » : réglages FX par personnage ----------
+// description déclarative des étages exposés (ordre = ordre de la chaîne dans voicefx.js)
+const VFX_SCHEMA = [
+  { key: 'deplosive', legend: 'vfxDeplosive', ctrls: [
+    { path: 'freq', label: 'vfxFreq', min: 80, max: 300, step: 5, unit: 'Hz' },
+    { path: 'amount', label: 'vfxAmount', min: 0, max: 24, step: 1, unit: 'dB' }] },
+  { key: 'highpass', legend: 'vfxHighpass', ctrls: [
+    { path: 'freq', label: 'vfxFreq', min: 40, max: 200, step: 5, unit: 'Hz' }] },
+  { key: 'eqLowMud', legend: 'vfxEqLowMud', dynamic: true, ctrls: [
+    { path: 'freq', label: 'vfxFreq', min: 60, max: 500, step: 5, unit: 'Hz' },
+    { path: 'q', label: 'vfxQ', min: 0.3, max: 4, step: 0.1 },
+    { path: 'gain', label: 'vfxGain', min: -12, max: 6, step: 0.5, unit: 'dB' }] },
+  { key: 'eqBoxy', legend: 'vfxEqBoxy', dynamic: true, ctrls: [
+    { path: 'freq', label: 'vfxFreq', min: 200, max: 900, step: 5, unit: 'Hz' },
+    { path: 'q', label: 'vfxQ', min: 0.3, max: 4, step: 0.1 },
+    { path: 'gain', label: 'vfxGain', min: -12, max: 6, step: 0.5, unit: 'dB' }] },
+  { key: 'eqPres', legend: 'vfxEqPres', dynamic: true, ctrls: [
+    { path: 'freq', label: 'vfxFreq', min: 2000, max: 6000, step: 50, unit: 'Hz' },
+    { path: 'q', label: 'vfxQ', min: 0.3, max: 4, step: 0.1 },
+    { path: 'gain', label: 'vfxGain', min: -6, max: 6, step: 0.5, unit: 'dB' }] },
+  { key: 'eqSib', legend: 'vfxEqSib', dynamic: true, ctrls: [
+    { path: 'freq', label: 'vfxFreq', min: 5000, max: 12000, step: 100, unit: 'Hz' },
+    { path: 'q', label: 'vfxQ', min: 0.5, max: 6, step: 0.1 },
+    { path: 'gain', label: 'vfxGain', min: -12, max: 6, step: 0.5, unit: 'dB' }] },
+  { key: 'deesser', legend: 'vfxDeesser', ctrls: [
+    { path: 'freq', label: 'vfxFreq', min: 4000, max: 10000, step: 100, unit: 'Hz' },
+    { path: 'amount', label: 'vfxAmount', min: 0, max: 12, step: 0.5, unit: 'dB' }] },
+  { key: 'compSlow', legend: 'vfxCompSlow', ctrls: [
+    { path: 'threshold', label: 'vfxThreshold', min: -48, max: 0, step: 1, unit: 'dB' },
+    { path: 'ratio', label: 'vfxRatio', min: 1, max: 8, step: 0.5, unit: ':1' },
+    { path: 'attackMs', label: 'vfxAttack', min: 1, max: 100, step: 1, unit: 'ms' },
+    { path: 'releaseMs', label: 'vfxRelease', min: 20, max: 400, step: 10, unit: 'ms' }] },
+  { key: 'compFast', legend: 'vfxCompFast', ctrls: [
+    { path: 'threshold', label: 'vfxThreshold', min: -48, max: 0, step: 1, unit: 'dB' },
+    { path: 'ratio', label: 'vfxRatio', min: 1, max: 12, step: 0.5, unit: ':1' },
+    { path: 'attackMs', label: 'vfxAttack', min: 1, max: 50, step: 1, unit: 'ms' },
+    { path: 'releaseMs', label: 'vfxRelease', min: 20, max: 300, step: 10, unit: 'ms' }] },
+  { key: 'saturation', legend: 'vfxSaturation', ctrls: [
+    { path: 'drive', label: 'vfxDrive', min: 0, max: 100, step: 1, unit: '%' },
+    { path: 'mix', label: 'vfxMix', min: 0, max: 100, step: 1, unit: '%' }] },
+  { key: 'reverb', legend: 'vfxReverb', ctrls: [
+    { path: 'sizeS', label: 'vfxSize', min: 0.1, max: 1.5, step: 0.05, unit: 's' },
+    { path: 'predelayMs', label: 'vfxPredelay', min: 0, max: 80, step: 5, unit: 'ms' },
+    { path: 'mix', label: 'vfxMix', min: 0, max: 40, step: 1, unit: '%' },
+    { path: 'hpf', label: 'vfxHpf', min: 100, max: 800, step: 20, unit: 'Hz' }] },
+  { key: 'loudness', legend: 'vfxLoudness', ctrls: [
+    { path: 'targetLufs', label: 'vfxTarget', min: -30, max: -9, step: 0.5, unit: 'LUFS' },
+    { path: 'ceilingDb', label: 'vfxCeiling', min: -6, max: 0, step: 0.1, unit: 'dBTP' }] },
+]
+let vfxCharId = null
+const vfxModal = $('voiceFxModal')
+const vfxUnit = (u) => u ? (u[0] === ':' ? u : ' ' + u) : ''
+const vfxFmt = (v, step) => step < 1 ? Number(v).toFixed(step < 0.1 ? 2 : 1) : String(Math.round(v))
+
+function openVoiceFx(charId) {
+  const c = getChar(charId); if (!c) return
+  vfxCharId = charId
+  const fx = getCharFx(c)
+  $('vfxTitle').textContent = t('vfxTitle', c.name)
+  $('vfxColorDot').style.background = c.color || '#888'
+  $('vfxEnabledLabel').textContent = t('vfxEnabledLabel')
+  $('vfxEnabled').checked = !!fx.enabled
+  $('vfxReset').textContent = t('vfxReset')
+  $('vfxSetDefault').textContent = t('vfxSetDefault')
+  $('vfxSetDefault').title = t('vfxSetDefaultTip')
+  $('vfxApply').textContent = t('vfxApply')
+  $('vfxStatus').textContent = ''
+  buildVfxBody(fx)
+  vfxModal.classList.remove('hidden')
 }
+
+// interrupteur activé/désactivé réutilisable → <label class="switch">
+function vfxSwitch(checked, onChange, labelText) {
+  const lab = document.createElement('label'); lab.className = 'switch'
+  const inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = !!checked
+  const track = document.createElement('span'); track.className = 'switch-track'
+  const thumb = document.createElement('span'); thumb.className = 'switch-thumb'
+  track.appendChild(thumb)
+  inp.addEventListener('change', () => onChange(inp.checked))
+  lab.append(inp, track)
+  if (labelText) { const sp = document.createElement('span'); sp.className = 'switch-label'; sp.textContent = labelText; lab.appendChild(sp) }
+  return lab
+}
+
+function buildVfxBody(fx) {
+  const body = $('vfxBody'); body.innerHTML = ''
+  for (const stage of VFX_SCHEMA) {
+    const st = fx[stage.key]
+    const fs = document.createElement('fieldset'); fs.className = 'opt-group set-block vfx-stage' + (st.on ? '' : ' off')
+    const lg = document.createElement('legend')
+    lg.appendChild(vfxSwitch(st.on, (on) => { st.on = on; fs.classList.toggle('off', !on); markDirty() }))
+    lg.append(t(stage.legend))
+    fs.appendChild(lg)
+    if (stage.dynamic) {
+      const row = document.createElement('div'); row.className = 'vfx-row vfx-inline'
+      row.appendChild(vfxSwitch(st.dynamic, (on) => { st.dynamic = on; markDirty() }, t('vfxDynamic')))
+      fs.appendChild(row)
+    }
+    for (const ct of stage.ctrls) {
+      const row = document.createElement('div'); row.className = 'vfx-row'
+      const lab = document.createElement('span'); lab.className = 'vfx-label'; lab.textContent = t(ct.label)
+      const rng = document.createElement('input'); rng.type = 'range'; rng.min = ct.min; rng.max = ct.max; rng.step = ct.step; rng.value = st[ct.path]
+      const val = document.createElement('span'); val.className = 'vfx-val'; val.textContent = vfxFmt(st[ct.path], ct.step) + vfxUnit(ct.unit)
+      rng.addEventListener('input', () => { st[ct.path] = parseFloat(rng.value); val.textContent = vfxFmt(st[ct.path], ct.step) + vfxUnit(ct.unit); markDirty() })
+      row.append(lab, rng, val)
+      fs.appendChild(row)
+    }
+    body.appendChild(fs)
+  }
+}
+
+// applique les réglages : (re)génère les sidecars des prises actives du personnage si sa
+// chaîne est active, puis rafraîchit la lecture ; sinon la lecture repasse au son brut
+async function vfxApply() {
+  if (fxBusy) return
+  const c = getChar(vfxCharId); if (!c) return
+  fxBusy = true; $('vfxApply').disabled = true; $('vfxStatus').textContent = t('recFxBusy'); renderRecCharList()
+  if (getCharFx(c).enabled) {
+    await ensureFxSidecars((project.recordings || []).filter((r) => r.characterId === c.id && r.active && recEffDur(r) > 0))
+  }
+  fxBusy = false; $('vfxApply').disabled = false; $('vfxStatus').textContent = t('vfxApplied')
+  stopAllTakeAudio(); await preloadTakeAudios(); renderRecCharList()
+}
+
+// activer/désactiver depuis la modale : recharge le cache audio des prises, sinon la
+// variante voulue (brute quand on désactive) n'est pas préchargée et la lecture reste muette
+$('vfxEnabled').addEventListener('change', async () => {
+  const c = getChar(vfxCharId); if (!c) return
+  getCharFx(c).enabled = $('vfxEnabled').checked
+  markDirty(); renderRecCharList()
+  stopAllTakeAudio(); await preloadTakeAudios()
+})
+
+// bouton FX (partie gauche) : bascule la chaîne du perso ; à l'activation, (re)génère
+// les sidecars des prises actives pour que la lecture passe aussitôt en FX
+async function toggleCharFx(charId) {
+  if (fxBusy) return
+  const c = getChar(charId); if (!c) return
+  const fx = getCharFx(c)
+  fx.enabled = !fx.enabled
+  markDirty()
+  if (fx.enabled) {
+    fxBusy = true; renderRecCharList()
+    await ensureFxSidecars((project.recordings || []).filter((r) => r.characterId === c.id && r.active && recEffDur(r) > 0))
+    fxBusy = false
+  }
+  stopAllTakeAudio(); await preloadTakeAudios(); renderRecCharList()
+}
+$('vfxReset').addEventListener('click', () => { const c = getChar(vfxCharId); if (!c) return; c.fx = VoiceFx.normalize(project.voiceFxDefault); c.fx.enabled = $('vfxEnabled').checked; markDirty(); buildVfxBody(c.fx) })
+$('vfxSetDefault').addEventListener('click', () => { const c = getChar(vfxCharId); if (!c) return; project.voiceFxDefault = VoiceFx.clone(getCharFx(c)); markDirty(); $('vfxStatus').textContent = t('vfxDefaultSaved') })
+$('vfxApply').addEventListener('click', () => { vfxApply().then(() => vfxModal.classList.add('hidden')) })
+vfxModal.addEventListener('click', (e) => { if (e.target === vfxModal && !fxBusy) vfxModal.classList.add('hidden') })
 
 // encart de gauche : uniquement le personnage sélectionné (la sélection se fait via le
 // drawer Personnages ou les touches 1-9) + mute de sa piste d'enregistrement
@@ -1965,14 +1985,19 @@ function renderRecCharList() {
   const head = document.createElement('div'); head.className = 'rec-ch-head'
   const dot = document.createElement('span'); dot.className = 'rec-dot-c'; dot.style.background = c.color || '#888'
   const nm = document.createElement('span'); nm.className = 'rec-ch-name'; nm.textContent = c.name
-  // bouton FX : chaîne d'effets auto (EQ/comp/niveau) sur les takes retenues —
-  // les nouveaux enregistrements sont traités à la volée tant que c'est actif
-  const fx = document.createElement('button')
-  fx.className = 'rec-fxbtn' + (project.voiceFxOn ? ' on' : '')
-  fx.textContent = 'FX'
-  fx.disabled = fxBusy
-  fx.title = fxBusy ? t('recFxBusy') : t('recFxHint')
-  fx.addEventListener('click', (e) => { e.stopPropagation(); toggleVoiceFx() })
+  // bouton FX scindé : gauche (FX) bascule la chaîne du perso, droite (engrenage) ouvre
+  // la modale de réglages. Quand la chaîne est active, « FX » s'entoure d'un halo vert.
+  const fxOn = !!(c.fx && c.fx.enabled)
+  const fx = document.createElement('div')
+  fx.className = 'rec-fxbtn' + (fxOn ? ' on' : '') + (fxBusy ? ' busy' : '')
+  const fxMain = document.createElement('button'); fxMain.className = 'rec-fx-main'; fxMain.textContent = 'FX'
+  fxMain.disabled = fxBusy; fxMain.title = fxBusy ? t('recFxBusy') : t('recFxToggle')
+  fxMain.addEventListener('click', (e) => { e.stopPropagation(); toggleCharFx(c.id) })
+  const fxSep = document.createElement('span'); fxSep.className = 'rec-fx-sep'
+  const fxCog = document.createElement('button'); fxCog.className = 'rec-fx-cog'; fxCog.innerHTML = COG_SVG
+  fxCog.disabled = fxBusy; fxCog.title = t('recFxHint')
+  fxCog.addEventListener('click', (e) => { e.stopPropagation(); openVoiceFx(c.id) })
+  fx.append(fxMain, fxSep, fxCog)
   const mute = document.createElement('button'); mute.className = 'trk-spk' + (isRecMuted(c.id) ? '' : ' on'); mute.innerHTML = isRecMuted(c.id) ? SPK_OFF_SVG : SPK_ON_SVG
   mute.title = t('recMuteTrack'); mute.addEventListener('click', (e) => { e.stopPropagation(); toggleRecMute(c.id) })
   head.append(dot, nm, fx, mute)
@@ -2312,6 +2337,118 @@ async function toggleOutputTest() {
   $('outTest').textContent = t('outTestStop')
 }
 
+// ---------- calibration de la latence (test « tape en rythme ») ----------
+// Une barre défile vers un repère fixe toutes les 0,7 s pendant 10 s ; l'utilisateur tape
+// dans ses mains quand elle l'atteint (mouvement anticipable, contrairement à un flash).
+// On détecte les transitoires au micro, on apparie chaque battement à la tape la plus
+// proche et on prend la moyenne des écarts → compensation (réglage global).
+const CALIB_INTERVAL = 700, CALIB_DURATION = 10000, CALIB_HIT_MS = 120
+let calib = null
+
+function calibRender() {
+  const go = $('calibGo'), redo = $('calibRedo')
+  if (!calib || calib.phase === 'idle') { go.textContent = t('calibStart'); go.disabled = false; redo.classList.add('hidden') }
+  else if (calib.phase === 'run') { go.textContent = t('calibStart'); go.disabled = true; redo.classList.add('hidden') }
+  else { go.textContent = t('calibApply', calib.resultMs); go.disabled = false; redo.classList.remove('hidden') }
+}
+
+function openCalib() {
+  stopOutputTest()
+  calib = { phase: 'idle', resultMs: 0 }
+  $('calibTitle').textContent = t('calibTitle')
+  $('calibIntro').textContent = t('calibIntro')
+  $('calibClose').textContent = t('calibClose')
+  $('calibRedo').textContent = t('calibRedo')
+  $('calibStatus').textContent = ''
+  $('calibRunner').style.left = '0%'
+  $('calibMarker').classList.remove('hit')
+  calibRender()
+  $('calibModal').classList.remove('hidden')
+}
+
+function stopCalibRun() {
+  if (!calib) return
+  if (calib.raf) cancelAnimationFrame(calib.raf); calib.raf = null
+  try { calib.stream && calib.stream.getTracks().forEach((tr) => tr.stop()) } catch {}
+  try { calib.ac && calib.ac.close() } catch {}
+  calib.ac = null; calib.stream = null
+  $('calibMarker').classList.remove('hit')
+}
+
+function closeCalib() { stopCalibRun(); $('calibModal').classList.add('hidden'); calib = null }
+
+async function startCalib() {
+  stopCalibRun()
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return
+  let stream
+  try { stream = await openMic({ echoCancellation: false, noiseSuppression: false, autoGainControl: false }) }
+  catch { toast(t('recMicDenied')); return }
+  const ac = makeAcForStream(stream)
+  try { await ac.resume() } catch {}
+  const analyser = ac.createAnalyser(); analyser.fftSize = 1024
+  ac.createMediaStreamSource(stream).connect(analyser)
+  const buf = new Uint8Array(analyser.fftSize)
+  const t0 = performance.now() // départ de la barre (1re passe = amorce, sans battement)
+  // battements = arrivées de la barre sur le repère, après une passe d'amorce
+  const beatTimes = []
+  for (let tt = CALIB_INTERVAL; tt <= CALIB_DURATION; tt += CALIB_INTERVAL) beatTimes.push(t0 + tt)
+  Object.assign(calib, { phase: 'run', ac, stream, beatTimes, beats: [], claps: [], beatIdx: 0, offAt: 0, lastClap: 0, endAt: t0 + CALIB_DURATION + 500 })
+  const runner = $('calibRunner'), marker = $('calibMarker')
+  const CLAP_THRESH = 0.15, REFRACTORY = 300
+  const tick = () => {
+    const now = performance.now()
+    // détection de tape : transitoire fort, avec période réfractaire
+    analyser.getByteTimeDomainData(buf)
+    let peak = 0; for (let i = 0; i < buf.length; i++) { const d = Math.abs(buf[i] - 128); if (d > peak) peak = d }
+    if (peak / 128 > CLAP_THRESH && now - calib.lastClap > REFRACTORY) { calib.lastClap = now; calib.claps.push(now) }
+    // la barre défile de gauche (0) au repère (100 %) sur chaque intervalle
+    const phase = ((now - t0) % CALIB_INTERVAL) / CALIB_INTERVAL
+    runner.style.left = (phase * 100) + '%'
+    // battement : la barre atteint le repère → pulse du repère, on horodate le battement
+    if (calib.beatIdx < beatTimes.length && now >= beatTimes[calib.beatIdx]) { marker.classList.add('hit'); calib.offAt = now + CALIB_HIT_MS; calib.beats.push(beatTimes[calib.beatIdx]); calib.beatIdx++ }
+    if (calib.offAt && now >= calib.offAt) { marker.classList.remove('hit'); calib.offAt = 0 }
+    const remain = Math.max(0, Math.ceil((t0 + CALIB_DURATION - now) / 1000))
+    $('calibStatus').textContent = t('calibRunning', remain) + ' · ' + t('calibClaps', calib.claps.length)
+    if (now >= calib.endAt) { finishCalib(); return }
+    calib.raf = requestAnimationFrame(tick)
+  }
+  calibRender()
+  calib.raf = requestAnimationFrame(tick)
+}
+
+function finishCalib() {
+  stopCalibRun()
+  // apparie chaque battement à la tape la plus proche (±350 ms) ; la passe d'amorce a déjà
+  // servi d'échauffement, donc tous les battements comptent
+  const deltas = []
+  for (const b of calib.beats) {
+    let best = null
+    for (const c of calib.claps) { const d = c - b; if (Math.abs(d) <= 350 && (best === null || Math.abs(d) < Math.abs(best))) best = d }
+    if (best !== null) deltas.push(best)
+  }
+  if (deltas.length < 4) { calib.phase = 'idle'; $('calibStatus').textContent = t('calibFewClaps'); calibRender(); return }
+  const avg = deltas.reduce((a, b) => a + b, 0) / deltas.length
+  calib.resultMs = clamp(Math.round(avg), -500, 500)
+  calib.phase = 'done'
+  $('calibStatus').textContent = t('calibResult', calib.resultMs, deltas.length)
+  calibRender()
+}
+
+function applyCalib() {
+  if (!calib || calib.phase !== 'done') return
+  audioCfg.recOffsetMs = calib.resultMs
+  $('recOffset').value = String(calib.resultMs)
+  saveAudioCfg()
+  toast(t('calibApplied', calib.resultMs))
+  closeCalib()
+}
+
+$('calibBtn').addEventListener('click', openCalib)
+$('calibClose').addEventListener('click', closeCalib)
+$('calibRedo').addEventListener('click', startCalib)
+$('calibGo').addEventListener('click', () => { if (!calib || calib.phase === 'run') return; if (calib.phase === 'done') applyCalib(); else startCalib() })
+$('calibModal').addEventListener('click', (e) => { if (e.target === $('calibModal') && (!calib || calib.phase !== 'run')) closeCalib() })
+
 // ---- modèles actifs (persistés localement), dropdowns qui ne montrent que l'installé ----
 const activeWhisper = () => localStorage.getItem('trActiveModel') || ''
 const setActiveWhisper = (m) => localStorage.setItem('trActiveModel', m)
@@ -2433,7 +2570,7 @@ $('recOffset').addEventListener('change', () => { audioCfg.recOffsetMs = clamp(N
 $('outTest').addEventListener('click', toggleOutputTest)
 $('trActive').addEventListener('change', () => setActiveWhisper($('trActive').value))
 $('sepActive').addEventListener('change', () => setActiveSep($('sepActive').value))
-$('setClose').addEventListener('click', () => { stopOutputTest(); setModal.classList.add('hidden') })
+$('setClose').addEventListener('click', () => { stopOutputTest(); closeCalib(); setModal.classList.add('hidden') })
 window.api.onWhisperProgress((p) => {
   if (!p || $('setProgress').classList.contains('hidden')) return
   if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
@@ -3436,6 +3573,7 @@ const SPK_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></svg>'
 // icône bouche = marqueur « piste voix par défaut » (monitoring doublage)
 const VOICE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-4 14-4 18 0-4 4-14 4-18 0z"/><path d="M3 12h18"/></svg>'
+const COG_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 const baseName = (p) => String(p || '').replace(/^.*[\\/]/, '')
 const trackChannels = (n) => (n === 1 ? 'mono' : n === 2 ? 'stéréo' : n ? n + ' ch' : '')
 
@@ -3936,7 +4074,6 @@ video.addEventListener('error', () => showLoading(false))
 
 // ============================================================ waveform
 let wave = null // { peaks: Float32Array, perSec, duration } — forme d'onde de la piste active
-let videoRmsDb = null // niveau moyen (dBFS) de la piste active — référence d'équilibrage de la chaîne voix
 let waveOffset = 0 // décalage (s) de la piste active, appliqué à l'affichage de la forme d'onde
 let showWave = true
 let waveToken = 0
@@ -4000,8 +4137,6 @@ async function buildWaveform() {
     for (let i = 0; i < n; i++) if (peaks[i] > max) max = peaks[i]
     if (max > 0) for (let i = 0; i < n; i++) peaks[i] /= max
     wave = { peaks, perSec: PER_SEC, duration: audio.duration }
-    // niveau moyen absolu (avant normalisation des peaks) : cible de la chaîne voix
-    { let sq = 0, ns = 0; const d0 = audio.getChannelData(0); for (let i = 0; i < d0.length; i += 4) { sq += d0[i] * d0[i]; ns++ }; videoRmsDb = ns ? 10 * Math.log10(sq / ns + 1e-12) : null }
     // mixage mono conservé pour le scrub sonore (rééchantillonné à la lecture)
     const mono = new Float32Array(audio.length)
     for (let ch2 = 0; ch2 < audio.numberOfChannels; ch2++) {
@@ -5975,6 +6110,11 @@ async function loadProjectData(data, path) {
   project.plans ||= []
   project.fonts ||= []
   project.defaultFont ||= null
+  // chaîne voix : preset par défaut projet + réglages par personnage complétés/normalisés
+  project.voiceFxDefault = VoiceFx.normalize(project.voiceFxDefault)
+  for (const c of project.characters) if (c.fx) c.fx = VoiceFx.normalize(c.fx)
+  // rétrocompat : ancien flag global voiceFxOn → active la chaîne de chaque personnage
+  if (data.voiceFxOn) for (const c of project.characters) getCharFx(c).enabled = true
   // ré-enregistre les polices embarquées du projet (FontFace) avant le 1er rendu
   await registerAllFonts()
   populateFontSelects()
@@ -7126,7 +7266,7 @@ async function runExport(outPathOverride) {
     if (!r.active || !recSel.has(r.characterId)) continue
     const eff = recEffDur(r)
     if (!eff || r.startTime + eff <= startT) continue // entièrement avant la fenêtre
-    takes.push({ name: (recUseFx && r.fxFile) ? r.fxFile : r.file, offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
+    takes.push({ name: (recUseFx && charFxOn(r.characterId) && r.fxFile) ? r.fxFile : r.file, offset: Math.max(0, r.startTime - startT), trimStart: r.trimStart || 0, trimDur: eff })
   }
   const noBand = exp.bandPos === 'none'
   const r = await window.api.exportStart({

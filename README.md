@@ -11,7 +11,7 @@ dubbed video out.
 
 **[Download](https://github.com/fusorf/LibreRythmo/releases/latest)** - Windows installer (`.exe`) or portable zip, macOS `.dmg` (Apple Silicon), and Linux (`AppImage` / `.deb` / `.pacman`).
 
-![Main window](docs/screenshot-main.png)
+![Main window](docs/screenshot-main.webp)
 
 ## Create and export the rythmo band
 
@@ -56,9 +56,13 @@ perform over the real scene, keep the best takes, and deliver the dubbed video.
 - **Quality of life** - character merge, video zoom by rectangle, free bookmarks distinct from scenes/shots, resume at the saved playhead, project name suggested from the video file.
 - **Projects** - single-file `.rythmo` (JSON), autosave, recent projects, undo/redo, dark/light themes, **English / French / Spanish** UI (system language by default), optional Discord Rich Presence.
 
-| Fullscreen playback (F5) | Audio & video tracks | MP4 export |
+| Frame-accurate sync | Mute a character's voice | Assisted transcription |
 |---|---|---|
-| ![Playback](docs/screenshot-player.png) | ![Tracks](docs/screenshot-tracks.png) | ![Export](docs/screenshot-export.png) |
+| ![Frame-accurate sync](docs/screenshot-sync.webp) | ![Mute a character's voice](docs/screenshot-voice.webp) | ![Assisted transcription](docs/screenshot-transcribe.webp) |
+| **Recording studio** | **Scenes & shots** | **Characters & reactions** |
+| ![Recording studio](docs/screenshot-recording.webp) | ![Scenes & shots](docs/screenshot-scenes.webp) | ![Characters & reactions](docs/screenshot-characters.webp) |
+| **Fullscreen playback (F5)** | **MP4 export** | |
+| ![Fullscreen playback](docs/screenshot-player.webp) | ![MP4 export](docs/screenshot-export.webp) | |
 
 ## Usage
 
