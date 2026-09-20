@@ -137,6 +137,12 @@ let dirty = false
 let selectedCharId = null
 let selectedIds = new Set() // sélection multiple ; l'inspecteur n'apparaît que pour 1 réplique
 const singleSelected = () => (selectedIds.size === 1 ? getLine([...selectedIds][0]) : null)
+// saisie directe sur la bande (style Capella) : un caret clignotant est dessiné sur
+// la réplique éditée. bandEdit = { lineId, wi (index de mot), ci (index de caractère
+// dans words[wi].text), sel (ancre de sélection {wi,ci} ou null), blinkT0 }. État
+// purement UI, jamais sérialisé dans le projet.
+let bandEdit = null
+let bandEditPushed = false // une seule étape d'annulation par session de saisie
 // Zoom exprimé en SECONDES VISIBLES sur la largeur de la bande ; pxPerSec en découle
 // (recomputePps) selon la largeur courante. Dézoom max = 5 s, défaut = 3 s, zoom max = 1,8 s.
 let secondsVisible = 3
@@ -483,6 +489,7 @@ function undo() {
   if (!undoStack.length) return
   redoStack.push(undoSnap())
   restoreState(undoStack.pop())
+  revalidateBandEdit()
   syncUndoMenu()
 }
 
@@ -491,6 +498,7 @@ function redo() {
   undoStack.push(undoSnap())
   if (undoStack.length > UNDO_MAX) undoStack.shift()
   restoreState(redoStack.pop())
+  revalidateBandEdit()
   syncUndoMenu()
 }
 
@@ -3608,6 +3616,7 @@ let tcw = 0, tch = 0
 
 function setTab(name) {
   activeTab = (name === 'tracks' || name === 'rec') ? name : 'rythmo'
+  if (activeTab !== 'rythmo') exitBandEdit() // la saisie sur la bande n'existe que sur l'onglet Rythmo
   const onTracks = activeTab === 'tracks'
   const onRec = activeTab === 'rec'
   document.body.classList.toggle('on-tracks', onTracks) // cache les contrôles rythmo, montre l'import audio
@@ -4593,6 +4602,9 @@ function renderBand(c, now, W, H, pps, opts) {
       }
     }
 
+    // caret de saisie directe (éditeur interactif uniquement, pas à l'export/détaché)
+    if (opts.handles && bandEdit && bandEdit.lineId === line.id) drawBandCaret(c, line, y, th)
+
     // voix off (bouche non visible à l'écran) : texte souligné sur toute la réplique
     if (line.voiceOff) {
       c.strokeStyle = color
@@ -4968,7 +4980,166 @@ function hitTest(x, y) {
   return { kind: 'band' }
 }
 
+// ============================================================ saisie sur la bande
+// Longueur éditable d'un mot ('_' = silence : 0 caractère, le caret se pose au début).
+const caretLen = (line, wi) => { const t = line.words[wi]?.text; return !t || t === '_' ? 0 : t.length }
+const beLine = () => (bandEdit ? getLine(bandEdit.lineId) : null)
+const beActive = () => !!beLine()
+
+function enterBandEdit(lineId, wi, ci, opt = {}) {
+  if (DETACHED || activeTab !== 'rythmo') return
+  const line = getLine(lineId)
+  if (!line) return
+  selectedIds = new Set([lineId])
+  selectedCueId = null
+  refreshInspector()
+  const lw = line.words.length - 1
+  wi = clamp(wi == null ? lw : wi, 0, lw)
+  ci = clamp(ci == null ? caretLen(line, wi) : ci, 0, caretLen(line, wi))
+  bandEdit = { lineId, wi, ci, sel: null, blinkT0: performance.now() }
+  bandEditPushed = false
+  if (opt.select) { bandEdit.sel = { wi: 0, ci: 0 }; bandEdit.wi = lw; bandEdit.ci = caretLen(line, lw) }
+}
+function exitBandEdit() { bandEdit = null; bandEditPushed = false }
+// après undo/redo/chargement : recale le caret dans les bornes, ou sort si la ligne a disparu.
+function revalidateBandEdit() {
+  const line = beLine()
+  if (!line) { bandEdit = null; return }
+  const lw = line.words.length - 1
+  bandEdit.wi = clamp(bandEdit.wi, 0, lw)
+  bandEdit.ci = clamp(bandEdit.ci, 0, caretLen(line, bandEdit.wi))
+  bandEdit.sel = null
+  bandEditPushed = false
+}
+
+// géométrie d'un mot pour le caret (mêmes calculs que le rendu des mots), puis x
+// écran d'un caractère. xOf convertit un temps en x (identique au rendu interactif).
+function bandWordGeom(c, line, wi, th, xOf) {
+  const w = line.words[wi]
+  const wx = xOf(w.start)
+  const ww = (w.end - w.start) * pxPerSec
+  const txt = w.text === '_' ? '' : w.text
+  c.font = `bold ${Math.round(th * 0.52)}px ${bandFontFamily(line)}`
+  const natural = c.measureText(txt).width
+  const pad = Math.max(3, Math.min(th * 0.14, ww * 0.18))
+  const scale = txt ? Math.max(0.2, (ww - pad * 2) / Math.max(1, natural)) : 1
+  return { w, wx, ww, txt, pad, scale }
+}
+function bandCharX(c, line, wi, ci, th, xOf) {
+  const g = bandWordGeom(c, line, wi, th, xOf)
+  return g.wx + g.pad + c.measureText(g.txt.slice(0, Math.min(ci, g.txt.length))).width * g.scale
+}
+
+// clic -> (lineId, wi, ci) : ligne sous (x,y), mot sous x, caractère le plus proche.
+function caretHitTest(x, y) {
+  const now = effectiveTime()
+  const th = trackH()
+  const c = ctx
+  const xOf = (tt) => xAtTime(tt, now)
+  const ordered = [...project.lines].sort((a, b) => (selectedIds.has(a.id) ? -1 : selectedIds.has(b.id) ? 1 : 0))
+  for (const line of ordered) {
+    const y0 = trackY(line.track)
+    if (y < y0 || y > y0 + th) continue
+    const t = timeAtX(x, now)
+    if (t < lineStart(line) || t > lineEnd(line)) continue
+    let wi = line.words.length - 1
+    for (let i = 0; i < line.words.length; i++) {
+      const w = line.words[i]
+      if (x <= xOf(w.end)) { wi = i; break }
+    }
+    const g = bandWordGeom(c, line, wi, th, xOf)
+    let ci = 0, best = Infinity
+    for (let i = 0; i <= g.txt.length; i++) {
+      const cx = g.wx + g.pad + c.measureText(g.txt.slice(0, i)).width * g.scale
+      const d = Math.abs(cx - x)
+      if (d < best) { best = d; ci = i }
+    }
+    return { lineId: line.id, wi, ci }
+  }
+  return null
+}
+
+// caret + surbrillance de sélection, dessinés sur la réplique éditée (éditeur seul).
+const caretCmp = (a, b) => (a.wi - b.wi) || (a.ci - b.ci)
+function caretRange() {
+  const cur = { wi: bandEdit.wi, ci: bandEdit.ci }
+  if (!bandEdit.sel) return [cur, cur]
+  return caretCmp(bandEdit.sel, cur) <= 0 ? [bandEdit.sel, cur] : [cur, bandEdit.sel]
+}
+function drawBandCaret(c, line, y, th) {
+  const xOf = (t) => xAtTime(t, effectiveTime())
+  const col = getChar(line.characterId)?.color || '#bbbbbb'
+  c.save()
+  const [a, b] = caretRange()
+  if (bandEdit.sel && caretCmp(a, b) !== 0) {
+    c.fillStyle = col + '44'
+    for (let wi = a.wi; wi <= b.wi; wi++) {
+      const g = bandWordGeom(c, line, wi, th, xOf)
+      const from = wi === a.wi ? a.ci : 0
+      const to = wi === b.wi ? b.ci : g.txt.length
+      const x1 = g.wx + g.pad + c.measureText(g.txt.slice(0, from)).width * g.scale
+      const x2 = g.wx + g.pad + c.measureText(g.txt.slice(0, to)).width * g.scale
+      c.fillRect(Math.min(x1, x2), y + th * 0.28, Math.abs(x2 - x1) + (wi < b.wi ? 4 : 0), th * 0.62)
+    }
+  }
+  if (((performance.now() - (bandEdit.blinkT0 || 0)) % 1000) < 550) {
+    const cx = bandCharX(c, line, bandEdit.wi, bandEdit.ci, th, xOf)
+    c.strokeStyle = col
+    c.lineWidth = 2
+    c.beginPath(); c.moveTo(cx, y + th * 0.30); c.lineTo(cx, y + th * 0.90); c.stroke()
+    c.lineWidth = 1
+  }
+  c.restore()
+}
+
+// déplacements de caret (avec passage de mot en mot).
+function caretRight(line) {
+  let { wi, ci } = bandEdit
+  if (ci < caretLen(line, wi)) ci++
+  else if (wi < line.words.length - 1) { wi++; ci = 0 }
+  return { wi, ci }
+}
+function caretLeft(line) {
+  let { wi, ci } = bandEdit
+  if (ci > 0) ci--
+  else if (wi > 0) { wi--; ci = caretLen(line, wi) }
+  return { wi, ci }
+}
+
+// clavier en mode saisie. Renvoie true si la touche est consommée (l'appelant
+// arrête alors le traitement global : réacs, détection, espace=lecture, etc.).
+function handleBandEditKey(e) {
+  const line = beLine()
+  if (!line) { bandEdit = null; return false }
+  const k = e.key
+  const move = (pos) => {
+    if (e.shiftKey) { if (!bandEdit.sel) bandEdit.sel = { wi: bandEdit.wi, ci: bandEdit.ci } }
+    else bandEdit.sel = null
+    bandEdit.wi = pos.wi; bandEdit.ci = pos.ci
+    bandEdit.blinkT0 = performance.now()
+  }
+  if (k === 'Escape') { e.preventDefault(); exitBandEdit(); return true }
+  if (k === 'ArrowRight') { e.preventDefault(); move(caretRight(line)); return true }
+  if (k === 'ArrowLeft') { e.preventDefault(); move(caretLeft(line)); return true }
+  if (k === 'Home') { e.preventDefault(); move({ wi: 0, ci: 0 }); return true }
+  if (k === 'End') { const lw = line.words.length - 1; e.preventDefault(); move({ wi: lw, ci: caretLen(line, lw) }); return true }
+  if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'a') {
+    e.preventDefault()
+    const lw = line.words.length - 1
+    bandEdit.sel = { wi: 0, ci: 0 }; bandEdit.wi = lw; bandEdit.ci = caretLen(line, lw)
+    bandEdit.blinkT0 = performance.now()
+    return true
+  }
+  // Étape A : les touches d'édition sont consommées (no-op) pour ne pas déclencher
+  // les réacs/détection tant que le caret est actif ; l'édition arrive à l'étape B.
+  if (k === 'Enter') { e.preventDefault(); exitBandEdit(); return true }
+  if (k === 'Backspace' || k === 'Delete' || k === ' ') { e.preventDefault(); return true }
+  if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); return true }
+  return false // Ctrl+Z/Y, F1, etc. : laisser passer
+}
+
 canvas.addEventListener('pointerdown', (e) => {
+  if (beActive()) exitBandEdit() // un clic ailleurs sort de la saisie (le double-clic ré-entre)
   const r = canvas.getBoundingClientRect()
   const x = e.clientX - r.left
   const y = e.clientY - r.top
@@ -5204,10 +5375,8 @@ canvas.addEventListener('dblclick', (e) => {
   const y = e.clientY - r.top
   const hit = hitTest(x, y)
   if (hit.kind === 'line') {
-    selectedIds = new Set([hit.line.id])
-    refreshInspector()
-    ins.text.focus()
-    ins.text.select()
+    const pos = caretHitTest(x, y) || { lineId: hit.line.id, wi: 0, ci: 0 }
+    enterBandEdit(pos.lineId, pos.wi, pos.ci)
   } else if (y > RULER_H) {
     const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
     const t = timeAtX(x, effectiveTime())
@@ -5765,6 +5934,12 @@ document.addEventListener('keydown', (e) => {
     return
   }
 
+  // saisie directe sur la bande : le caret est sur un canvas (non couvert par `typing`),
+  // donc on intercepte ici, AVANT réacs/détection/espace-lecture/Ctrl+A-tout-sélectionner.
+  if (beActive() && activeTab === 'rythmo' && !e.altKey) {
+    if (handleBandEditKey(e)) return
+  }
+
   // onglet Pistes : seul Suppr (piste importée sélectionnée) est géré ici ; les autres
   // raccourcis liés aux répliques (copier/coller, sélection, réacs, Entrée) sont inactifs
   if (activeTab === 'tracks') {
@@ -6115,6 +6290,7 @@ async function openProjectDialog() {
 }
 
 async function loadProjectData(data, path) {
+  exitBandEdit() // le projet change : toute saisie en cours devient caduque
   project = Object.assign(newProject(), data)
   project.version = 2 // les anciens projets (v1) se rouvrent et sont ré-enregistrés en v2
   project.characters ||= []

@@ -24,7 +24,16 @@ const SETUP = `loadProjectData({
       { text: 'Salut', start: 2.2, end: 2.8 } ] }
   ],
   loops: [], plans: [], audioTracks: []
-}, null); 'ok'`
+}, null);
+window.beSetup = () => {
+  if (!project.characters.length) project.characters = [{ id: 'c1', name: 'Alice', color: '#e8443a' }]
+  project.lines = [{ id: 'be1', characterId: project.characters[0].id, track: 0, words: [
+    { text: 'Bonjour', start: 1.0, end: 1.6 }, { text: 'toi', start: 1.6, end: 2.0 } ] }]
+  selectedIds = new Set()
+  if (typeof exitBandEdit === 'function') exitBandEdit()
+  activeTab = 'rythmo'
+};
+'ok'`
 
 // Each test: an expression that must evaluate to true. Guarded with typeof so the
 // suite stays green if a feature isn't present yet.
@@ -614,6 +623,66 @@ const TESTS = [
     const okFits = L.video.w <= W + 1 && L.video.h <= H + 1 && L.video.w > 0 && L.video.h > 0
     exp.bandPos = prev; layoutExport()
     return okNoBand && okFits
+  })()`],
+  // --- v3.4 saisie sur la bande : étape A (caret + navigation) ---
+  // NB : les tests précédents mutent le projet partagé ; chaque test rétablit sa
+  // propre réplique 'be1' ("Bonjour"=7 lettres, "toi"=3) pour être autonome.
+  ['bandEdit A: entrée pose le caret', `(() => {
+    if (typeof enterBandEdit !== 'function') return true
+    beSetup()
+    enterBandEdit('be1', 0, 3)
+    const ok = !!bandEdit && bandEdit.lineId === 'be1' && bandEdit.wi === 0 && bandEdit.ci === 3
+    exitBandEdit()
+    return ok
+  })()`],
+  ['bandEdit A: navigation caret (mot à mot, Home/End)', `(() => {
+    if (typeof enterBandEdit !== 'function') return true
+    beSetup()
+    const ev = (k, o = {}) => Object.assign({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} }, o)
+    enterBandEdit('be1', 0, 7) // fin de "Bonjour"
+    handleBandEditKey(ev('ArrowRight'))
+    const a = bandEdit.wi === 1 && bandEdit.ci === 0 // passe au mot suivant
+    handleBandEditKey(ev('ArrowLeft'))
+    const b = bandEdit.wi === 0 && bandEdit.ci === 7 // revient en fin de mot précédent
+    handleBandEditKey(ev('End'))
+    const c = bandEdit.wi === 1 && bandEdit.ci === 3 // "toi"
+    handleBandEditKey(ev('Home'))
+    const d = bandEdit.wi === 0 && bandEdit.ci === 0
+    exitBandEdit()
+    return a && b && c && d
+  })()`],
+  ['bandEdit A: sélection Shift + Ctrl+A', `(() => {
+    if (typeof enterBandEdit !== 'function') return true
+    beSetup()
+    const ev = (k, o = {}) => Object.assign({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} }, o)
+    enterBandEdit('be1', 0, 0)
+    handleBandEditKey(ev('ArrowRight', { shiftKey: true }))
+    const selOk = bandEdit.sel && bandEdit.sel.wi === 0 && bandEdit.sel.ci === 0 && bandEdit.wi === 0 && bandEdit.ci === 1
+    handleBandEditKey(ev('a', { ctrlKey: true }))
+    const allOk = bandEdit.sel.wi === 0 && bandEdit.sel.ci === 0 && bandEdit.wi === 1 && bandEdit.ci === 3
+    exitBandEdit()
+    return selOk && allOk
+  })()`],
+  ['bandEdit A: Échap sort du mode', `(() => {
+    if (typeof enterBandEdit !== 'function') return true
+    beSetup()
+    enterBandEdit('be1', 0, 0)
+    const entered = !!bandEdit
+    handleBandEditKey({ key: 'Escape', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    return entered && bandEdit === null
+  })()`],
+  ['bandEdit A: charX croissant + draw() sans erreur', `(() => {
+    if (typeof bandCharX !== 'function') return true
+    beSetup()
+    enterBandEdit('be1', 0, 0)
+    const xOf = (t) => xAtTime(t, effectiveTime())
+    const th = trackH()
+    const l1 = project.lines.find((l) => l.id === 'be1')
+    let prev = -Infinity, mono = true
+    for (let i = 0; i <= 7; i++) { const x = bandCharX(ctx, l1, 0, i, th, xOf); if (x < prev) mono = false; prev = x }
+    let drew = true; try { draw() } catch (e) { drew = 'ERR: ' + e.message }
+    exitBandEdit()
+    return mono && drew === true
   })()`],
 ]
 
