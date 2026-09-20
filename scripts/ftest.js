@@ -773,6 +773,17 @@ const TESTS = [
     exitBandEdit()
     return ok
   })()`],
+  // --- v3.4 saisie sur la bande : étape C (retrait du texte de l'inspecteur) ---
+  ['bandEdit C: champ texte retiré, inspecteur intact', `(() => {
+    if (typeof enterBandEdit !== 'function') return true
+    beSetup()
+    const gone = !document.getElementById('insText')
+    selectedIds = new Set(['be1'])
+    let ok = true; try { refreshInspector() } catch (e) { ok = 'ERR: ' + e.message }
+    const started = document.getElementById('insStart').value.length > 0 // timecodes toujours peuplés
+    exitBandEdit()
+    return gone && ok === true && started
+  })()`],
 ]
 
 function getJson() {

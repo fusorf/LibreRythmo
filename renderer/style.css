@@ -796,7 +796,6 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
   color: var(--dim);
   font-size: 12px;
 }
-#insText { flex: 1; font-size: 14px; }
 .tc { width: 110px; font-family: 'Consolas', monospace; text-align: center; }
 .arrow { color: var(--dim); }
 /* bouton bascule de l'inspecteur (voix off) : texte souligné = convention « bouche non visible » */

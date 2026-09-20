@@ -662,7 +662,6 @@ function applyLang() {
 
   ins.voiceOff.textContent = t('insVoiceOff')
   ins.voiceOff.title = t('insVoiceOffTitle')
-  ins.text.placeholder = t('insTextPh')
   ins.start.title = t('insStart')
   ins.end.title = t('insEnd')
   $('insDel').title = t('insDelTitle')
@@ -2872,7 +2871,6 @@ const ins = {
   entry: $('insEntry'),
   exit: $('insExit'),
   voiceOff: $('insVoiceOff'),
-  text: $('insText'),
   start: $('insStart'),
   end: $('insEnd'),
 }
@@ -2950,7 +2948,6 @@ function refreshInspector() {
   ins.entry.value = line.entry || ''
   ins.exit.value = line.exit || ''
   ins.voiceOff.classList.toggle('active', !!line.voiceOff)
-  if (changed || document.activeElement !== ins.text) ins.text.value = line.words.map((w) => w.text).join(' ')
   if (changed || document.activeElement !== ins.start) ins.start.value = formatTc(lineStart(line), project.fps)
   if (changed || document.activeElement !== ins.end) ins.end.value = formatTc(lineEnd(line), project.fps)
 }
@@ -3054,15 +3051,8 @@ ins.voiceOff.addEventListener('click', () => {
   refreshInspector()
   markDirty()
 })
-let insTextPushed = false // une étape d'annulation par session d'édition du texte
-ins.text.addEventListener('focus', () => { insTextPushed = false })
-ins.text.addEventListener('input', () => {
-  const l = singleSelected()
-  if (!l) return
-  if (!insTextPushed) { pushUndo(); insTextPushed = true }
-  l.words = splitWords(ins.text.value, lineStart(l), lineEnd(l))
-  markDirty()
-})
+// le texte s'édite désormais directement sur la bande (caret) ; l'inspecteur ne
+// garde que les timecodes de début/fin, le personnage, la piste, la police, etc.
 ins.start.addEventListener('change', () => {
   const l = singleSelected()
   const t = parseTc(ins.start.value, project.fps)
