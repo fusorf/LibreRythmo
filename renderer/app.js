@@ -60,17 +60,48 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.add('hidden'), 2200)
 }
 
-// notification de mise à jour : bannière jaune persistante (clic = ouvre les Releases),
-// reste affichée jusqu'à ce qu'on la ferme via la croix
-window.api.onUpdateAvailable((v) => {
-  $('updateMsg').textContent = t('updateAvailable', v)
-  $('updateBanner').classList.remove('hidden')
-})
-$('updateBanner').addEventListener('click', () => window.api.openReleases())
-$('updateClose').addEventListener('click', (e) => {
-  e.stopPropagation()
-  $('updateBanner').classList.add('hidden')
-})
+// notification de mise à jour : bannière jaune à états, persistante, fermable via la croix.
+//   install     : version dispo, clic = télécharger en place (updater natif)
+//   github      : version dispo mais pas d'install in-app (dev/zip portable), clic = ouvre GitHub
+//   downloading : téléchargement en cours (barre de progression, clic ignoré)
+//   ready       : téléchargé, clic = redémarrer et installer
+;(() => {
+  const banner = $('updateBanner'), msg = $('updateMsg'), bar = $('updateBar'), fill = bar.querySelector('i')
+  let mode = 'idle'
+  const setBar = (on, pct = 0) => { bar.classList.toggle('hidden', !on); if (on) fill.style.width = `${pct}%` }
+  const toGithub = (key) => { mode = 'github'; msg.textContent = t(key); setBar(false) }
+
+  window.api.onUpdateAvailable((info) => {
+    mode = info.canInstall ? 'install' : 'github'
+    msg.textContent = t('updateAvailable', info.version)
+    setBar(false)
+    banner.classList.remove('hidden')
+  })
+  window.api.onUpdateProgress((pct) => {
+    if (mode !== 'downloading') return
+    msg.textContent = t('updateDownloading', pct)
+    setBar(true, pct)
+  })
+  window.api.onUpdateDownloaded(() => { mode = 'ready'; msg.textContent = t('updateReady'); setBar(false) })
+  window.api.onUpdateError(() => toGithub('updateFailed')) // téléchargement KO : repli GitHub
+
+  banner.addEventListener('click', async () => {
+    if (mode === 'github') return void window.api.openReleases()
+    if (mode === 'ready') return void window.api.installUpdate()
+    if (mode === 'install') {
+      mode = 'downloading'
+      msg.textContent = t('updateDownloading', 0)
+      setBar(true, 0)
+      const ok = await window.api.downloadUpdate()
+      if (!ok && mode === 'downloading') toGithub('updateFailed')
+    }
+    // 'downloading' : clic ignoré
+  })
+  $('updateClose').addEventListener('click', (e) => {
+    e.stopPropagation()
+    banner.classList.add('hidden')
+  })
+})()
 
 // overlay de chargement bloquant (affiché pendant le chargement d'une vidéo)
 function showLoading(on, text) {

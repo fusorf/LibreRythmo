@@ -1537,6 +1537,24 @@ kbd {
 }
 #updateBanner.hidden { display: none; }
 #updateBanner:hover { background: #ffd633; }
+/* barre de progression du téléchargement de la mise à jour */
+#updateBar {
+  flex: 0 0 auto;
+  width: 120px;
+  height: 6px;
+  background: rgba(0, 0, 0, .2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+#updateBar.hidden { display: none; }
+#updateBar > i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #1a1a1a;
+  border-radius: 3px;
+  transition: width .15s linear;
+}
 #updateClose {
   flex: 0 0 auto;
   background: none;

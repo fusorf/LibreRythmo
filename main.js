@@ -56,10 +56,16 @@ const versionLine = () => `Version ${app.getVersion()}${buildInfo?.builtAt ? ` -
 
 let win = null
 
-// ---------- détection de mise à jour (GitHub releases, silencieuse) ----------
+// ---------- détection & installation de mise à jour ----------
 const REPO_URL = 'https://github.com/fusorf/LibreRythmo'
 const DONATE_URL = 'https://buymeacoffee.com/fusorf'
 let latestVersion = null // ex. '1.1.0' si plus récente que l'app, sinon null
+
+// electron-updater : download + install en place (builds installés NSIS/AppImage/dmg).
+// chargé de façon défensive : s'il est absent, on retombe sur la notif GitHub.
+let autoUpdater = null
+try { ({ autoUpdater } = require('electron-updater')) } catch {}
+let updaterNotified = false // vrai dès que l'updater natif a signalé une version installable
 
 function cmpVer(a, b) {
   const pa = a.split('.').map(Number)
@@ -71,8 +77,16 @@ function cmpVer(a, b) {
   return 0
 }
 
-// check au démarrage : pas de popup, pas d'erreur visible si hors-ligne ;
-// si une version plus récente existe, le renderer affiche un toast cliquable
+// prévient le renderer qu'une mise à jour existe.
+// canInstall = true : téléchargement + install in-app (updater natif) ;
+// false : simple lien vers les Releases GitHub (dev, zip portable, updater KO).
+function notifyUpdate(version, canInstall) {
+  latestVersion = version
+  if (win && !win.isDestroyed()) win.webContents.send('update-available', { version, canInstall })
+}
+
+// repli silencieux : interroge l'API GitHub (pas de popup, rien si hors-ligne).
+// utilisé quand l'updater natif n'est pas disponible ou échoue.
 async function checkForUpdate() {
   try {
     const res = await fetch('https://api.github.com/repos/fusorf/LibreRythmo/releases/latest', {
@@ -81,13 +95,39 @@ async function checkForUpdate() {
     })
     if (!res.ok) return
     const tag = String((await res.json()).tag_name || '').replace(/^v/, '')
-    if (/^\d+\.\d+\.\d+$/.test(tag) && cmpVer(tag, app.getVersion()) > 0) {
-      latestVersion = tag
-      if (win && !win.isDestroyed()) win.webContents.send('update-available', tag)
-    }
+    if (/^\d+\.\d+\.\d+$/.test(tag) && cmpVer(tag, app.getVersion()) > 0) notifyUpdate(tag, false)
   } catch {} // hors-ligne / API limitée : silencieux
 }
 
+// check au démarrage. Build empaqueté = updater natif (téléchargement in-app) ;
+// dev ou updater absent = repli GitHub. Toute erreur de l'updater bascule sur le repli.
+function initUpdates() {
+  if (!autoUpdater || !app.isPackaged) { checkForUpdate(); return }
+  autoUpdater.autoDownload = false          // on télécharge seulement au clic de l'utilisateur
+  autoUpdater.autoInstallOnAppQuit = true   // sinon, install différée à la prochaine fermeture
+  autoUpdater.on('update-available', (info) => { updaterNotified = true; notifyUpdate(info.version, true) })
+  autoUpdater.on('download-progress', (p) => {
+    if (win && !win.isDestroyed()) win.webContents.send('update-progress', Math.round(p.percent || 0))
+  })
+  autoUpdater.on('update-downloaded', () => {
+    if (win && !win.isDestroyed()) win.webContents.send('update-downloaded')
+  })
+  autoUpdater.on('error', () => {
+    if (win && !win.isDestroyed()) win.webContents.send('update-error')
+    if (!updaterNotified) checkForUpdate() // échec avant toute notif : repli GitHub
+  })
+  autoUpdater.checkForUpdates().catch(() => { if (!updaterNotified) checkForUpdate() })
+}
+
+ipcMain.handle('download-update', async () => {
+  if (!autoUpdater) return false
+  try { await autoUpdater.downloadUpdate(); return true } catch { return false }
+})
+ipcMain.handle('install-update', () => {
+  if (!autoUpdater) return false
+  setImmediate(() => autoUpdater.quitAndInstall()) // relance l'installeur en silencieux puis rouvre l'app
+  return true
+})
 ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/latest`))
 // version de l'app exposée au renderer (synchrone, pour la barre de titre)
 ipcMain.on('app-version', (e) => { e.returnValue = app.getVersion() })
@@ -252,7 +292,7 @@ function createWindow() {
   })
   buildMenu()
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
-  setTimeout(checkForUpdate, 3000) // après le démarrage, sans le ralentir
+  setTimeout(initUpdates, 3000) // après le démarrage, sans le ralentir
 
   // confirmation si le projet a des modifications non enregistrées
   win.on('close', (e) => {

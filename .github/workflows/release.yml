@@ -52,6 +52,8 @@ jobs:
             dist-installer/*.AppImage
             dist-installer/*.deb
             dist-installer/*.pacman
+            dist-installer/latest*.yml
+            dist-installer/*.blockmap
           if-no-files-found: ignore
 
       - name: Publish to release
@@ -65,5 +67,7 @@ jobs:
             dist-installer/*.AppImage
             dist-installer/*.deb
             dist-installer/*.pacman
+            dist-installer/latest*.yml
+            dist-installer/*.blockmap
           fail_on_unmatched_files: false
           generate_release_notes: true

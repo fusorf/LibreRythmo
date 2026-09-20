@@ -1,7 +1,7 @@
 {
   "name": "librerythmo",
   "productName": "LibreRythmo",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "LibreRythmo - studio de doublage libre (bande rythmo + enregistrement)",
   "author": "fusorf",
   "license": "GPL-3.0-or-later",
@@ -19,6 +19,7 @@
     "ws": "^8.21.0"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "ffmpeg-static": "^5.3.0",
     "sherpa-onnx-node": "^1.13.8",
     "tar-stream": "^3.2.1",
@@ -28,6 +29,13 @@
     "appId": "io.github.fusorf.librerythmo",
     "productName": "LibreRythmo",
     "asar": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "fusorf",
+        "repo": "LibreRythmo"
+      }
+    ],
     "directories": {
       "output": "dist-installer",
       "buildResources": "build"
