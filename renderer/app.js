@@ -143,6 +143,7 @@ const singleSelected = () => (selectedIds.size === 1 ? getLine([...selectedIds][
 // purement UI, jamais sérialisé dans le projet.
 let bandEdit = null
 let bandEditPushed = false // une seule étape d'annulation par session de saisie
+let tapCursor = null // frappe/tap-timing (touche 4 en lecture) : { lineId, wi } = prochaine limite
 // Zoom exprimé en SECONDES VISIBLES sur la largeur de la bande ; pxPerSec en découle
 // (recomputePps) selon la largeur courante. Dézoom max = 5 s, défaut = 3 s, zoom max = 1,8 s.
 let secondsVisible = 3
@@ -5223,6 +5224,28 @@ function splitAtPlayhead() {
   markDirty()
 }
 
+// touche 4 (vidéo en lecture) : frappe/tap-timing. Chaque appui cale la fin du mot
+// courant sur la barre rouge (et le début du suivant), puis avance. Flux : on tape
+// tous les mots à l'arrêt, puis on lit et on frappe 4 à chaque syllabe.
+function tapTiming() {
+  const sel = singleSelected()
+  if (tapCursor && sel && sel.id !== tapCursor.lineId) tapCursor = null // la cible a changé
+  if (!tapCursor || !getLine(tapCursor.lineId)) {
+    if (!sel || !sel.words.length) { toast(t('tapNeedLine')); return }
+    tapCursor = { lineId: sel.id, wi: 0 }
+  }
+  const line = getLine(tapCursor.lineId)
+  if (!line || tapCursor.wi >= line.words.length) { tapCursor = null; return }
+  const w = line.words[tapCursor.wi]
+  const end = Math.max(w.start + 0.06, magnetSnapTime(effectiveTime(), line.id))
+  pushUndo() // chaque frappe est sa propre étape d'annulation
+  w.end = end
+  if (line.words[tapCursor.wi + 1]) line.words[tapCursor.wi + 1].start = end
+  markDirty()
+  tapCursor.wi++
+  if (tapCursor.wi >= line.words.length) { tapCursor = null; toast(t('tapDone')) }
+}
+
 // clavier en mode saisie. Renvoie true si la touche est consommée (l'appelant
 // arrête alors le traitement global : réacs, détection, espace=lecture, etc.).
 function handleBandEditKey(e) {
@@ -6064,10 +6087,13 @@ document.addEventListener('keydown', (e) => {
     if (handleBandEditKey(e)) return
   }
 
-  // touche 4 hors saisie : découpe la réplique sous la barre rouge quand la vidéo
-  // est en pause (la frappe/tap-timing en lecture arrive à l'étape E).
+  // touche 4 hors saisie : découpe sous la barre rouge (vidéo en pause) ou frappe/
+  // tap-timing (vidéo en lecture : cale chaque mot sur la barre et avance).
   if (activeTab === 'rythmo' && e.key === '4' && !e.ctrlKey && !e.metaKey && !e.altKey && !beActive()) {
-    if (video.paused) { e.preventDefault(); splitAtPlayhead(); return }
+    e.preventDefault()
+    if (video.paused) splitAtPlayhead()
+    else tapTiming()
+    return
   }
 
   // onglet Pistes : seul Suppr (piste importée sélectionnée) est géré ici ; les autres

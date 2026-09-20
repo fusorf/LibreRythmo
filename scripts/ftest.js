@@ -811,6 +811,32 @@ const TESTS = [
     scrub.time = null
     return before === after
   })()`],
+  // --- v3.4 saisie sur la bande : étape E (touche 4 = frappe/tap-timing en lecture) ---
+  ['bandEdit E: frappe cale les limites mot à mot', `(() => {
+    if (typeof tapTiming !== 'function') return true
+    beSetup()
+    selectedIds = new Set(['be1'])
+    tapCursor = null
+    scrub.time = 1.5; tapTiming() // fin du mot 0 -> 1.5 ; début du mot 1 -> 1.5
+    const l = project.lines.find((x) => x.id === 'be1')
+    const a = Math.abs(l.words[0].end - 1.5) < 1e-9 && Math.abs(l.words[1].start - 1.5) < 1e-9 && tapCursor && tapCursor.wi === 1
+    scrub.time = 1.9; tapTiming() // fin du dernier mot -> curseur terminé
+    const b = Math.abs(l.words[1].end - 1.9) < 1e-9 && tapCursor === null
+    scrub.time = null
+    return a && b
+  })()`],
+  ['bandEdit E: frappe respecte une durée mini par mot', `(() => {
+    if (typeof tapTiming !== 'function') return true
+    beSetup()
+    selectedIds = new Set(['be1'])
+    tapCursor = null
+    scrub.time = 1.0 // sur le début du mot 0 : la fin doit rester > start
+    tapTiming()
+    const l = project.lines.find((x) => x.id === 'be1')
+    const ok = l.words[0].end >= l.words[0].start + 0.06 - 1e-9
+    tapCursor = null; scrub.time = null
+    return ok
+  })()`],
 ]
 
 function getJson() {
