@@ -684,6 +684,95 @@ const TESTS = [
     exitBandEdit()
     return mono && drew === true
   })()`],
+  // --- v3.4 saisie sur la bande : étape B (édition au caractère) ---
+  ['bandEdit B: insertion préserve le timing', `(() => {
+    if (typeof beInsertChar !== 'function') return true
+    beSetup()
+    const ev = (k) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    enterBandEdit('be1', 0, 3) // "Bon|jour"
+    handleBandEditKey(ev('X'))
+    const l = project.lines.find((x) => x.id === 'be1')
+    const ok = l.words[0].text === 'BonXjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
+      && l.words[1].text === 'toi' && l.words[1].start === 1.6 && l.words[1].end === 2.0
+      && bandEdit.wi === 0 && bandEdit.ci === 4
+    exitBandEdit()
+    return ok
+  })()`],
+  ['bandEdit B: espace = split (bornes extérieures intactes)', `(() => {
+    if (typeof beSplitAtCaret !== 'function') return true
+    beSetup()
+    enterBandEdit('be1', 0, 3)
+    handleBandEditKey({ key: ' ', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    const l = project.lines.find((x) => x.id === 'be1')
+    const cut = 1.0 + 0.6 * (3 / 7)
+    const ok = l.words.length === 3 && l.words[0].text === 'Bon' && l.words[1].text === 'jour'
+      && l.words[0].start === 1.0 && Math.abs(l.words[1].end - 1.6) < 1e-9 && Math.abs(l.words[0].end - cut) < 1e-9
+      && l.words[2].text === 'toi' && l.words[2].start === 1.6 && l.words[2].end === 2.0
+      && bandEdit.wi === 1 && bandEdit.ci === 0
+    exitBandEdit()
+    return ok
+  })()`],
+  ['bandEdit B: backspace en début de mot = fusion', `(() => {
+    if (typeof beBackspace !== 'function') return true
+    beSetup()
+    enterBandEdit('be1', 1, 0) // début de "toi"
+    handleBandEditKey({ key: 'Backspace', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    const l = project.lines.find((x) => x.id === 'be1')
+    const ok = l.words.length === 1 && l.words[0].text === 'Bonjourtoi'
+      && l.words[0].start === 1.0 && l.words[0].end === 2.0 && bandEdit.wi === 0 && bandEdit.ci === 7
+    exitBandEdit()
+    return ok
+  })()`],
+  ['bandEdit B: suppr en fin de mot = fusion', `(() => {
+    if (typeof beDeleteForward !== 'function') return true
+    beSetup()
+    enterBandEdit('be1', 0, 7) // fin de "Bonjour"
+    handleBandEditKey({ key: 'Delete', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    const l = project.lines.find((x) => x.id === 'be1')
+    const ok = l.words.length === 1 && l.words[0].text === 'Bonjourtoi' && l.words[0].end === 2.0 && bandEdit.ci === 7
+    exitBandEdit()
+    return ok
+  })()`],
+  ['bandEdit B: suppression de sélection', `(() => {
+    if (typeof beDeleteSelection !== 'function') return true
+    beSetup()
+    const ev = (k, o = {}) => Object.assign({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} }, o)
+    enterBandEdit('be1', 0, 0)
+    handleBandEditKey(ev('ArrowRight', { shiftKey: true }))
+    handleBandEditKey(ev('ArrowRight', { shiftKey: true }))
+    handleBandEditKey(ev('ArrowRight', { shiftKey: true })) // sélection "Bon"
+    handleBandEditKey(ev('Backspace'))
+    const l = project.lines.find((x) => x.id === 'be1')
+    const ok = l.words.length === 2 && l.words[0].text === 'jour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
+      && bandEdit.wi === 0 && bandEdit.ci === 0 && !bandEdit.sel
+    exitBandEdit()
+    return ok
+  })()`],
+  ['bandEdit B: une rafale = un seul undo', `(() => {
+    if (typeof beInsertChar !== 'function') return true
+    beSetup()
+    const ev = (k) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    enterBandEdit('be1', 0, 7)
+    handleBandEditKey(ev('a')); handleBandEditKey(ev('b')); handleBandEditKey(ev('c'))
+    const l1 = project.lines.find((x) => x.id === 'be1')
+    const typed = l1.words[0].text === 'Bonjourabc'
+    undo()
+    const l2 = project.lines.find((x) => x.id === 'be1')
+    const reverted = l2 && l2.words[0].text === 'Bonjour'
+    exitBandEdit()
+    return typed && reverted
+  })()`],
+  ['bandEdit B: symboles réindexés après split', `(() => {
+    if (typeof beSplitAtCaret !== 'function') return true
+    beSetup()
+    const l = project.lines.find((x) => x.id === 'be1')
+    l.symbols = { '1': 'f' } // signe sur "toi" (index 1)
+    enterBandEdit('be1', 0, 3)
+    handleBandEditKey({ key: ' ', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    const ok = l.symbols['2'] === 'f' && l.symbols['1'] == null // "toi" décalé en index 2
+    exitBandEdit()
+    return ok
+  })()`],
 ]
 
 function getJson() {

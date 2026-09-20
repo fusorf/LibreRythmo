@@ -373,8 +373,8 @@ let autofocusText = true // focus du champ texte à la création d'une réplique
 // focus + sélection du champ texte de l'inspecteur après création d'une réplique
 function focusNewLineText() {
   if (!autofocusText) return
-  ins.text.focus()
-  ins.text.select()
+  const l = singleSelected() // addLineAt vient de sélectionner la nouvelle réplique
+  if (l) enterBandEdit(l.id, 0, caretLen(l, 0), { select: true }) // caret sur la bande, texte présélectionné
 }
 
 // pousse tous les réglages au process principal : persistance settings.ini + menu
@@ -5106,6 +5106,100 @@ function caretLeft(line) {
   return { wi, ci }
 }
 
+// ---- opérations d'édition (in place : le timing par mot est préservé) ----
+const wtext = (w) => (w.text === '_' ? '' : w.text) // texte éditable ('_' = silence -> vide)
+const beMutate = () => { if (!bandEditPushed) { pushUndo(); bandEditPushed = true } } // 1 étape d'undo / session
+
+// line.symbols = { [indexDeMot]: cle } : on recale les clés lors d'un ajout/retrait de mot.
+function reindexSymbolsInsert(line, at) {
+  if (!line.symbols) return
+  const out = {}
+  for (const k of Object.keys(line.symbols)) { const i = +k; out[i >= at ? i + 1 : i] = line.symbols[k] }
+  line.symbols = out
+}
+function reindexSymbolsRemove(line, at, count) {
+  if (!line.symbols) return
+  const out = {}
+  for (const k of Object.keys(line.symbols)) {
+    const i = +k
+    if (i >= at && i < at + count) continue
+    out[i >= at + count ? i - count : i] = line.symbols[k]
+  }
+  if (Object.keys(out).length) line.symbols = out
+  else delete line.symbols
+}
+
+function beInsertChar(line, ch) {
+  const w = line.words[bandEdit.wi], t = wtext(w)
+  w.text = t.slice(0, bandEdit.ci) + ch + t.slice(bandEdit.ci)
+  return { wi: bandEdit.wi, ci: bandEdit.ci + 1 }
+}
+function beBackspace(line) {
+  const { wi, ci } = bandEdit, w = line.words[wi], t = wtext(w)
+  if (ci > 0) { w.text = (t.slice(0, ci - 1) + t.slice(ci)) || '_'; return { wi, ci: ci - 1 } }
+  if (wi > 0) { // début de mot : fusion avec le précédent (somme des créneaux)
+    const prev = line.words[wi - 1], caret = wtext(prev).length
+    prev.text = (wtext(prev) + t) || '_'
+    prev.end = w.end
+    line.words.splice(wi, 1)
+    reindexSymbolsRemove(line, wi, 1)
+    return { wi: wi - 1, ci: caret }
+  }
+  return { wi, ci } // début de réplique : rien
+}
+function beDeleteForward(line) {
+  const { wi, ci } = bandEdit, w = line.words[wi], t = wtext(w)
+  if (ci < t.length) { w.text = (t.slice(0, ci) + t.slice(ci + 1)) || '_'; return { wi, ci } }
+  if (wi < line.words.length - 1) { // fin de mot : fusion avec le suivant
+    const next = line.words[wi + 1], caret = t.length
+    w.text = (t + wtext(next)) || '_'
+    w.end = next.end
+    line.words.splice(wi + 1, 1)
+    reindexSymbolsRemove(line, wi + 1, 1)
+    return { wi, ci: caret }
+  }
+  return { wi, ci }
+}
+// Espace = split du mot au caret : coupe texte + temps (proportionnel), bornes
+// extérieures préservées exactement ; l'utilisateur cale ensuite la limite (touche 4).
+function beSplitAtCaret(line) {
+  const { wi, ci } = bandEdit, w = line.words[wi], t = wtext(w), len = t.length
+  const cut = w.start + (w.end - w.start) * (len ? ci / len : 0.5)
+  const left = { text: t.slice(0, ci) || '_', start: w.start, end: cut }
+  const right = { text: t.slice(ci) || '_', start: cut, end: w.end }
+  line.words.splice(wi, 1, left, right)
+  reindexSymbolsInsert(line, wi + 1)
+  return { wi: wi + 1, ci: 0 }
+}
+// suppression d'une plage sélectionnée (mono- ou multi-mots -> fusion des extrêmes)
+function beDeleteSelection(line) {
+  if (!bandEdit.sel) return null
+  const [a, b] = caretRange()
+  if (caretCmp(a, b) === 0) { bandEdit.sel = null; return null }
+  let pos
+  if (a.wi === b.wi) {
+    const w = line.words[a.wi], t = wtext(w)
+    w.text = (t.slice(0, a.ci) + t.slice(b.ci)) || '_'
+    pos = { wi: a.wi, ci: a.ci }
+  } else {
+    const first = line.words[a.wi], last = line.words[b.wi]
+    first.text = (wtext(first).slice(0, a.ci) + wtext(last).slice(b.ci)) || '_'
+    first.end = last.end
+    const n = b.wi - a.wi
+    line.words.splice(a.wi + 1, n)
+    reindexSymbolsRemove(line, a.wi + 1, n)
+    pos = { wi: a.wi, ci: a.ci }
+  }
+  bandEdit.sel = null
+  return pos
+}
+// Entrée en cours de saisie : valide la réplique et en ouvre une nouvelle à la barre rouge.
+function beCommitNewLine() {
+  exitBandEdit()
+  const nl = addLineAt(effectiveTime(), null, '…', NEW_LINE_DUR)
+  if (nl) enterBandEdit(nl.id, 0, caretLen(nl, 0), { select: true })
+}
+
 // clavier en mode saisie. Renvoie true si la touche est consommée (l'appelant
 // arrête alors le traitement global : réacs, détection, espace=lecture, etc.).
 function handleBandEditKey(e) {
@@ -5130,11 +5224,18 @@ function handleBandEditKey(e) {
     bandEdit.blinkT0 = performance.now()
     return true
   }
-  // Étape A : les touches d'édition sont consommées (no-op) pour ne pas déclencher
-  // les réacs/détection tant que le caret est actif ; l'édition arrive à l'étape B.
-  if (k === 'Enter') { e.preventDefault(); exitBandEdit(); return true }
-  if (k === 'Backspace' || k === 'Delete' || k === ' ') { e.preventDefault(); return true }
-  if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); return true }
+  // --- édition au caractère (préserve le timing des mots non touchés) ---
+  const apply = (pos) => { bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.sel = null; bandEdit.blinkT0 = performance.now() }
+  if (k === 'Enter') { e.preventDefault(); beCommitNewLine(); return true }
+  if (k === 'Backspace') { e.preventDefault(); beMutate(); apply(beDeleteSelection(line) || beBackspace(line)); markDirty(); return true }
+  if (k === 'Delete') { e.preventDefault(); beMutate(); apply(beDeleteSelection(line) || beDeleteForward(line)); markDirty(); return true }
+  if (k === ' ') { e.preventDefault(); beMutate(); const sp = beDeleteSelection(line); if (sp) apply(sp); apply(beSplitAtCaret(line)); markDirty(); return true }
+  if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault(); beMutate()
+    const sp = beDeleteSelection(line); if (sp) apply(sp)
+    apply(beInsertChar(line, k))
+    markDirty(); return true
+  }
   return false // Ctrl+Z/Y, F1, etc. : laisser passer
 }
 
