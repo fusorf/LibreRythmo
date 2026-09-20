@@ -367,11 +367,16 @@ function setClean() {
   window.api.setDirty(false)
 }
 
+// « LibreRythmo 3.1.0 » (version complète, exposée par le preload)
+const APP_BRAND = (() => {
+  const v = (window.api && window.api.appVersion) || ''
+  return v ? `LibreRythmo ${v}` : 'LibreRythmo'
+})()
 function updateTitle() {
-  if (DETACHED) { document.title = 'LibreRythmo - Monitoring'; return } // fenêtre détachée : titre fixe
+  if (DETACHED) { document.title = `${APP_BRAND} - Monitoring`; return } // fenêtre détachée : titre fixe
   const name = projectPath ? projectPath.replace(/^.*[\\/]/, '') : t('untitled')
   const auto = autosaveOn ? `  [${t('autosaveTag')}]` : ''
-  document.title = `LibreRythmo - ${name}${dirty ? ' •' : ''}${auto}`
+  document.title = `${APP_BRAND} - ${name}${dirty ? ' •' : ''}${auto}`
 }
 
 // ---------- enregistrement automatique (Fichier → Enregistrement automatique)
@@ -1973,7 +1978,7 @@ $('vfxApply').addEventListener('click', () => { vfxApply().then(() => vfxModal.c
 vfxModal.addEventListener('click', (e) => { if (e.target === vfxModal && !fxBusy) vfxModal.classList.add('hidden') })
 
 // encart de gauche : uniquement le personnage sélectionné (la sélection se fait via le
-// drawer Personnages ou les touches 1-9) + mute de sa piste d'enregistrement
+// drawer Personnages) + mute de sa piste d'enregistrement
 function renderRecCharList() {
   const list = $('recCharList'); if (!list) return
   list.innerHTML = ''
@@ -2466,37 +2471,30 @@ function fillActiveDropdown(sel, models, getActive, setActive) {
 }
 
 // une ligne de modèle : nom · taille · bouton Installer / Désinstaller
-function modelRow(m, onInstall, onUninstall, canInstall) {
+function modelRow(m, onInstall, onUninstall) {
   const row = document.createElement('div'); row.className = 'model-row' + (m.present ? ' installed' : '')
   const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = m.label || m.model
   const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = m.present ? fmtDlSize(m.sizeMB) : '~' + fmtDlSize(m.estMB)
   const sp = document.createElement('div'); sp.className = 'spacer'
   const btn = document.createElement('button')
   btn.textContent = m.present ? t('mdlUninstall') : t('mdlInstall')
-  if (!m.present && canInstall === false) { btn.disabled = true; btn.title = t('sepNoPython') }
   btn.addEventListener('click', () => (m.present ? onUninstall(btn) : onInstall(btn)))
   row.append(nm, stt, sp, btn)
   return row
 }
 
-// ligne « Moteur » : peinture depuis le cache (modelCache.trEngine)
+// ligne « Moteur » : moteur natif embarqué → masquée sauf si l'addon ne charge pas
 function paintTrEngine() {
   const el = $('trEngineRow'); if (!el) return
-  const st = modelCache.trEngine || { installed: false, python: null }
-  el.className = 'model-row' + (st.installed ? ' installed' : '')
+  const st = modelCache.trEngine || { installed: false }
+  if (st.installed) { el.style.display = 'none'; return } // moteur intégré, rien à installer
+  el.style.display = ''
+  el.className = 'model-row'
   el.innerHTML = ''
   const nm = document.createElement('span'); nm.className = 'mdl-name'; nm.textContent = t('engName')
-  const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = st.installed ? t('engInstalled') : (st.python ? t('engNotInstalled') : t('sepNoPython'))
+  const stt = document.createElement('span'); stt.className = 'mdl-state'; stt.textContent = t('engUnavailable')
   const sp = document.createElement('div'); sp.className = 'spacer'
-  const btn = document.createElement('button')
-  btn.textContent = st.installed ? t('mdlUninstall') : t('mdlInstall')
-  if (!st.installed && !st.python) { btn.disabled = true; btn.title = t('sepNoPython') }
-  btn.addEventListener('click', async () => {
-    btn.disabled = true
-    if (st.installed) { await window.api.whisperEngineUninstall(); refreshTrCache() }
-    else { setDl(true, t('engInstalling')); const r = await window.api.whisperEngineInstall(); setDl(false, ''); toast(r && r.ok ? t('engInstalled') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'engInstallFail')); refreshTrCache() }
-  })
-  el.append(nm, stt, sp, btn)
+  el.append(nm, stt, sp)
 }
 // peinture instantanée de la liste des modèles de transcription (depuis le cache)
 function paintTrModels() {
@@ -2504,19 +2502,16 @@ function paintTrModels() {
   const list = $('trModelList'); if (!list) return
   list.innerHTML = ''
   const models = modelCache.trModels || []
-  const python = modelCache.python
   for (const m of models) {
     list.appendChild(modelRow(m,
-      async (btn) => { btn.disabled = true; setDl(true, t('trDownloading', 0)); const r = await window.api.whisperInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'trFailed')); refreshTrCache() },
-      async () => { await window.api.whisperDeleteModel(m.model); refreshTrCache() },
-      !!python))
+      async (btn) => { btn.disabled = true; setDl(true, t('trDownloading', 0)); const r = await window.api.whisperInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t('trFailed')); refreshTrCache() },
+      async () => { await window.api.whisperDeleteModel(m.model); refreshTrCache() }))
   }
   fillActiveDropdown($('trActive'), models, activeWhisper, setActiveWhisper)
 }
 // rafraîchit le cache transcription (IPC + fs) puis repeint si les Paramètres sont ouverts
 async function refreshTrCache() {
-  try { modelCache.trEngine = await window.api.whisperEngineStatus() } catch { modelCache.trEngine = { installed: false, python: null } }
-  modelCache.python = modelCache.trEngine ? modelCache.trEngine.python : null
+  try { modelCache.trEngine = await window.api.whisperEngineStatus() } catch { modelCache.trEngine = { installed: false } }
   try { modelCache.trModels = await window.api.whisperListModels() } catch { modelCache.trModels = [] }
   if (setModal && !setModal.classList.contains('hidden')) paintTrModels()
 }
@@ -2526,18 +2521,15 @@ function paintSepModels() {
   const list = $('sepModelList'); if (!list) return
   list.innerHTML = ''
   const models = modelCache.sepModels || []
-  const python = modelCache.python
   for (const m of models) {
     list.appendChild(modelRow(m,
-      async (btn) => { btn.disabled = true; setDl(true, t('sepInstalling')); const r = await window.api.sepInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t(r && r.error === 'no-python' ? 'sepNoPython' : 'sepInstallFail')); refreshSepCache() },
-      async () => { await window.api.sepDeleteModel(m.model); refreshSepCache() },
-      !!python))
+      async (btn) => { btn.disabled = true; setDl(true, t('sepInstalling')); const r = await window.api.sepInstallModel(m.model); setDl(false, ''); toast(r && r.ok ? t('mdlDone') : t('sepInstallFail')); refreshSepCache() },
+      async () => { await window.api.sepDeleteModel(m.model); refreshSepCache() }))
   }
   fillActiveDropdown($('sepActive'), models, activeSep, setActiveSep)
 }
 async function refreshSepCache() {
   try { modelCache.sepModels = await window.api.sepListModels() } catch { modelCache.sepModels = [] }
-  if (modelCache.python == null) { try { modelCache.python = (await window.api.detectPython()).python } catch {} }
   if (setModal && !setModal.classList.contains('hidden')) paintSepModels()
 }
 function renderSepModels() { paintSepModels(); return refreshSepCache() }
@@ -2575,7 +2567,6 @@ window.api.onWhisperProgress((p) => {
   if (!p || $('setProgress').classList.contains('hidden')) return
   if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
   else if (p.phase === 'unpack') { $('setStatus').textContent = t('mdlUnpacking') }
-  else if (p.phase === 'install') { $('setStatus').textContent = p.text || t('engInstalling') }
 })
 window.api.onSepProgress((p) => {
   if (!p) return
@@ -2586,8 +2577,10 @@ window.api.onSepProgress((p) => {
     return
   }
   if ($('setProgress').classList.contains('hidden')) return // sinon = install/download depuis les Paramètres
-  if (p.phase === 'download') { const pct = Math.max(0, Math.min(100, p.pct || 0)); $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
-  else $('setStatus').textContent = p.text || t('sepInstalling')
+  const pct = Math.max(0, Math.min(100, p.pct || 0))
+  if (p.phase === 'download') { $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('trDownloading', pct) }
+  else if (p.phase === 'install') { $('setBar').style.width = pct + '%'; $('setStatus').textContent = t('sepInstalling') } // téléchargement du moteur CLI
+  else $('setStatus').textContent = t('sepInstalling')
 })
 
 // ---------- retrait des voix (séparation IA) : modale dédiée ----------
@@ -2653,7 +2646,7 @@ async function doSeparate() {
   sepBusy = false; sepActive = false
   $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close')
   if (!r || r.error) {
-    const map = { 'no-model': 'sepNeedModel', 'no-engine': 'sepNeedModel', 'no-python': 'sepNoPython', 'no-source': 'sepNoSource', 'extract-failed': 'sepExtractFail' }
+    const map = { 'no-model': 'sepNeedModel', 'no-engine': 'sepNeedModel', 'no-source': 'sepNoSource', 'extract-failed': 'sepExtractFail' }
     const known = map[r && r.error]
     $('sepStatus').textContent = known ? t(known) : t('sepFailed') + (r && r.error ? ' — ' + String(r.error).slice(0, 140) : '')
     return
@@ -5758,17 +5751,6 @@ document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyLines(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); copyLines(); deleteSelected(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteLines(); return }
-  }
-
-  // chiffres 1-9 : sélectionne le Nième personnage (destinataire des nouvelles répliques)
-  // On lit e.code (Digit1..Digit9 / Numpad1..Numpad9), position physique de la touche,
-  // pour que ça marche quelle que soit la disposition (AZERTY : &é"'(-è_ç, etc.)
-  const digitCode = e.code && e.code.match(/^(?:Digit|Numpad)([1-9])$/)
-  if (digitCode && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    const idx = Number(digitCode[1]) - 1
-    if (idx < project.characters.length) {
-      if (activeTab === 'rythmo' || activeTab === 'rec') { e.preventDefault(); selectedCharId = project.characters[idx].id; renderChars(); return }
-    }
   }
 
   // palette de détection ouverte : les touches posent un signe de détection sur la

@@ -112,15 +112,6 @@ const TESTS = [
       && textOn('#ffffff') === '#000' && textOn('#e0e0e0') === '#000'
       && textOn('#c2790f') === '#000' && textOn('#f1c40f') === '#000'
   })()`],
-  ['digit key 1-9 selects character', `(() => {
-    loadProjectData({ version: 2, fps: 25, tracks: 2, fonts: [], loops: [], plans: [], audioTracks: [],
-      characters: [{ id: 'c1', name: 'A', color: '#e8443a' }, { id: 'c2', name: 'B', color: '#3a7ae8' }], lines: [] }, null)
-    activeTab = 'rythmo'; selectedCharId = 'c1'
-    // on lit e.code (position physique) pour marcher en AZERTY ; le caractère 'é'
-    // produit par la touche « 2 » d'un clavier FR porte code 'Digit2'
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'é', code: 'Digit2' }))
-    return selectedCharId === 'c2'
-  })()`],
   ['Transport character badge reflects selection', `(() => {
     const b = document.getElementById('curCharBadge')
     return !!b && b.textContent === getChar(selectedCharId).name

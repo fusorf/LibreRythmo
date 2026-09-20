@@ -3,6 +3,31 @@
 Les changements notables de LibreRythmo. Format inspiré de
 [Keep a Changelog](https://keepachangelog.com/fr/), versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [3.2.0] - 2026-09-20
+
+**« Sans Python »** : les fonctions IA (transcription et séparation de voix) tournent
+désormais avec un moteur natif embarqué, sans aucune installation de Python. Fini les
+boutons de téléchargement grisés « Python introuvable » sur les postes sans Python.
+
+### Moteur IA natif
+
+- **Transcription** (Whisper + VAD Silero + diarisation) portée sur l'addon natif
+  sherpa-onnx (onnxruntime, binaires précompilés). Elle tourne dans un worker pour ne
+  pas figer l'interface ; seuls les modèles Whisper se téléchargent à la demande.
+- **Séparation de voix** via le binaire précompilé sherpa-onnx (MDX-Net ONNX), embarqué
+  comme ffmpeg/yt-dlp et récupéré au 1er modèle installé. Modèles UVR pris sur les
+  releases sherpa-onnx.
+- Extraction des archives de modèles réalisée en interne (plus de dépendance à Python).
+- Crédits mis à jour : sherpa-onnx (Apache-2.0), ONNX Runtime (MIT).
+
+### Interface
+
+- **Barre de titre** : le numéro de version s'affiche (« LibreRythmo 3.2.0 »).
+- **Boîte « À propos »** : bouton **Faire un don** (Buy Me a Coffee), description allégée.
+- **Paramètres** : plus de défilement horizontal sur les petits écrans.
+- Sélection du personnage par les touches 1-9 retirée (elle se fait via l'encart
+  Personnages).
+
 ## [3.0.1] - 2026-09-02
 
 **« De la préparation à la performance »** - LibreRythmo devient un **studio de

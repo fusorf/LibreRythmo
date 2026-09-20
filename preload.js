@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
+  appVersion: ipcRenderer.sendSync('app-version'), // version (barre de titre)
   openVideo: () => ipcRenderer.invoke('open-video'),
   openAudio: () => ipcRenderer.invoke('open-audio'),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
@@ -38,8 +39,6 @@ contextBridge.exposeInMainWorld('api', {
   takeUrl: (projectPath, name) => ipcRenderer.invoke('take-url', projectPath, name),
   deleteTake: (projectPath, name) => ipcRenderer.invoke('delete-take', projectPath, name),
   whisperEngineStatus: () => ipcRenderer.invoke('whisper-engine-status'),
-  whisperEngineInstall: () => ipcRenderer.invoke('whisper-engine-install'),
-  whisperEngineUninstall: () => ipcRenderer.invoke('whisper-engine-uninstall'),
   whisperListModels: () => ipcRenderer.invoke('whisper-list-models'),
   whisperInstallModel: (model) => ipcRenderer.invoke('whisper-install-model', model),
   whisperDeleteModel: (model) => ipcRenderer.invoke('whisper-delete-model', model),
@@ -69,12 +68,9 @@ contextBridge.exposeInMainWorld('api', {
   listCaptureDevices: (api) => ipcRenderer.invoke('list-capture-devices', api),
   captureStart: (opts) => ipcRenderer.invoke('capture-start', opts),
   captureStop: () => ipcRenderer.invoke('capture-stop'),
-  sepConfigGet: () => ipcRenderer.invoke('sep-config-get'),
-  sepConfigSet: (cfg) => ipcRenderer.invoke('sep-config-set', cfg),
   sepListModels: () => ipcRenderer.invoke('sep-list-models'),
   sepInstallModel: (file) => ipcRenderer.invoke('sep-install-model', file),
   sepDeleteModel: (file) => ipcRenderer.invoke('sep-delete-model', file),
-  detectPython: () => ipcRenderer.invoke('detect-python'),
   sepRun: (opts) => ipcRenderer.invoke('sep-run', opts),
   sepCancel: () => ipcRenderer.invoke('sep-cancel'),
   onSepProgress: (cb) => ipcRenderer.on('sep-progress', (e, p) => cb(p)),

@@ -19,8 +19,8 @@ Everything to go from a raw video to a finished rythmo band video (or a DETX for
 ecosystem): write, detect, sync, then export the band composited on the picture.
 
 - **Rythmo band** - 1 to 4 tracks, words stretched to their real duration, frame-accurate sync. Drag lines, snap each word boundary to the lips, multi-select for batch edits (character, font, voice-over), proportional stretch, magnet.
-- **Characters & reactions** - one color per actor, quick selection with keys `1`-`9`, French reac lexicon (`ah`, `oh`, `fff`, `(rire)`…) by palette or key, voice-over (underlined). Per-line **custom fonts** (TTF/OTF embedded in the project) plus bundled open-source faces (Inter, Oswald, Comfortaa, Anton).
-- **Assisted transcription** - bootstrap the text from the audio: multi-speaker diarization creates one character per detected voice (adjustable voice count), source track and language choice, reactions recognized, text split into lines. Engine and models install on demand from Settings - nothing is bundled.
+- **Characters & reactions** - one color per actor, selected from the Characters panel, French reac lexicon (`ah`, `oh`, `fff`, `(rire)`…) by palette or key, voice-over (underlined). Per-line **custom fonts** (TTF/OTF embedded in the project) plus bundled open-source faces (Inter, Oswald, Comfortaa, Anton).
+- **Assisted transcription** - bootstrap the text from the audio: multi-speaker diarization creates one character per detected voice (adjustable voice count), source track and language choice, reactions recognized, text split into lines. Runs fully offline with a bundled native engine (sherpa-onnx, no Python to install); only the Whisper models download on demand from Settings.
 - **Detection marks** - a palette of articulatory signs (labial, labiodental, rounded, open, dental, velar, nasal, glide) placed on syllables by click or key, drawn on the band everywhere (editor, export, fullscreen) - to learn and practise dubbing detection.
 - **ADR cues** - streamers (sweeping wipe) and punches (flash) over the picture, editable on the timeline, to cue the actor without lip-sync (voice-over, audio description, game localization).
 - **Scenes & shots** - scene markers with live stats (lines, duration, characters), prev/next navigation, OUT segments; a **Shots** panel with automatic shot-change detection (ffmpeg) and down-arrow markers on the timeline.
@@ -38,9 +38,9 @@ perform over the real scene, keep the best takes, and deliver the dubbed video.
   Act your part inside the real soundtrack instead of over it (pairs with the voice remover below,
   which produces the instrumental).
 
-- **Recording studio** - a dedicated tab showing the band in final-render mode: pick a character (keys `1`-`9`), press record and act. Each character has their own track; overlapping recordings stack up as takes - keep the best one, trim, drag, compare waveforms. Automatic latency compensation (measured pre-roll + reported pipeline latency + hardware margin, fine-tunable in Settings).
+- **Recording studio** - a dedicated tab showing the band in final-render mode: pick a character, press record and act. Each character has their own track; overlapping recordings stack up as takes - keep the best one, trim, drag, compare waveforms. Automatic latency compensation (measured pre-roll + reported pipeline latency + hardware margin, fine-tunable in Settings).
 - **Automatic voice chain (FX)** - every take is analyzed and processed offline: corrective EQ, dynamic de-esser and plosive tamer, compression, loudness matched to the video track. Pre-rendered as sidecar files; toggle it for playback, choose raw or FX at export.
-- **Voice removal** - produce an instrumental from any audio track with a light local engine (MDX-Net ONNX). Optional, installed on demand - nothing bundled.
+- **Voice removal** - produce an instrumental from any audio track with a native local engine (MDX-Net ONNX via sherpa-onnx, no Python). Optional; the engine binary and model download on demand.
 - **Input & output devices** - WASAPI or DirectShow capture, input/output selection with a live monitor test, all in Settings; devices are remembered by name.
 - **Dubbed video export** - the video export mixes the recordings of the characters you pick into the output (raw or FX); set the band to « none » to deliver the dubbed video alone.
 - **Recordings export (ZIP)** - one mixed track per character laid out on the project timeline (plus optionally every detached take), raw or FX.
@@ -52,7 +52,7 @@ perform over the real scene, keep the best takes, and deliver the dubbed video.
 - **Audio & video tracks** - NLE-style tab: every audio track of the container plus imported files, per-track offset by drag, active track shown as a waveform on the band, full-width timeline with a line map.
 - **Smooth playback** - a 720p H.264 proxy is generated in the background and cached, so 4K/HEVC sources scrub smoothly and play in any codec; the export always re-renders from the full-quality source.
 - **YouTube import** - download a video straight into the project (bundled yt-dlp): quality pick and trim.
-- **Settings** - capture devices and the model manager (transcription + voice removal): installing/removing engines and models is entirely optional, done from the interface, with download-size estimates.
+- **Settings** - capture devices and the model manager (transcription + voice removal): downloading/removing models is entirely optional, done from the interface, with download-size estimates. No Python or external toolchain to install.
 - **Quality of life** - character merge, video zoom by rectangle, free bookmarks distinct from scenes/shots, resume at the saved playhead, project name suggested from the video file.
 - **Projects** - single-file `.rythmo` (JSON), autosave, recent projects, undo/redo, dark/light themes, **English / French / Spanish** UI (system language by default), optional Discord Rich Presence.
 
@@ -70,7 +70,7 @@ perform over the real scene, keep the best takes, and deliver the dubbed video.
 2. Create your characters in the right panel. The selected one is assigned to new lines.
 3. Add lines: import an SRT (`File > Subtitles`), run the assisted transcription (`Tools`), double-click the band, or press `Enter` at the playhead.
 4. Select a line and drag the word-boundary handles onto the lips. Type `_` for an adjustable silence.
-5. Open the **Recording** tab, pick a character (`1`-`9`) and mute them - their original voice drops out during their lines. Record over the scrolling band: takes stack up, keep the best ones, enable **FX** to polish the sound.
+5. Open the **Recording** tab, pick a character and mute them - their original voice drops out during their lines. Record over the scrolling band: takes stack up, keep the best ones, enable **FX** to polish the sound.
 6. `Ctrl+E` to export the composited MP4 with the voices mixed in, `File > Export recordings` for a ZIP of the voice tracks, or PDF / DETX / SRT from the File menu.
 
 Press `F1` in the app for the full shortcut list.
@@ -82,7 +82,6 @@ Press `F1` in the app for the full shortcut list.
 | `Space` | Play / pause |
 | `Left` / `Right`, `Shift+Left/Right` | Previous / next frame, ±1 s |
 | `Enter` | New line at the playhead |
-| `1`-`9` | Select character |
 | `Page Up` / `Page Down` | Previous / next scene |
 | `F5` | Fullscreen playback |
 | `Ctrl+F` | Search lines |

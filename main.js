@@ -1,6 +1,7 @@
 'use strict'
 const { app, BrowserWindow, Menu, ipcMain, dialog, nativeTheme, shell } = require('electron')
 const { spawn } = require('child_process')
+const { Worker } = require('worker_threads')
 const path = require('path')
 const fs = require('fs')
 const net = require('net')
@@ -11,6 +12,40 @@ let ffmpegPath = null
 try {
   ffmpegPath = require('ffmpeg-static')
 } catch {}
+
+// moteur IA embarqué : addon natif sherpa-onnx (onnxruntime, binaires précompilés,
+// AUCUN Python). Chargé paresseusement pour qu'un échec de chargement ne casse pas
+// l'app (les fonctions IA renverront simplement « moteur indisponible »).
+let sherpaMod = null, sherpaTried = false
+function loadSherpa() {
+  if (sherpaTried) return sherpaMod
+  sherpaTried = true
+  try { sherpaMod = require('sherpa-onnx-node') } catch { sherpaMod = null }
+  return sherpaMod
+}
+// extraction .tar.bz2 en pur JS (remplace l'ancien `python -c tarfile`). filter(name)
+// sélectionne les entrées ; flatten = écrire chaque fichier à plat (basename) dans destDir.
+function extractTarBz2(tarball, destDir, opts = {}) {
+  const bz2 = require('unbzip2-stream')
+  const tar = require('tar-stream')
+  const { filter = null, flatten = false } = opts
+  return new Promise((resolve, reject) => {
+    const extract = tar.extract()
+    extract.on('entry', (header, stream, next) => {
+      if (header.type !== 'file' || (filter && !filter(header.name))) { stream.on('end', next); stream.resume(); return }
+      const outPath = path.join(destDir, flatten ? path.basename(header.name) : header.name)
+      try { fs.mkdirSync(path.dirname(outPath), { recursive: true }) } catch {}
+      const ws = fs.createWriteStream(outPath)
+      ws.on('error', reject); ws.on('finish', next)
+      stream.pipe(ws)
+    })
+    extract.on('finish', resolve)
+    extract.on('error', reject)
+    const rs = fs.createReadStream(tarball)
+    rs.on('error', reject)
+    rs.pipe(bz2()).pipe(extract)
+  })
+}
 
 // horodatage de build généré par scripts/make-buildinfo.js au packaging
 let buildInfo = null
@@ -23,6 +58,7 @@ let win = null
 
 // ---------- détection de mise à jour (GitHub releases, silencieuse) ----------
 const REPO_URL = 'https://github.com/fusorf/LibreRythmo'
+const DONATE_URL = 'https://buymeacoffee.com/fusorf'
 let latestVersion = null // ex. '1.1.0' si plus récente que l'app, sinon null
 
 function cmpVer(a, b) {
@@ -53,6 +89,8 @@ async function checkForUpdate() {
 }
 
 ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/latest`))
+// version de l'app exposée au renderer (synchrone, pour la barre de titre)
+ipcMain.on('app-version', (e) => { e.returnValue = app.getVersion() })
 
 // ---------- réglages persistants — settings.ini dans le dossier userData ----------
 const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, subs: false, encoder: 'gpu', discord: true, autofocus: true, seekbar: true }
@@ -326,7 +364,7 @@ const MENU_STR = {
     help: 'Aide',
     guide: 'Guide',
     about: 'À propos',
-    aboutDetail: 'Bande rythmo libre pour le doublage.\n\n{version}\n© 2026 fusorf - licence GPL-3.0-or-later\n\nConstruit avec :\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binaire embarqué via ffmpeg-static) - ffmpeg.org\n•  yt-dlp (Unlicense, binaire embarqué) - github.com/yt-dlp\n•  Chromium & Node.js, embarqués par Electron\n\nLe code source de LibreRythmo est libre (GPL v3).\nLes binaires FFmpeg et yt-dlp embarqués restent sous leur propre licence ; ils sont appelés comme programmes externes.',
+    aboutDetail: '{version}\n© 2026 fusorf - licence GPL-3.0-or-later\n\nConstruit avec :\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binaire embarqué via ffmpeg-static) - ffmpeg.org\n•  yt-dlp (Unlicense, binaire embarqué) - github.com/yt-dlp\n•  sherpa-onnx (Apache-2.0) - transcription & séparation de voix - k2-fsa.github.io/sherpa\n•  ONNX Runtime (MIT), embarqué par sherpa-onnx\n•  Chromium & Node.js, embarqués par Electron\n\nLe code source de LibreRythmo est libre (GPL v3).\nLes binaires FFmpeg, yt-dlp et sherpa-onnx embarqués restent sous leur propre licence ; ils sont appelés comme programmes externes.',
     confirmQuitTitle: 'Modifications non enregistrées',
     confirmQuitMsg: 'Le projet contient des modifications non enregistrées.',
     confirmQuitDetail: 'Quitter sans enregistrer ?',
@@ -336,6 +374,7 @@ const MENU_STR = {
     btnSave: 'Enregistrer',
     btnDontSave: 'Ne pas enregistrer',
     btnClose: 'Fermer',
+    btnDonate: '☕ Faire un don',
     updateAvail: 'Nouvelle version disponible : v{v}',
     dlgSrtSave: 'Exporter les sous-titres',
     dlgVideo: 'Ouvrir une vidéo',
@@ -405,7 +444,7 @@ const MENU_STR = {
     help: 'Help',
     guide: 'Guide',
     about: 'About',
-    aboutDetail: 'Free rythmo band for dubbing.\n\n{version}\n© 2026 fusorf - GPL-3.0-or-later license\n\nBuilt with:\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binary bundled via ffmpeg-static) - ffmpeg.org\n•  yt-dlp (Unlicense, bundled binary) - github.com/yt-dlp\n•  Chromium & Node.js, shipped by Electron\n\nLibreRythmo source code is free software (GPL v3).\nThe bundled FFmpeg and yt-dlp binaries keep their own licenses; they are invoked as external programs.',
+    aboutDetail: '{version}\n© 2026 fusorf - GPL-3.0-or-later license\n\nBuilt with:\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binary bundled via ffmpeg-static) - ffmpeg.org\n•  yt-dlp (Unlicense, bundled binary) - github.com/yt-dlp\n•  sherpa-onnx (Apache-2.0) - transcription & voice separation - k2-fsa.github.io/sherpa\n•  ONNX Runtime (MIT), bundled by sherpa-onnx\n•  Chromium & Node.js, shipped by Electron\n\nLibreRythmo source code is free software (GPL v3).\nThe bundled FFmpeg, yt-dlp and sherpa-onnx binaries keep their own licenses; they are invoked as external programs.',
     confirmQuitTitle: 'Unsaved changes',
     confirmQuitMsg: 'The project has unsaved changes.',
     confirmQuitDetail: 'Quit without saving?',
@@ -415,6 +454,7 @@ const MENU_STR = {
     btnSave: 'Save',
     btnDontSave: "Don't save",
     btnClose: 'Close',
+    btnDonate: '☕ Donate',
     updateAvail: 'New version available: v{v}',
     dlgSrtSave: 'Export subtitles',
     dlgVideo: 'Open a video',
@@ -484,7 +524,7 @@ const MENU_STR = {
     help: 'Ayuda',
     guide: 'Guía',
     about: 'Acerca de',
-    aboutDetail: 'Banda rítmica libre para el doblaje.\n\n{version}\n© 2026 fusorf - licencia GPL-3.0-or-later\n\nConstruido con:\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binario incluido vía ffmpeg-static) - ffmpeg.org\n•  yt-dlp (Unlicense, binario incluido) - github.com/yt-dlp\n•  Chromium & Node.js, incluidos por Electron\n\nEl código fuente de LibreRythmo es libre (GPL v3).\nLos binarios FFmpeg y yt-dlp incluidos conservan sus propias licencias; se invocan como programas externos.',
+    aboutDetail: '{version}\n© 2026 fusorf - licencia GPL-3.0-or-later\n\nConstruido con:\n•  Electron (MIT) - electronjs.org\n•  FFmpeg (GPL v3, binario incluido vía ffmpeg-static) - ffmpeg.org\n•  yt-dlp (Unlicense, binario incluido) - github.com/yt-dlp\n•  sherpa-onnx (Apache-2.0) - transcripción y separación de voz - k2-fsa.github.io/sherpa\n•  ONNX Runtime (MIT), incluido por sherpa-onnx\n•  Chromium & Node.js, incluidos por Electron\n\nEl código fuente de LibreRythmo es libre (GPL v3).\nLos binarios FFmpeg, yt-dlp y sherpa-onnx incluidos conservan sus propias licencias; se invocan como programas externos.',
     confirmQuitTitle: 'Cambios sin guardar',
     confirmQuitMsg: 'El proyecto contiene cambios sin guardar.',
     confirmQuitDetail: '¿Salir sin guardar?',
@@ -494,6 +534,7 @@ const MENU_STR = {
     btnSave: 'Guardar',
     btnDontSave: 'No guardar',
     btnClose: 'Cerrar',
+    btnDonate: '☕ Donar',
     updateAvail: 'Nueva versión disponible: v{v}',
     dlgSrtSave: 'Exportar los subtítulos',
     dlgVideo: 'Abrir un vídeo',
@@ -642,12 +683,13 @@ function buildMenu() {
               title: 'LibreRythmo',
               message: 'LibreRythmo - by fusorf',
               detail: st.aboutDetail.replace('{version}', ver),
-              buttons: [st.btnClose, 'GitHub'],
+              buttons: [st.btnClose, 'GitHub', st.btnDonate],
               defaultId: 0,
               cancelId: 0,
               noLink: true,
             })
             if (r.response === 1) shell.openExternal(REPO_URL)
+            else if (r.response === 2) shell.openExternal(DONATE_URL)
           },
         },
       ],
@@ -1038,13 +1080,13 @@ ipcMain.handle('delete-take', (e, projectPath, name) => {
   return true
 })
 
-// ---------- transcription automatique (sherpa-onnx + Whisper ONNX) ----------
-// Moteur léger « sherpa-onnx » (onnxruntime, wheels précompilés — pas de compilation),
-// installable depuis les Paramètres via pip (Python détecté), comme le séparateur.
-// Modèles Whisper ONNX (dont large-v3-turbo, multilingue) téléchargés/gérés par l'app,
-// + VAD Silero pour le découpage. Résultat produit en SRT (VAD + Whisper) puis importé
-// par le circuit d'import sous-titres existant.
-let whisperProc = null
+// ---------- transcription automatique (sherpa-onnx natif + Whisper ONNX) ----------
+// Moteur embarqué : addon natif sherpa-onnx (onnxruntime, binaires précompilés, AUCUN
+// Python). Modèles Whisper ONNX (dont large-v3-turbo, multilingue) téléchargés/gérés par
+// l'app, + VAD Silero pour le découpage + diarisation locuteurs. La transcription tourne
+// dans whisper-worker.js (worker_thread) pour ne pas figer l'UI. Résultat = segments
+// [{start,end,text,speaker}] importés par le circuit sous-titres existant.
+let whisperWorker = null
 let whisperAbort = null
 function whisperDir() { const d = path.join(app.getPath('userData'), 'whisper-models'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
 // estMB = taille du téléchargement (.tar.bz2) d'après les releases sherpa-onnx.
@@ -1084,38 +1126,8 @@ function pruneWhisperModel(dir) {
   walk(dir)
 }
 
-// vérifie qu'un module Python est importable / lance pip en streamant les lignes
-function pyImportable(py, mod) {
-  return new Promise((res) => { const inv = pythonInvoke(py); let p; try { p = spawn(inv[0], [...inv.slice(1), '-c', 'import ' + mod], { stdio: 'ignore' }) } catch { return res(false) } p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
-}
-function pipRun(py, args, phase) {
-  const inv = pythonInvoke(py)
-  return new Promise((resolve) => {
-    let tail = ''
-    try { whisperProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', ...args], { stdio: ['ignore', 'pipe', 'pipe'] }) }
-    catch { whisperProc = null; return resolve(false) }
-    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const line = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop(); if (line && win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase, text: line.slice(0, 120) }) }
-    whisperProc.stdout.on('data', on); whisperProc.stderr.on('data', on)
-    whisperProc.on('close', (c) => { whisperProc = null; resolve(c === 0) })
-    whisperProc.on('error', () => { whisperProc = null; resolve(false) })
-  })
-}
-ipcMain.handle('whisper-engine-status', async () => {
-  const py = await detectPython()
-  const installed = py ? await pyImportable(py, 'sherpa_onnx') : false
-  return { installed, python: py }
-})
-ipcMain.handle('whisper-engine-install', async () => {
-  if (whisperProc) return { error: 'busy' }
-  const py = await detectPython(); if (!py) return { error: 'no-python' }
-  const ok = await pipRun(py, ['install', '--user', '-U', 'sherpa-onnx'], 'install')
-  return ok ? { ok: true } : { error: 'install-failed' }
-})
-ipcMain.handle('whisper-engine-uninstall', async () => {
-  const py = await detectPython(); if (!py) return { error: 'no-python' }
-  await pipRun(py, ['uninstall', '-y', 'sherpa-onnx'], 'install')
-  return { ok: true }
-})
+// le moteur est désormais l'addon natif embarqué : « installé » = addon chargeable.
+ipcMain.handle('whisper-engine-status', () => ({ installed: !!loadSherpa(), python: null }))
 
 ipcMain.handle('whisper-list-models', () => WHISPER_MODELS.map((m) => {
   const present = whisperModelPresent(m.name)
@@ -1135,9 +1147,8 @@ async function downloadTo(url, out, phase) {
   fs.renameSync(tmp, out); whisperAbort = null
 }
 ipcMain.handle('whisper-install-model', async (e, name) => {
-  if (whisperProc || whisperAbort) return { error: 'busy' }
+  if (whisperWorker || whisperAbort) return { error: 'busy' }
   const spec = WHISPER_MODELS.find((m) => m.name === name); if (!spec) return { error: 'unknown-model' }
-  const py = await detectPython(); if (!py) return { error: 'no-python' } // requis pour extraire le .tar.bz2
   try {
     const tarball = path.join(whisperDir(), spec.asset)
     await downloadTo(SHERPA_ASR_URL(spec.asset), tarball, 'download')
@@ -1145,8 +1156,8 @@ ipcMain.handle('whisper-install-model', async (e, name) => {
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch {}
     fs.mkdirSync(dir, { recursive: true })
     if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'unpack' })
-    const inv = pythonInvoke(py)
-    const okx = await new Promise((res) => { const p = spawn(inv[0], [...inv.slice(1), '-c', 'import sys,tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])', tarball, dir], { stdio: 'ignore' }); p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
+    let okx = true
+    try { await extractTarBz2(tarball, dir) } catch { okx = false } // extraction .tar.bz2 en JS (plus de Python)
     try { fs.unlinkSync(tarball) } catch {}
     if (!okx || !whisperModelPresent(name)) return { error: 'extract-failed' }
     try { pruneWhisperModel(dir) } catch {} // ne garde que l'int8 → disque ~2× plus léger
@@ -1154,7 +1165,7 @@ ipcMain.handle('whisper-install-model', async (e, name) => {
     return { ok: true }
   } catch (err) { whisperAbort = null; return { error: String((err && err.message) || err) } }
 })
-ipcMain.handle('whisper-cancel', () => { try { if (whisperAbort) whisperAbort.abort() } catch {} try { if (whisperProc) whisperProc.kill() } catch {} whisperAbort = null; whisperProc = null; return true })
+ipcMain.handle('whisper-cancel', () => { try { if (whisperAbort) whisperAbort.abort() } catch {} try { if (whisperWorker) whisperWorker.terminate() } catch {} whisperAbort = null; whisperWorker = null; return true })
 
 // ---------- diarisation (locuteurs) : modèles ONNX auto-téléchargés (best-effort) ----------
 const DIAR_SEG_ASSET = 'sherpa-onnx-pyannote-segmentation-3-0.tar.bz2'
@@ -1164,15 +1175,14 @@ const DIAR_EMB_URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/sp
 const diarSegDir = () => path.join(whisperDir(), 'diar-seg')
 const diarEmbPath = () => path.join(whisperDir(), 'diar-emb.onnx')
 const diarSegModel = () => findFileRec(diarSegDir(), /\.onnx$/i)
-async function ensureDiarModels(py) {
+async function ensureDiarModels() {
   let seg = diarSegModel()
   if (!seg) {
     try {
       const tarball = path.join(whisperDir(), DIAR_SEG_ASSET)
       await downloadTo(DIAR_SEG_URL, tarball, 'download')
       try { fs.mkdirSync(diarSegDir(), { recursive: true }) } catch {}
-      const inv = pythonInvoke(py)
-      await new Promise((res) => { const p = spawn(inv[0], [...inv.slice(1), '-c', 'import sys,tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])', tarball, diarSegDir()], { stdio: 'ignore' }); p.on('close', res); p.on('error', res) })
+      try { await extractTarBz2(tarball, diarSegDir()) } catch {} // extraction .tar.bz2 en JS
       try { fs.unlinkSync(tarball) } catch {}
       seg = diarSegModel()
     } catch {}
@@ -1182,99 +1192,10 @@ async function ensureDiarModels(py) {
   return { seg, emb }
 }
 
-// script Python : diarisation (locuteurs) + VAD (Silero) + Whisper → JSON de segments
-// [{start,end,text,speaker}]. La diarisation est ignorée proprement si ses modèles
-// manquent (tout retombe sur un seul locuteur).
-const WHISPER_PY = `import sys, json, wave
-import numpy as np
-import sherpa_onnx
-
-wav_path, enc, dec, tok, vad_model, seg_model, emb_model, lang, num_speakers, out_json = sys.argv[1:11]
-
-recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
-    encoder=enc, decoder=dec, tokens=tok,
-    language=("" if lang == "auto" else lang),
-    task="transcribe", num_threads=2,
-)
-
-with wave.open(wav_path, "rb") as f:
-    total = f.getnframes()
-    raw = f.readframes(total)
-samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-dur = (total / 16000.0) if total else 1.0
-
-turns = []
-if seg_model and emb_model:
-    try:
-        dcfg = sherpa_onnx.OfflineSpeakerDiarizationConfig(
-            segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
-                pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=seg_model)),
-            embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=emb_model),
-            clustering=(sherpa_onnx.FastClusteringConfig(num_clusters=int(num_speakers)) if int(num_speakers) > 0 else sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=0.7)),
-            min_duration_on=0.3, min_duration_off=0.5,
-        )
-        sd = sherpa_onnx.OfflineSpeakerDiarization(dcfg)
-        def cb(a, b):
-            print("PROGRESS %d" % int(a / max(1, b) * 50), flush=True)
-            return 0
-        dres = sd.process(samples, callback=cb).sort_by_start_time()
-        turns = [(s.start, s.end, s.speaker) for s in dres]
-    except Exception as ex:
-        print("DIARERR %s" % ex, flush=True)
-
-def speaker_of(a, b):
-    best = -1
-    bov = 0.0
-    for (s, e, sp) in turns:
-        ov = min(b, e) - max(a, s)
-        if ov > bov:
-            bov = ov
-            best = sp
-    return best if best >= 0 else 0
-
-config = sherpa_onnx.VadModelConfig()
-config.silero_vad.model = vad_model
-config.silero_vad.threshold = 0.5
-config.silero_vad.min_silence_duration = 0.25
-config.silero_vad.min_speech_duration = 0.2
-config.silero_vad.max_speech_duration = 15
-config.sample_rate = 16000
-vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=180)
-
-segs = []
-def drain():
-    while not vad.empty():
-        seg = vad.front
-        start = seg.start / 16000.0
-        st = recognizer.create_stream()
-        st.accept_waveform(16000, seg.samples)
-        recognizer.decode_stream(st)
-        text = st.result.text.strip()
-        end = start + len(seg.samples) / 16000.0
-        if text:
-            segs.append({"start": start, "end": end, "text": text, "speaker": speaker_of(start, end)})
-            print("PROGRESS %d" % (50 + int(min(50, end / dur * 50))), flush=True)
-        vad.pop()
-
-window = 512
-i = 0
-while i < len(samples):
-    vad.accept_waveform(samples[i:i + window])
-    i += window
-    drain()
-vad.flush()
-drain()
-
-with open(out_json, "w", encoding="utf-8") as fo:
-    json.dump(segs, fo, ensure_ascii=False)
-print("DONE %d" % len(segs), flush=True)
-`
-
 ipcMain.handle('whisper-transcribe', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
-  if (whisperProc) return { error: 'busy' }
-  const py = await detectPython(); if (!py) return { error: 'no-engine' }
-  if (!(await pyImportable(py, 'sherpa_onnx'))) return { error: 'no-engine' }
+  if (whisperWorker) return { error: 'busy' }
+  if (!loadSherpa()) return { error: 'no-engine' } // addon natif indisponible
   const f = whisperModelFiles(opts.model || 'turbo')
   if (!f.enc || !f.dec || !f.tok || !fs.existsSync(vadModelPath())) return { error: 'no-model' }
   const src = opts.source; if (!src || !fs.existsSync(src)) return { error: 'no-source' }
@@ -1287,27 +1208,27 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
   const okx = await new Promise((resolve) => { const p = spawn(ffmpegPath, exArgs, { stdio: 'ignore' }); p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false)) })
   if (!okx) return { error: 'extract-failed' }
   // 2) modèles de diarisation (best-effort — sinon un seul locuteur)
-  const diar = await ensureDiarModels(py)
-  // 3) diarisation + VAD + Whisper → segments JSON
-  const scriptPath = path.join(app.getPath('temp'), 'lr-whisper.py')
-  try { fs.writeFileSync(scriptPath, WHISPER_PY, 'utf8') } catch {}
-  const outJson = path.join(app.getPath('temp'), `lr-whisper-${Date.now()}.json`)
+  const diar = await ensureDiarModels()
+  // 3) diarisation + VAD + Whisper dans un worker_thread (natif, ne fige pas l'UI)
   const lang = opts.language || 'auto'
-  const inv = pythonInvoke(py)
   const numSpeakers = Math.max(0, Math.min(10, Number(opts.numSpeakers) || 0))
-  const args = [...inv.slice(1), scriptPath, wav, f.enc, f.dec, f.tok, vadModelPath(), diar.seg || '', diar.emb || '', lang, String(numSpeakers), outJson]
   return await new Promise((resolve) => {
-    let tail = ''
-    try { whisperProc = spawn(inv[0], args, { stdio: ['ignore', 'pipe', 'pipe'] }) } catch { return resolve({ error: 'engine-spawn-failed' }) }
-    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/PROGRESS (\d+)/); if (m && win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'transcribe', pct: Number(m[1]) }) }
-    whisperProc.stdout.on('data', on); whisperProc.stderr.on('data', on)
-    whisperProc.on('close', (code) => {
-      whisperProc = null
-      try { fs.unlinkSync(wav) } catch {}
-      if (code === 0 && fs.existsSync(outJson)) { let segments = []; try { segments = JSON.parse(fs.readFileSync(outJson, 'utf8')) } catch {}; try { fs.unlinkSync(outJson) } catch {}; resolve({ ok: true, segments }) }
-      else resolve({ error: tail.slice(-300) || 'transcribe-failed' })
+    let settled = false
+    const cleanup = () => { try { fs.unlinkSync(wav) } catch {}; whisperWorker = null }
+    const finish = (r) => { if (settled) return; settled = true; cleanup(); resolve(r) }
+    try {
+      whisperWorker = new Worker(path.join(__dirname, 'whisper-worker.js'), {
+        workerData: { wav, enc: f.enc, dec: f.dec, tok: f.tok, vadModel: vadModelPath(), seg: diar.seg || '', emb: diar.emb || '', lang, numSpeakers },
+      })
+    } catch { return finish({ error: 'engine-spawn-failed' }) }
+    whisperWorker.on('message', (m) => {
+      if (!m) return
+      if (m.type === 'progress') { if (win && !win.isDestroyed()) win.webContents.send('whisper-progress', { phase: 'transcribe', pct: m.pct }) }
+      else if (m.type === 'done') finish({ ok: true, segments: m.segments || [] })
+      else if (m.type === 'error') finish({ error: String(m.error || 'transcribe-failed').slice(-300) })
     })
-    whisperProc.on('error', () => { whisperProc = null; resolve({ error: 'engine-spawn-failed' }) })
+    whisperWorker.on('error', (err) => finish({ error: String((err && err.message) || err).slice(-300) }))
+    whisperWorker.on('exit', () => finish({ error: 'transcribe-failed' })) // sort sans 'done' = échec/annulation
   })
 })
 
@@ -1379,44 +1300,58 @@ ipcMain.handle('capture-stop', () => {
 })
 
 // ---------- séparation de voix : gestionnaire de modèles MDX-Net ONNX ----------
-// Moteur « audio-separator » (onnxruntime, sans PyTorch) installé via pip au 1er modèle
-// installé (Python détecté). Les modèles ONNX sont téléchargés/gérés par l'app (dossier
+// Moteur : binaire CLI précompilé « sherpa-onnx-offline-source-separation » (onnxruntime,
+// AUCUN Python), embarqué comme ffmpeg/yt-dlp, téléchargé depuis les releases sherpa-onnx
+// au 1er modèle installé. Les modèles UVR ONNX sont téléchargés/gérés par l'app (dossier
 // dédié) : Installer = (moteur si absent) + télécharger le .onnx ; Désinstaller =
-// supprimer le .onnx. L'instrumental produit devient une piste audio du projet.
+// supprimer le .onnx. L'accompaniment produit (sans voix) devient une piste du projet.
 let sepProc = null
 let sepAbort = null
-function sepCfgPath() { return path.join(app.getPath('userData'), 'sep-config.json') }
-function readSepCfg() { try { return JSON.parse(fs.readFileSync(sepCfgPath(), 'utf8')) } catch { return {} } }
-ipcMain.handle('sep-config-get', () => readSepCfg())
-ipcMain.handle('sep-config-set', (e, cfg) => { try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg || {}), 'utf8') } catch {} return true })
 ipcMain.handle('sep-default-dir', (e, projectPath) => sepDir(projectPath))
-// détection d'un interpréteur Python (pour installer/lancer le moteur via pip)
-function pythonInvoke(py) { return py === 'py' ? ['py', '-3'] : [py] }
-function detectPython() {
-  return new Promise((resolve) => {
-    const cands = ['python3', 'python', 'py']
-    let i = 0
-    const tryNext = () => {
-      if (i >= cands.length) return resolve(null)
-      const py = cands[i++]
-      const inv = pythonInvoke(py)
-      let p
-      try { p = spawn(inv[0], [...inv.slice(1), '--version'], { stdio: 'ignore' }) }
-      catch { return tryNext() }
-      p.on('close', (c) => (c === 0 ? resolve(py) : tryNext()))
-      p.on('error', tryNext)
-    }
-    tryNext()
-  })
+
+// binaire CLI de séparation : bundle « shared » précompilé sherpa-onnx par plateforme,
+// dont on extrait bin+lib (exe + DLL/.so) à plat dans userData/sep-bin/ (le exe trouve
+// ses libs dans son propre dossier). Version épinglée = celle de l'addon sherpa-onnx-node.
+const SHERPA_VER = '1.13.8'
+const SEP_CLI_BIN = process.platform === 'win32' ? 'sherpa-onnx-offline-source-separation.exe' : 'sherpa-onnx-offline-source-separation'
+const SEP_CLI_BUNDLE = {
+  'win32-x64': `sherpa-onnx-v${SHERPA_VER}-win-x64-shared-MD-Release.tar.bz2`,
+  'linux-x64': `sherpa-onnx-v${SHERPA_VER}-linux-x64-shared.tar.bz2`,
+  'darwin-arm64': `sherpa-onnx-v${SHERPA_VER}-osx-arm64-shared.tar.bz2`,
+  'darwin-x64': `sherpa-onnx-v${SHERPA_VER}-osx-x64-shared.tar.bz2`,
 }
-ipcMain.handle('detect-python', async () => ({ python: await detectPython() }))
+function sepBinDir() { const d = path.join(app.getPath('userData'), 'sep-bin'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
+function sepCliPath() { const p = path.join(sepBinDir(), SEP_CLI_BIN); try { return fs.existsSync(p) ? p : null } catch { return null } }
+// télécharge + extrait le CLI de séparation si absent (streame la progression 'install')
+async function ensureSepCli() {
+  const found = sepCliPath(); if (found) return found
+  const asset = SEP_CLI_BUNDLE[`${process.platform}-${process.arch}`]
+  if (!asset) throw new Error('no-sep-binary')
+  const tarball = path.join(sepBinDir(), asset)
+  const url = `https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VER}/${asset}`
+  const tmp = tarball + '.part'
+  sepAbort = new AbortController()
+  const res = await fetch(url, { signal: sepAbort.signal, headers: { 'User-Agent': 'LibreRythmo' } })
+  if (!res.ok || !res.body) { sepAbort = null; throw new Error('engine HTTP ' + res.status) }
+  const total = Number(res.headers.get('content-length')) || 0
+  const ws = fs.createWriteStream(tmp); const reader = res.body.getReader(); let got = 0
+  for (;;) { const { done, value } = await reader.read(); if (done) break; ws.write(Buffer.from(value)); got += value.length; if (win && !win.isDestroyed()) win.webContents.send('sep-progress', { phase: 'install', pct: total ? Math.round((got / total) * 100) : 0 }) }
+  await new Promise((r2, rj) => { ws.end(() => r2()); ws.on('error', rj) })
+  fs.renameSync(tmp, tarball); sepAbort = null
+  // n'extrait que bin/ et lib/ (exe + libs), à plat dans sep-bin/
+  await extractTarBz2(tarball, sepBinDir(), { filter: (n) => /\/(bin|lib)\/[^/]+$/.test(n), flatten: true })
+  try { fs.unlinkSync(tarball) } catch {}
+  if (process.platform !== 'win32') { try { fs.chmodSync(path.join(sepBinDir(), SEP_CLI_BIN), 0o755) } catch {} }
+  return sepCliPath()
+}
 
 function sepModelsDir() { const d = path.join(app.getPath('userData'), 'sep-models'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
 const SEP_MODELS = [
   { file: 'UVR-MDX-NET-Inst_HQ_4.onnx', estMB: 66, label: 'MDX-Net Inst HQ 4' },
   { file: 'UVR_MDXNET_KARA_2.onnx', estMB: 51, label: 'MDX-Net Karaoké 2' },
 ]
-const SEP_MODEL_URL = (f) => `https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/${f}`
+// modèles UVR depuis la release sherpa-onnx (métadonnées requises par le moteur natif)
+const SEP_MODEL_URL = (f) => `https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/${f}`
 ipcMain.handle('sep-list-models', () => SEP_MODELS.map((m) => {
   const p = path.join(sepModelsDir(), m.file)
   let sizeMB = 0, present = false
@@ -1424,33 +1359,11 @@ ipcMain.handle('sep-list-models', () => SEP_MODELS.map((m) => {
   return { model: m.file, label: m.label, present, sizeMB, estMB: m.estMB }
 }))
 ipcMain.handle('sep-delete-model', (e, file) => { try { fs.unlinkSync(path.join(sepModelsDir(), path.basename(file))) } catch {} return true })
-function sepPkgImportable(py) {
-  return new Promise((resolve) => {
-    const inv = pythonInvoke(py)
-    let p
-    try { p = spawn(inv[0], [...inv.slice(1), '-c', 'import audio_separator'], { stdio: 'ignore' }) } catch { return resolve(false) }
-    p.on('close', (c) => resolve(c === 0)); p.on('error', () => resolve(false))
-  })
-}
 ipcMain.handle('sep-install-model', async (e, file) => {
   if (sepProc || sepAbort) return { error: 'busy' }
-  const py = await detectPython()
-  if (!py) return { error: 'no-python' }
-  const inv = pythonInvoke(py)
-  // 1) moteur audio-separator si absent (pip)
-  if (!(await sepPkgImportable(py))) {
-    const okEng = await new Promise((resolve) => {
-      let tail = ''
-      try { sepProc = spawn(inv[0], [...inv.slice(1), '-m', 'pip', 'install', '--user', '-U', 'audio-separator[cpu]'], { stdio: ['ignore', 'pipe', 'pipe'] }) }
-      catch { sepProc = null; return resolve(false) }
-      const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const line = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop(); if (line && win && !win.isDestroyed()) win.webContents.send('sep-progress', { phase: 'install', text: line.slice(0, 120) }) }
-      sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
-      sepProc.on('close', (c) => { sepProc = null; resolve(c === 0) })
-      sepProc.on('error', () => { sepProc = null; resolve(false) })
-    })
-    if (!okEng) return { error: 'engine-install-failed' }
-  }
-  const cfg = readSepCfg(); if (cfg.python !== py) { cfg.python = py; try { fs.writeFileSync(sepCfgPath(), JSON.stringify(cfg), 'utf8') } catch {} }
+  // 1) moteur CLI natif si absent (téléchargé + extrait)
+  try { if (!(await ensureSepCli())) return { error: 'engine-install-failed' } }
+  catch { sepAbort = null; return { error: 'engine-install-failed' } }
   // 2) téléchargement du modèle .onnx (géré par l'app)
   const out = path.join(sepModelsDir(), path.basename(file))
   if (fs.existsSync(out) && fs.statSync(out).size > 1e6) return { ok: true, cached: true }
@@ -1467,8 +1380,6 @@ ipcMain.handle('sep-install-model', async (e, file) => {
     return { ok: true }
   } catch (err) { sepAbort = null; try { fs.unlinkSync(tmp) } catch {}; return { error: String((err && err.message) || err) } }
 })
-// script Python exécuté pour la séparation MDX (audio-separator, stem instrumental)
-const SEP_PY = "import sys\nfrom audio_separator.separator import Separator\ninp, out, mdir, model = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]\ns = Separator(output_dir=out, model_file_dir=mdir, output_format='WAV', output_single_stem='Instrumental')\ns.load_model(model_filename=model)\ns.separate(inp)\n"
 function sepDir(projectPath) {
   const base = projectPath ? path.join(path.dirname(projectPath), 'separated') : path.join(appBaseDir(), 'cache', 'separated')
   try { fs.mkdirSync(base, { recursive: true }); return base } catch {}
@@ -1499,12 +1410,11 @@ ipcMain.handle('sep-cancel', () => {
 ipcMain.handle('sep-run', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
   if (sepProc) return { error: 'busy' }
-  const cfg = readSepCfg()
   const model = opts.model || (SEP_MODELS[0] && SEP_MODELS[0].file)
   const mdir = sepModelsDir()
   if (!model || !fs.existsSync(path.join(mdir, model))) return { error: 'no-model' }
-  const py = cfg.python || (await detectPython())
-  if (!py) return { error: 'no-engine' }
+  const cli = sepCliPath()
+  if (!cli) return { error: 'no-engine' } // binaire de séparation non installé
   const src = opts.source
   if (!src || !fs.existsSync(src)) return { error: 'no-source' }
   const base = `lr-sep-${Date.now()}`
@@ -1517,33 +1427,36 @@ ipcMain.handle('sep-run', async (e, opts) => {
   extract.push('-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', wav)
   const okx = await new Promise((res) => { const p = spawn(ffmpegPath, extract, { stdio: 'ignore' }); p.on('close', (c) => res(c === 0)); p.on('error', () => res(false)) })
   if (!okx) return { error: 'extract-failed' }
-  // 2) séparation MDX (audio-separator, stem instrumental) → un fichier (Instrumental)
-  const outDir = path.join(app.getPath('temp'), base + '-out')
-  try { fs.mkdirSync(outDir, { recursive: true }) } catch {}
-  const inv = pythonInvoke(py)
-  const cmd = inv[0], args = [...inv.slice(1), '-c', SEP_PY, wav, outDir, mdir, model]
+  // 2) séparation UVR via le CLI natif → WAV « accompaniment » (sans voix)
+  const acc = path.join(app.getPath('temp'), base + '-acc.wav')
+  const voc = path.join(app.getPath('temp'), base + '-voc.wav')
+  const args = [`--uvr-model=${path.join(mdir, model)}`, `--input-wav=${wav}`, `--output-vocals-wav=${voc}`, `--output-accompaniment-wav=${acc}`]
+  // le exe trouve ses libs dans son propre dossier (cwd + LD/DYLD_LIBRARY_PATH)
+  const libDir = path.dirname(cli)
+  const env = { ...process.env }
+  if (process.platform === 'linux') env.LD_LIBRARY_PATH = libDir + (env.LD_LIBRARY_PATH ? path.delimiter + env.LD_LIBRARY_PATH : '')
+  else if (process.platform === 'darwin') env.DYLD_LIBRARY_PATH = libDir + (env.DYLD_LIBRARY_PATH ? path.delimiter + env.DYLD_LIBRARY_PATH : '')
   emit({ phase: 'separate', pct: 0 })
   return await new Promise((resolve) => {
     let tail = ''
-    try { sepProc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }) }
-    catch { return resolve({ error: 'engine-spawn-failed' }) }
+    const clean = () => { try { fs.unlinkSync(wav) } catch {}; try { fs.unlinkSync(voc) } catch {}; try { fs.unlinkSync(acc) } catch {} }
+    try { sepProc = spawn(cli, args, { cwd: libDir, env, stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch { clean(); return resolve({ error: 'engine-spawn-failed' }) }
     const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/(\d+)%/); if (m) emit({ phase: 'separate', pct: Number(m[1]) }) }
     sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
     sepProc.on('close', (code) => {
       sepProc = null
-      try { fs.unlinkSync(wav) } catch {}
-      const found = findFileRec(outDir, /(instrumental|no_vocals)\S*\.(wav|mp3|flac|m4a)$/i)
-      if (code === 0 && found) {
-        const destName = (opts.destBase || 'sans-voix') + '-' + Date.now() + path.extname(found)
+      if (code === 0 && fs.existsSync(acc)) {
+        const destName = (opts.destBase || 'sans-voix') + '-' + Date.now() + '.wav'
         let destBaseDir = opts.destDir && String(opts.destDir).trim() ? opts.destDir : sepDir(opts.projectPath)
         try { fs.mkdirSync(destBaseDir, { recursive: true }) } catch { destBaseDir = sepDir(opts.projectPath) }
         const dest = path.join(destBaseDir, destName)
-        try { fs.copyFileSync(found, dest) } catch { try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}; return resolve({ error: 'copy-failed' }) }
-        try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}
+        try { fs.copyFileSync(acc, dest) } catch { clean(); return resolve({ error: 'copy-failed' }) }
+        clean()
         resolve({ ok: true, path: dest, name: destName })
-      } else { try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}; resolve({ error: tail.slice(-300) || 'sep-failed' }) }
+      } else { clean(); resolve({ error: tail.slice(-300) || 'sep-failed' }) }
     })
-    sepProc.on('error', () => { sepProc = null; resolve({ error: 'engine-spawn-failed' }) })
+    sepProc.on('error', () => { sepProc = null; clean(); resolve({ error: 'engine-spawn-failed' }) })
   })
 })
 

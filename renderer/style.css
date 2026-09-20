@@ -1376,10 +1376,15 @@ button.primary:disabled { opacity: .45; cursor: default; }
 /* ---------- fenêtre Paramètres ---------- */
 #settingsModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 20; }
 #settingsModal.hidden { display: none; }
-.settings-panel { width: 640px; max-width: 92vw; max-height: 88vh; overflow-y: auto; }
+.settings-panel { width: 640px; max-width: 92vw; max-height: 88vh; overflow-y: auto; overflow-x: hidden; }
 .set-block { flex-direction: column; align-items: stretch; gap: 10px; }
-.set-block > label { display: flex; align-items: center; gap: 8px; }
+.set-block > label { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .set-block > label > span:first-child { min-width: 96px; color: var(--dim); }
+/* petits écrans : les selects et champs doivent pouvoir rétrécir (sinon un nom de
+   périphérique/modèle long déborde et provoque un scroll horizontal) */
+.settings-panel select, .settings-panel input { min-width: 0; max-width: 100%; }
+.set-block > label > select, .set-block > label > input { flex: 1 1 auto; min-width: 0; }
+.cap-dev-wrap > select { flex: 1 1 auto; min-width: 0; }
 .cap-dev-wrap select { flex: 1; min-width: 0; }
 .cap-refresh { flex: 0 0 auto; padding: 4px 8px; line-height: 1; }
 .out-test-row { display: flex; align-items: center; gap: 10px; }
@@ -1407,7 +1412,7 @@ button.primary:disabled { opacity: .45; cursor: default; }
 #setBar { height: 100%; width: 0%; background: #4a7ac8; transition: width .15s; }
 .model-list { display: flex; flex-direction: column; gap: 4px; }
 .model-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px; }
-.model-row .mdl-name { flex: 1 1 auto; font-weight: 600; }
+.model-row .mdl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .model-row .mdl-state { color: var(--dim); font-size: 12px; }
 .model-row.installed .mdl-state { color: var(--toggle-text); }
 
