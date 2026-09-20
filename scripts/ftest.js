@@ -837,6 +837,11 @@ const TESTS = [
     tapCursor = null; scrub.time = null
     return ok
   })()`],
+  // --- v3.4 saisie sur la bande : étape F (aide documentée fr/en/es) ---
+  ['bandEdit F: aide documente la barre rouge (fr/en/es)', `(() => {
+    const dump = (l) => { const p = lang; lang = l; const s = JSON.stringify(t('guideSections')); lang = p; return s }
+    return dump('fr').includes('barre rouge') && dump('en').includes('red bar') && dump('es').includes('barra roja')
+  })()`],
 ]
 
 function getJson() {
