@@ -784,6 +784,33 @@ const TESTS = [
     exitBandEdit()
     return gone && ok === true && started
   })()`],
+  // --- v3.4 saisie sur la bande : étape D (touche 4 = split en pause) ---
+  ['bandEdit D: touche 4 (pause) coupe à la barre rouge', `(() => {
+    if (typeof splitAtPlayhead !== 'function') return true
+    beSetup()
+    selectedIds = new Set(['be1'])
+    scrub.time = 1.3 // dans "Bonjour" (1.0-1.6)
+    splitAtPlayhead()
+    const l = project.lines.find((x) => x.id === 'be1')
+    const joined = l.words.slice(0, 2).map((w) => (w.text === '_' ? '' : w.text)).join('')
+    const ok = l.words.length === 3
+      && Math.abs(l.words[0].start - 1.0) < 1e-9 && Math.abs(l.words[0].end - 1.3) < 1e-9
+      && Math.abs(l.words[1].start - 1.3) < 1e-9 && Math.abs(l.words[1].end - 1.6) < 1e-9
+      && l.words[2].text === 'toi' && joined === 'Bonjour'
+    scrub.time = null
+    return ok
+  })()`],
+  ['bandEdit D: touche 4 sans réplique sous la barre = no-op', `(() => {
+    if (typeof splitAtPlayhead !== 'function') return true
+    beSetup()
+    selectedIds = new Set()
+    scrub.time = 10 // hors de toute réplique
+    const before = project.lines.find((x) => x.id === 'be1').words.length
+    splitAtPlayhead()
+    const after = project.lines.find((x) => x.id === 'be1').words.length
+    scrub.time = null
+    return before === after
+  })()`],
 ]
 
 function getJson() {

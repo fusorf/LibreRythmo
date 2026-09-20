@@ -5190,6 +5190,39 @@ function beCommitNewLine() {
   if (nl) enterBandEdit(nl.id, 0, caretLen(nl, 0), { select: true })
 }
 
+// index de caractère le plus proche de l'abscisse x dans le mot wi (géométrie du rendu).
+function nearestCharInWord(c, line, wi, th, xOf, x) {
+  const g = bandWordGeom(c, line, wi, th, xOf)
+  let ci = 0, best = Infinity
+  for (let i = 0; i <= g.txt.length; i++) {
+    const cx = g.wx + g.pad + c.measureText(g.txt.slice(0, i)).width * g.scale
+    const d = Math.abs(cx - x); if (d < best) { best = d; ci = i }
+  }
+  return ci
+}
+
+// touche 4 (vidéo en pause) : coupe en deux, texte + timing, le mot sous la barre rouge.
+function splitAtPlayhead() {
+  const at = effectiveTime()
+  let line = singleSelected()
+  if (!line || !line.words.length || at < lineStart(line) || at > lineEnd(line)) {
+    line = project.lines.find((l) => l.words.length && at >= lineStart(l) && at <= lineEnd(l)) || null
+  }
+  if (!line) { toast(t('splitNeedLine')); return }
+  const wi = symbolTargetWord(line, at)
+  const w = line.words[wi]
+  if (at <= w.start + 1e-3 || at >= w.end - 1e-3) { toast(t('splitNeedInside')); return }
+  const ci = nearestCharInWord(ctx, line, wi, trackH(), (tt) => xAtTime(tt, at), xAtTime(at, at))
+  pushUndo()
+  const t0 = w.text === '_' ? '' : w.text
+  const left = { text: t0.slice(0, ci) || '_', start: w.start, end: at }
+  const right = { text: t0.slice(ci) || '_', start: at, end: w.end }
+  line.words.splice(wi, 1, left, right)
+  reindexSymbolsInsert(line, wi + 1)
+  selectedIds = new Set([line.id])
+  markDirty()
+}
+
 // clavier en mode saisie. Renvoie true si la touche est consommée (l'appelant
 // arrête alors le traitement global : réacs, détection, espace=lecture, etc.).
 function handleBandEditKey(e) {
@@ -6029,6 +6062,12 @@ document.addEventListener('keydown', (e) => {
   // donc on intercepte ici, AVANT réacs/détection/espace-lecture/Ctrl+A-tout-sélectionner.
   if (beActive() && activeTab === 'rythmo' && !e.altKey) {
     if (handleBandEditKey(e)) return
+  }
+
+  // touche 4 hors saisie : découpe la réplique sous la barre rouge quand la vidéo
+  // est en pause (la frappe/tap-timing en lecture arrive à l'étape E).
+  if (activeTab === 'rythmo' && e.key === '4' && !e.ctrlKey && !e.metaKey && !e.altKey && !beActive()) {
+    if (video.paused) { e.preventDefault(); splitAtPlayhead(); return }
   }
 
   // onglet Pistes : seul Suppr (piste importée sélectionnée) est géré ici ; les autres
