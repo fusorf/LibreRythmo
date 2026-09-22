@@ -363,8 +363,8 @@ button.active {
 .icon-btn:hover svg { fill: var(--icon-h); }
 .icon-btn.active svg { fill: var(--toggle-text); }
 /* bascule Sélection / Texte de la bande */
-.mode-btn { width: 36px; }
-.mode-btn svg { width: 15px; height: 15px; fill: var(--icon); }
+.mode-btn { width: 40px; }
+.mode-btn svg { width: 20px; height: 20px; fill: var(--icon); }
 .mode-btn:hover svg { fill: var(--icon-h); }
 .mode-btn.active svg { fill: var(--toggle-text); }
 /* bouton supprimer la réplique : icône poubelle, rouge au survol (action destructive) */
