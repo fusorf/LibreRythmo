@@ -2115,10 +2115,16 @@ function closeTranscribe() { if (!trBusy) trModal.classList.add('hidden') }
 
 $('trOpenSettings').addEventListener('click', () => { trModal.classList.add('hidden'); openSettings() })
 $('trClose').addEventListener('click', () => {
-  if (trBusy) { window.api.whisperCancel(); trBusy = false; $('trStatus').textContent = t('trCancelled'); $('trClose').textContent = t('close'); $('trGo').disabled = false }
+  if (trBusy) { window.api.whisperCancel(); trBusy = false; $('trStatus').textContent = t('trCancelled'); setTrBusyUI(false) }
   else closeTranscribe()
 })
 $('trGo').addEventListener('click', runTranscribe)
+// verrouille les contrôles (menus déroulants, boutons) pendant la transcription
+function setTrBusyUI(on) {
+  ['trInTrack', 'trModel', 'trSpeakers', 'trLang', 'trOpenSettings'].forEach((id) => { const el = $(id); if (el) el.disabled = on })
+  $('trGo').disabled = on
+  $('trClose').textContent = on ? t('cancel') : t('close')
+}
 window.api.onWhisperProgress((p) => {
   if (!p || !trBusy) return // n'affiche que pendant un run de transcription
   if (p.phase === 'extract') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseExtract') }
@@ -2133,7 +2139,7 @@ async function runTranscribe() {
   const numSpeakers = Number($('trSpeakers').value) || 0
   localStorage.setItem('trSpeakers', String(numSpeakers))
   const tr = trTracks[Number($('trInTrack').value) || 0] || trTracks[0] || { source: project.videoPath, aIndex: 0 }
-  trBusy = true; $('trGo').disabled = true; $('trClose').textContent = t('cancel')
+  trBusy = true; setTrBusyUI(true)
   try {
     $('trStatus').textContent = t('trTranscribing', 0)
     const r = await window.api.whisperTranscribe({ source: tr.source, aIndex: tr.aIndex, model, language: lang, numSpeakers })
@@ -2148,7 +2154,7 @@ async function runTranscribe() {
     $('trStatus').textContent = t('trImported', n || 0)
     trModal.classList.add('hidden')
   } finally {
-    trBusy = false; $('trGo').disabled = false; $('trClose').textContent = t('close')
+    trBusy = false; setTrBusyUI(false)
   }
 }
 
@@ -2675,10 +2681,17 @@ async function openSeparateDialog() {
 $('sepOpenSettings').addEventListener('click', () => { sepModal.classList.add('hidden'); openSettings() })
 $('sepOutBrowse').addEventListener('click', async () => { const d = await window.api.pickDirectory($('sepOutDir').value || ''); if (d) $('sepOutDir').value = d })
 $('sepCloseBtn').addEventListener('click', () => {
-  if (sepBusy) { window.api.sepCancel(); sepBusy = false; sepActive = false; $('sepStatus').textContent = t('sepCancelled'); $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close') }
-  else if (!sepBusy) sepModal.classList.add('hidden')
+  if (sepBusy) { window.api.sepCancel(); sepBusy = false; sepActive = false; $('sepStatus').textContent = t('sepCancelled'); setSepBusyUI(false) }
+  else sepModal.classList.add('hidden')
 })
 $('sepGo').addEventListener('click', doSeparate)
+
+// verrouille les contrôles (menus déroulants, champs, boutons) pendant la séparation
+function setSepBusyUI(on) {
+  ['sepInTrack', 'sepRunModel', 'sepOutName', 'sepOutBrowse', 'sepOpenSettings'].forEach((id) => { const el = $(id); if (el) el.disabled = on })
+  $('sepGo').disabled = on
+  $('sepCloseBtn').textContent = on ? t('cancel') : t('close')
+}
 
 async function doSeparate() {
   if (sepBusy) return
@@ -2688,12 +2701,10 @@ async function doSeparate() {
   const tr = sepTracks[Number($('sepInTrack').value) || 0] || sepTracks[0]
   const destBase = (($('sepOutName').value || '').trim()) || t('sepTrackName')
   const destDir = $('sepOutDir').value || ''
-  sepBusy = true; sepActive = true
-  $('sepGo').disabled = true; $('sepCloseBtn').textContent = t('cancel')
+  sepBusy = true; sepActive = true; setSepBusyUI(true)
   $('sepBar').style.width = '0%'; $('sepStatus').textContent = t('sepPhaseStart')
   const r = await window.api.sepRun({ source: tr.source, aIndex: tr.aIndex, projectPath, model, destBase, destDir })
-  sepBusy = false; sepActive = false
-  $('sepGo').disabled = false; $('sepCloseBtn').textContent = t('close')
+  sepBusy = false; sepActive = false; setSepBusyUI(false)
   if (!r || r.error) {
     const map = { 'no-model': 'sepNeedModel', 'no-engine': 'sepNeedModel', 'no-source': 'sepNoSource', 'extract-failed': 'sepExtractFail' }
     const known = map[r && r.error]
