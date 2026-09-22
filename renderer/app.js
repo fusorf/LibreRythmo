@@ -524,7 +524,7 @@ function applyLang() {
   $('tPlay').title = t('tPlay')
   $('tFrameF').title = t('tFrameF')
   $('timecode').title = t('timecode')
-  $('speed').title = t('speed')
+  $('btnSpeed').title = t('speed')
   $('btnVol').title = t('volume')
   $('addLineLabel').textContent = t('addLine')
   $('btnAddLine').title = t('addLineTitle')
@@ -4100,6 +4100,7 @@ video.addEventListener('loadedmetadata', () => {
   probeAndSyncAudio()
   updateVideoInfoPanel()
   updateRecUI() // une vidéo est chargée → le bouton Enregistrer peut se débloquer
+  applySpeed() // réapplique la vitesse choisie (une nouvelle source repart à ×1)
   if (activeTab === 'tracks') renderTracks() // durée connue → échelle des lanes
 })
 
@@ -5712,7 +5713,13 @@ btnPlay.addEventListener('click', togglePlay)
 $('tStart').addEventListener('click', () => { video.currentTime = 0 })
 $('tFrameB').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime - 1 / project.fps, 0, videoDur()) })
 $('tFrameF').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime + 1 / project.fps, 0, videoDur()) })
-$('speed').addEventListener('change', (e) => { video.playbackRate = Number(e.target.value) })
+// vitesse de lecture : bouton compact, molette = cran par cran, clic = retour à ×1
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5]
+let speedIdx = 2
+function applySpeed() { video.playbackRate = SPEEDS[speedIdx]; $('btnSpeed').textContent = '×' + SPEEDS[speedIdx] }
+$('btnSpeed').addEventListener('click', () => { speedIdx = 2; applySpeed() })
+$('btnSpeed').addEventListener('wheel', (e) => { e.preventDefault(); speedIdx = clamp(speedIdx + (e.deltaY < 0 ? 1 : -1), 0, SPEEDS.length - 1); applySpeed() }, { passive: false })
+applySpeed()
 $('volume').addEventListener('input', () => { applyVolume(); updateVolIcon() }) // vidéo ou piste active (playA)
 
 // ============================================================ barre de progression globale
