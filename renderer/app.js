@@ -369,7 +369,6 @@ function setTheme(th) {
 let exportEncoder = 'gpu' // préférence persistée ([export] encoder dans settings.ini)
 let discordOn = false // Discord Rich Presence (Affichage → Discord Rich Presence)
 let showSubs = false // sous-titres « classiques » superposés à l'aperçu vidéo (Affichage → Sous-titres)
-let autofocusText = true // focus du champ texte à la création d'une réplique (Édition → Éditer le texte…)
 
 // focus + sélection du champ texte de l'inspecteur après création d'une réplique
 function focusNewLineText() {
@@ -379,7 +378,7 @@ function focusNewLineText() {
 
 // pousse tous les réglages au process principal : persistance settings.ini + menu
 function pushSettings() {
-  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, subs: showSubs, autosave: autosaveOn, encoder: exportEncoder, discord: discordOn, autofocus: autofocusText, seekbar: showSeekBar })
+  window.api.setLang({ lang, theme, wave: showWave, info: showVideoInfo, subs: showSubs, autosave: autosaveOn, encoder: exportEncoder, discord: discordOn, seekbar: showSeekBar })
 }
 
 // présence Discord : titre du projet + nombre de répliques (poussé sur les évènements clés)
@@ -1426,6 +1425,7 @@ function recWheelZoom(e) {
   if (!e.ctrlKey) return false
   e.preventDefault()
   recWinSec = clamp(recWinSec * (e.deltaY < 0 ? 1 / 1.12 : 1.12), REC_SEC_MIN, REC_SEC_MAX)
+  syncZoomSlider() // garde le slider du bouton zoom en phase
   return true
 }
 function resizeRecBand() {
@@ -3798,6 +3798,7 @@ function buildDubPop() {
 function toggleDubPop() {
   const pop = $('dubPop')
   if (!pop.classList.contains('hidden')) { pop.classList.add('hidden'); return }
+  $('volPop').classList.add('hidden'); $('zoomPop').classList.add('hidden'); $('speedPop').classList.add('hidden') // exclusion mutuelle
   buildDubPop()
   const r = $('btnDub').getBoundingClientRect()
   pop.style.left = Math.round(r.left) + 'px'
@@ -5196,11 +5197,12 @@ function beDeleteForward(line) {
 // Espace = split du mot au caret : coupe texte + temps (proportionnel), bornes
 // extérieures préservées exactement ; l'utilisateur cale ensuite la limite (touche 4).
 function beSplitAtCaret(line) {
-  const { wi, ci } = bandEdit, w = line.words[wi], t = wtext(w), len = t.length
-  const cut = w.start + (w.end - w.start) * (len ? ci / len : 0.5)
-  const left = { text: t.slice(0, ci) || '_', start: w.start, end: cut }
-  const right = { text: t.slice(ci) || '_', start: cut, end: w.end }
-  line.words.splice(wi, 1, left, right)
+  const { wi, ci } = bandEdit, w = line.words[wi], t = wtext(w)
+  const dur = clamp(w.end - w.start, 0.3, 1.5) // le nouveau mot prend un créneau lisible à droite
+  w.text = t.slice(0, ci) || '_'               // partie gauche : garde le créneau du mot (timings conservés)
+  const right = { text: t.slice(ci) || '_', start: w.end, end: w.end + dur }
+  for (let j = wi + 1; j < line.words.length; j++) { line.words[j].start += dur; line.words[j].end += dur } // pousse la suite à droite
+  line.words.splice(wi + 1, 0, right)
   reindexSymbolsInsert(line, wi + 1)
   return { wi: wi + 1, ci: 0 }
 }
@@ -5282,25 +5284,6 @@ function tapTiming() {
   if (tapCursor.wi >= line.words.length) { tapCursor = null; toast(t('tapDone')) }
 }
 
-// répartit les mots uniformément (poids = longueur du texte, comme splitWords) dans
-// la boîte, dont les bornes [start, end] restent FIXES (longueur figée à la création).
-// Appelé après chaque frappe : le texte multi-mots se répartit et se compacte comme
-// l'ancien champ texte du pied de page.
-function redistributeLine(line) {
-  if (!line.words.length) return
-  const start = lineStart(line), end = lineEnd(line)
-  const dur = Math.max(0.1, end - start)
-  const weights = line.words.map((w) => w.text.length + 1)
-  const total = weights.reduce((a, b) => a + b, 0)
-  let t = start
-  for (let i = 0; i < line.words.length; i++) {
-    const w = line.words[i]
-    w.start = t
-    w.end = i === line.words.length - 1 ? end : t + (weights[i] / total) * dur
-    t = w.end
-  }
-}
-
 // clavier en mode saisie. Renvoie true si la touche est consommée (l'appelant
 // arrête alors le traitement global : réacs, détection, espace=lecture, etc.).
 function handleBandEditKey(e) {
@@ -5327,8 +5310,10 @@ function handleBandEditKey(e) {
   }
   // --- édition au caractère (préserve le timing des mots non touchés) ---
   const apply = (pos) => { bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.sel = null; bandEdit.blinkT0 = performance.now() }
-  // valide une mutation : place le caret, répartit les mots dans la boîte (bornes figées), marque modifié
-  const commit = (pos) => { apply(pos); redistributeLine(line); markDirty() }
+  // valide une mutation : place le caret et marque modifié. Le timing des mots n'est
+  // PAS retouché sur une simple frappe (le texte se compacte dans le créneau du mot) ;
+  // seul l'ajout/retrait de mot change le découpage (voir beSplitAtCaret / fusions).
+  const commit = (pos) => { apply(pos); markDirty() }
   if (k === 'Enter') { e.preventDefault(); exitBandEdit(); selectedIds.clear(); refreshInspector(); return true } // Entrée = valider et désélectionner la boîte
   if (k === 'Backspace') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beBackspace(line)); return true }
   if (k === 'Delete') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beDeleteForward(line)); return true }
@@ -5357,6 +5342,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (hit.kind === 'line' || hit.kind === 'edge') {
       const pos = caretHitTest(x, y) || { lineId: hit.line.id, wi: 0, ci: 0 }
       enterBandEdit(pos.lineId, pos.wi, pos.ci)
+      drag = { kind: 'textsel', anchor: { wi: pos.wi, ci: pos.ci } } // glisser = sélection de texte
     } else {
       if (beActive()) exitBandEdit()
       const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
@@ -5450,9 +5436,10 @@ canvas.addEventListener('pointermove', (e) => {
     // feedback curseur au survol : poignées de mots, corps de réplique, règle, bande
     const r = canvas.getBoundingClientRect()
     hover = { x: e.clientX - r.left, y: e.clientY - r.top }
-    if (bandMode === 'text' && activeTab === 'rythmo') { // mode texte : curseur d'écriture (règle = lecture)
-      canvas.style.cursor = hover.y <= RULER_H ? 'pointer' : 'text'
+    if (bandMode === 'text' && activeTab === 'rythmo') { // mode texte : + sur le vide (création), I-beam sur une réplique
       hoverEdge = null
+      if (hover.y <= RULER_H) canvas.style.cursor = 'pointer'
+      else { const h = hitTest(hover.x, hover.y); canvas.style.cursor = h.kind === 'line' || h.kind === 'edge' ? 'text' : 'copy' }
       return
     }
     const hit = hitTest(hover.x, hover.y)
@@ -5475,7 +5462,13 @@ canvas.addEventListener('pointermove', (e) => {
   const dx = x - drag.x0
   const dt = dx / pxPerSec
 
-  if (drag.kind === 'create') {
+  if (drag.kind === 'textsel') {
+    const pos = caretHitTest(x, e.clientY - r.top) // sélection de texte au glisser (même réplique)
+    if (pos && beActive() && pos.lineId === bandEdit.lineId) {
+      if (!bandEdit.sel) bandEdit.sel = { wi: drag.anchor.wi, ci: drag.anchor.ci }
+      bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.blinkT0 = performance.now()
+    }
+  } else if (drag.kind === 'create') {
     drag.x1 = x // aperçu de la nouvelle boîte (dessiné dans draw())
     if (Math.abs(dx) > 3) drag.moved = true
   } else if (drag.kind === 'scrub') {
@@ -5611,10 +5604,18 @@ canvas.addEventListener('pointerup', endDrag)
 canvas.addEventListener('pointercancel', endDrag)
 
 canvas.addEventListener('dblclick', (e) => {
-  if (bandMode === 'text' && activeTab === 'rythmo') return // en mode texte, le simple clic gère déjà tout
   const r = canvas.getBoundingClientRect()
   const x = e.clientX - r.left
   const y = e.clientY - r.top
+  if (bandMode === 'text' && activeTab === 'rythmo') { // double-clic = sélectionne le mot
+    const pos = caretHitTest(x, y)
+    if (pos) {
+      enterBandEdit(pos.lineId, pos.wi, pos.ci)
+      const l = beLine()
+      if (l) { bandEdit.sel = { wi: pos.wi, ci: 0 }; bandEdit.wi = pos.wi; bandEdit.ci = caretLen(l, pos.wi); bandEdit.blinkT0 = performance.now() }
+    }
+    return
+  }
   const hit = hitTest(x, y)
   if (hit.kind === 'line') {
     const pos = caretHitTest(x, y) || { lineId: hit.line.id, wi: 0, ci: 0 }
@@ -5625,6 +5626,13 @@ canvas.addEventListener('dblclick', (e) => {
     addLineAt(t, tr, '_', NEW_LINE_DUR)
     focusNewLineText()
   }
+})
+
+// triple-clic (mode texte) = sélectionne toute la réplique en cours d'édition
+canvas.addEventListener('click', (e) => {
+  if (bandMode !== 'text' || activeTab !== 'rythmo' || e.detail < 3 || !beActive()) return
+  const l = beLine(), lw = l.words.length - 1
+  bandEdit.sel = { wi: 0, ci: 0 }; bandEdit.wi = lw; bandEdit.ci = caretLen(l, lw); bandEdit.blinkT0 = performance.now()
 })
 
 // wheel = horizontal scrub · ctrl+wheel = zoom (en secondes visibles)
@@ -5642,16 +5650,25 @@ canvas.addEventListener('wheel', (e) => {
   playScrubGrain(scrub.time)
 }, { passive: false })
 
-// slider de zoom (transport) — échelle logarithmique : gauche = 5 s (dézoom), droite = 1,8 s (zoom)
+// slider de zoom (transport) — échelle logarithmique. Tab-aware : agit sur la bande
+// rythmo (secondsVisible) ou, sur l'onglet Enregistrement, sur sa bande (recWinSec).
 const zoomSlider = $('zoom')
-
-function syncZoomSlider() {
-  zoomSlider.value = String(Math.log(secondsVisible / SEC_MAX) / Math.log(SEC_MIN / SEC_MAX))
+const zoomBounds = () => (activeTab === 'rec' ? [REC_SEC_MIN, REC_SEC_MAX] : [SEC_MIN, SEC_MAX])
+const zoomSec = () => (activeTab === 'rec' ? recWinSec : secondsVisible)
+function setZoomSec(v) {
+  const [mn, mx] = zoomBounds()
+  v = clamp(v, mn, mx)
+  if (activeTab === 'rec') recWinSec = v
+  else { secondsVisible = v; recomputePps() }
+  syncZoomSlider()
 }
-
+function syncZoomSlider() {
+  const [mn, mx] = zoomBounds()
+  zoomSlider.value = String(Math.log(zoomSec() / mx) / Math.log(mn / mx))
+}
 zoomSlider.addEventListener('input', () => {
-  secondsVisible = SEC_MAX * Math.pow(SEC_MIN / SEC_MAX, Number(zoomSlider.value))
-  recomputePps()
+  const [mn, mx] = zoomBounds()
+  setZoomSec(mx * Math.pow(mn / mx, Number(zoomSlider.value)))
 })
 syncZoomSlider()
 
@@ -5680,14 +5697,14 @@ function placeSliderPop(pop, btn) {
 function toggleSliderPop(popId, btn) {
   const pop = $(popId)
   const wasHidden = pop.classList.contains('hidden')
-  $('volPop').classList.add('hidden'); $('zoomPop').classList.add('hidden'); $('speedPop').classList.add('hidden')
+  $('volPop').classList.add('hidden'); $('zoomPop').classList.add('hidden'); $('speedPop').classList.add('hidden'); $('dubPop').classList.add('hidden')
   if (wasHidden) placeSliderPop(pop, btn)
 }
 const nudgeVol = (dy) => { const s = $('volume'); s.value = String(clamp(Number(s.value) + (dy < 0 ? 0.05 : -0.05), 0, 1)); applyVolume(); updateVolIcon() }
-const nudgeZoom = (dy) => { secondsVisible = clamp(secondsVisible * (dy < 0 ? 1 / 1.12 : 1.12), SEC_MIN, SEC_MAX); recomputePps(); syncZoomSlider() }
+const nudgeZoom = (dy) => setZoomSec(zoomSec() * (dy < 0 ? 1 / 1.12 : 1.12))
 
 $('btnVol').addEventListener('click', (e) => { e.stopPropagation(); toggleSliderPop('volPop', $('btnVol')) })
-$('btnZoom').addEventListener('click', (e) => { e.stopPropagation(); toggleSliderPop('zoomPop', $('btnZoom')) })
+$('btnZoom').addEventListener('click', (e) => { e.stopPropagation(); syncZoomSlider(); toggleSliderPop('zoomPop', $('btnZoom')) })
 $('btnVol').addEventListener('wheel', (e) => { e.preventDefault(); nudgeVol(e.deltaY) }, { passive: false })
 $('volPop').addEventListener('wheel', (e) => { e.preventDefault(); nudgeVol(e.deltaY) }, { passive: false })
 $('btnZoom').addEventListener('wheel', (e) => { e.preventDefault(); nudgeZoom(e.deltaY) }, { passive: false })
@@ -7162,10 +7179,6 @@ window.api.onMenu((action, arg) => {
     applySeekBarVisibility()
     pushSettings()
   }
-  else if (action === 'toggle-autofocus') {
-    autofocusText = !!arg
-    pushSettings()
-  }
   else if (action === 'toggle-discord') {
     discordOn = !!arg
     pushSettings()
@@ -8109,7 +8122,6 @@ function loop() {
   if (!DETACHED) preloadSettings() // débloque les noms de périphériques + précharge les listes (Paramètres instantanés)
   lang = ['en', 'es'].includes(st.lang) ? st.lang : 'fr'
   autosaveOn = !!st.autosave
-  autofocusText = st.autofocus !== false
   showSeekBar = st.seekbar !== false
   applySeekBarVisibility()
   showWave = st.wave !== false

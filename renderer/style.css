@@ -900,7 +900,7 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 /* contrôles contextuels de la barre d'action : rythmo masqués sur l'onglet Pistes, et
    inversement le bouton « Importer un audio » n'apparaît que sur l'onglet Pistes */
 .tracks-ctl { display: none; }
-body.on-tracks .rythmo-ctl { display: none; }
+body.on-tracks .rythmo-ctl, body.on-tracks #btnZoom { display: none; } /* zoom : visible sur Rythmo + Enregistrement, pas sur Pistes */
 body.on-tracks .tracks-ctl { display: inline-block; text-align: center; }
 body.on-rec .rythmo-ctl, body.on-rec .tracks-ctl { display: none; }
 

@@ -133,7 +133,7 @@ ipcMain.handle('open-releases', () => shell.openExternal(`${REPO_URL}/releases/l
 ipcMain.on('app-version', (e) => { e.returnValue = app.getVersion() })
 
 // ---------- réglages persistants — settings.ini dans le dossier userData ----------
-const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, subs: false, encoder: 'gpu', discord: true, autofocus: true, seekbar: true }
+const DEFAULTS = { lang: 'fr', theme: 'dark', autosave: false, wave: true, info: false, subs: false, encoder: 'gpu', discord: true, seekbar: true }
 let settings = { ...DEFAULTS, recent: [] }
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.ini')
@@ -159,7 +159,6 @@ function loadSettings() {
         else if (k === 'info') settings.info = v === '1'
         else if (k === 'subs') settings.subs = v === '1'
         else if (k === 'discord') settings.discord = v === '1'
-        else if (k === 'autofocus') settings.autofocus = v === '1'
         else if (k === 'seekbar') settings.seekbar = v === '1'
       } else if (sec === 'export') {
         if (k === 'encoder' && ['gpu', 'cpu'].includes(v)) settings.encoder = v
@@ -183,7 +182,6 @@ function saveSettings() {
     `info=${b(settings.info)}`,
     `subs=${b(settings.subs)}`,
     `discord=${b(settings.discord)}`,
-    `autofocus=${b(settings.autofocus)}`,
     `seekbar=${b(settings.seekbar)}`,
     '',
     '[export]',
@@ -388,7 +386,6 @@ const MENU_STR = {
     undo: 'Annuler',
     redo: 'Rétablir',
     view: 'Affichage',
-    autofocusText: 'Autofocus du texte',
     seekbar: 'Barre de progression',
     wave: "Forme d'onde audio",
     videoInfo: 'Infos vidéo',
@@ -468,7 +465,6 @@ const MENU_STR = {
     undo: 'Undo',
     redo: 'Redo',
     view: 'View',
-    autofocusText: 'Text autofocus',
     seekbar: 'Progress bar',
     wave: 'Audio waveform',
     videoInfo: 'Video info',
@@ -548,7 +544,6 @@ const MENU_STR = {
     undo: 'Deshacer',
     redo: 'Rehacer',
     view: 'Ver',
-    autofocusText: 'Autofoco del texto',
     seekbar: 'Barra de progreso',
     wave: 'Forma de onda',
     videoInfo: 'Información del vídeo',
@@ -744,7 +739,6 @@ ipcMain.handle('set-lang', (e, o) => {
   settings.info = !!o.info
   settings.subs = !!o.subs
   settings.autosave = !!o.autosave
-  settings.autofocus = o.autofocus !== false
   settings.seekbar = o.seekbar !== false
   if (['gpu', 'cpu'].includes(o.encoder)) settings.encoder = o.encoder
   if (o.discord !== undefined && !!o.discord !== settings.discord) {
