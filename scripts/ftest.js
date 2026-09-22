@@ -889,6 +889,27 @@ const TESTS = [
     handleBandEditKey({ key: 'Enter', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     return bandEdit === null && selectedIds.size === 0
   })()`],
+  // --- enregistrement : conditions de déblocage (vidéo + personnage) ---
+  ['rec: bouton grisé sans vidéo ni personnage', `(() => {
+    if (typeof recReady !== 'function') return true
+    project.videoPath = null; project.characters = []
+    updateRecUI()
+    return recReady() === false && document.getElementById('recBigBtn').disabled === true
+  })()`],
+  ['rec: bouton débloqué avec vidéo + personnage', `(() => {
+    if (typeof recReady !== 'function') return true
+    project.videoPath = 'C:/fake/video.mp4'; project.characters = [{ id: 'rc1', name: 'A', color: '#e8443a' }]
+    updateRecUI()
+    const ok = recReady() === true && document.getElementById('recBigBtn').disabled === false
+    project.videoPath = null; project.characters = []; updateRecUI()
+    return ok
+  })()`],
+  ['rec: startRecording refusé sans vidéo', `(async () => {
+    if (typeof startRecording !== 'function') return true
+    project.videoPath = null
+    await startRecording()
+    return recorder.active === false
+  })()`],
 ]
 
 function getJson() {

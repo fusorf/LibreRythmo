@@ -919,6 +919,8 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .seg-group > .rec-big { border: none; border-radius: 0; } /* dans le groupe : outline porté par le groupe */
 .rec-big .rec-dot { width: 11px; height: 11px; border-radius: 50%; background: #e0453a; flex: 0 0 auto; }
 .rec-big:hover { border-color: var(--toggle-border); }
+.rec-big:disabled { opacity: .4; cursor: not-allowed; }
+.rec-big:disabled .rec-dot { background: var(--dim); }
 .rec-big.recording { background: #e0453a; color: #fff; border-color: #e0453a; }
 .rec-big.recording .rec-dot { background: #fff; border-radius: 2px; animation: recPulse 1s ease-in-out infinite; } /* carré = stop */
 @keyframes recPulse { 50% { opacity: .35; } }

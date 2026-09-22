@@ -946,7 +946,7 @@ function renderChars() {
     list.appendChild(row)
   }
   // la sélection est un mécanisme unique : on répercute sur l'onglet Enregistrement
-  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList() }
+  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList(); updateRecUI() }
 }
 
 $('btnTogglePanel').addEventListener('click', () => {
@@ -1166,6 +1166,7 @@ function recTargetId() {
 }
 async function startRecording() {
   if (recorder.active) return
+  if (!project.videoPath) { toast(t('recNeedVideo')); return } // pas de doublage sans vidéo de référence
   const chId = recTargetId()
   if (!chId) { toast(t('recNeedChar')); return }
   recorder.charId = chId
@@ -1344,6 +1345,10 @@ function updateRecMeter(level) {
   const pk = $('recVuPeak')
   if (pk) { pk.style.bottom = recVuPeakPct + '%'; pk.style.opacity = recVuPeakPct > 1.5 ? 1 : 0 }
 }
+// conditions de déblocage de l'enregistrement : une vidéo chargée ET au moins un
+// personnage à qui attribuer la prise (sinon rien à doubler ni où ranger la prise)
+function recReady() { return !!project.videoPath && project.characters.length > 0 }
+
 function updateRecUI() {
   // rappel du périphérique d'entrée dans le drawer du vumètre
   const dev = $('recVuDev')
@@ -1351,7 +1356,9 @@ function updateRecUI() {
   const big = $('recBigBtn')
   if (big) {
     big.classList.toggle('recording', recorder.active)
-    big.title = t(recorder.active ? 'recStop' : 'recBtnLabel')
+    const ready = recReady()
+    big.disabled = !recorder.active && !ready // grisé tant qu'il manque vidéo/personnage
+    big.title = recorder.active ? t('recStop') : ready ? t('recBtnLabel') : t(!project.videoPath ? 'recNeedVideo' : 'recNeedChar')
     const lbl = $('recBigLabel'); if (lbl) lbl.textContent = t(recorder.active ? 'recStopLabel' : 'recBtnLabel')
   }
 }
@@ -1690,12 +1697,12 @@ function renderRecTab() {
   const noChars = !project.videoPath || !project.characters.length
   $('recEmpty').classList.toggle('hidden', !noChars)
   $('recMain').classList.toggle('hidden', noChars)
+  updateRecUI() // état du bouton (grisé si pas de vidéo/personnage), même quand le panneau est vide
   if (noChars) return
   resizeRecBand()
   resizeRecClips()
   updateRecCharBadge()
   renderRecCharList()
-  updateRecUI()
 }
 
 // badge du personnage ciblé par l'enregistrement (comme le badge « + Réplique » du menu
@@ -2928,7 +2935,7 @@ function refreshInspector() {
   ins.el.classList.toggle('empty', !line && !multi)
   ins.el.classList.toggle('multi', multi)
   scheduleLinesLog()
-  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList() } // suit l'ajout/retrait de personnages
+  if (activeTab === 'rec') { updateRecCharBadge(); renderRecCharList(); updateRecUI() } // suit l'ajout/retrait de personnages
   if (multi) { insShownId = null; refreshMultiInspector(selectedLines()); return }
   if (!line) {
     insShownId = null
@@ -4092,6 +4099,7 @@ video.addEventListener('loadedmetadata', () => {
   detectFps()
   probeAndSyncAudio()
   updateVideoInfoPanel()
+  updateRecUI() // une vidéo est chargée → le bouton Enregistrer peut se débloquer
   if (activeTab === 'tracks') renderTracks() // durée connue → échelle des lanes
 })
 
