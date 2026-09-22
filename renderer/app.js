@@ -3630,7 +3630,6 @@ function setTab(name) {
   if (onTracks) { hideSubOverlay(); renderTracks() }
   if (onRec) { hideSubOverlay(); renderRecTab() }
   $('btnDub').classList.toggle('hidden', !dubVoicelessTrack()) // gating piste sans-voix (tous onglets)
-  $('dubSep').classList.toggle('hidden', !dubVoicelessTrack()) // séparateur du monitoring suit le bouton
   applyBandHeight() // hauteur du dock constante entre onglets + dimensionne le canvas visible
 }
 $('tabRythmo').addEventListener('click', () => setTab('rythmo'))
@@ -3704,7 +3703,6 @@ function renderTracks() {
   $('tracksEmpty').classList.toggle('hidden', !noVideo) // placeholder propre quand pas de vidéo
   $('tracksWrap').classList.toggle('hidden', noVideo)
   $('btnDub').classList.toggle('hidden', !dubVoicelessTrack()) // « Doublage » visible si piste sans-voix
-  $('dubSep').classList.toggle('hidden', !dubVoicelessTrack())
   renderTrackHeads()
   resizeTracksCanvas()
 }
