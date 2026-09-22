@@ -963,9 +963,11 @@ body.on-rec .rec-ctl { display: inline-flex; }
 .rec-fxbtn.on { border-color: color-mix(in srgb, #3fae5a 55%, var(--border)); }
 .rec-fxbtn.busy { opacity: .5; }
 .rec-fx-main, .rec-fx-cog {
-  height: 100%; background: none; border: none; color: inherit; cursor: pointer; padding: 0; line-height: 1;
+  height: 100%; background: none; border: none; border-radius: 0; color: inherit; cursor: pointer; padding: 0; line-height: 1;
   display: flex; align-items: center; justify-content: center;
 }
+/* le survol remplit tout le segment (angles carrés) : le conteneur arrondit les coins extérieurs */
+.rec-fx-main:hover:not(:disabled), .rec-fx-cog:hover:not(:disabled) { background: var(--hover); }
 .rec-fx-main { min-width: 30px; padding: 0 9px; font: 700 11px "Segoe UI", sans-serif; letter-spacing: .04em; opacity: .8; }
 .rec-fx-cog { width: 26px; }
 .rec-fx-cog svg { width: 13px; height: 13px; display: block; }

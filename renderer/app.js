@@ -604,6 +604,8 @@ function applyLang() {
   $('recEmptySub').textContent = t('recEmptySub')
   if (activeTab === 'rec') renderRecTab()
   $('btnImportAudio').textContent = t('importAudio')
+  $('btnRemoveVoices').textContent = t('removeVoicesBtn')
+  $('btnRemoveVoices').title = t('removeVoicesTitle')
   $('btnDubLabel').textContent = t('dubBtn')
   $('btnDub').title = t('dubBtnTitle')
   $('tracksEmptyMain').textContent = t('tracksEmptyMain')
@@ -4020,6 +4022,7 @@ $('btnImportAudio').addEventListener('click', async () => {
   const p = await window.api.openAudio()
   if (p) addExternalAudio(p)
 })
+$('btnRemoveVoices').addEventListener('click', openSeparateDialog)
 
 // ============================================================ video info + fps auto-detect
 let videoInfo = null
