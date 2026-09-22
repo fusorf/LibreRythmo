@@ -1462,28 +1462,38 @@ ipcMain.handle('sep-run', async (e, opts) => {
   // 2) séparation UVR via le CLI natif → WAV « accompaniment » (sans voix)
   const acc = path.join(app.getPath('temp'), base + '-acc.wav')
   const voc = path.join(app.getPath('temp'), base + '-voc.wav')
-  const args = [`--uvr-model=${path.join(mdir, model)}`, `--input-wav=${wav}`, `--output-vocals-wav=${voc}`, `--output-accompaniment-wav=${acc}`]
+  const threads = Math.max(1, Math.min(8, (require('os').cpus() || []).length - 1)) // 1 thread = très lent (RTF ~1.7)
+  const args = [`--uvr-model=${path.join(mdir, model)}`, `--input-wav=${wav}`, `--output-vocals-wav=${voc}`, `--output-accompaniment-wav=${acc}`, `--num-threads=${threads}`]
   // le exe trouve ses libs dans son propre dossier (cwd + LD/DYLD_LIBRARY_PATH)
   const libDir = path.dirname(cli)
   const env = { ...process.env }
   if (process.platform === 'linux') env.LD_LIBRARY_PATH = libDir + (env.LD_LIBRARY_PATH ? path.delimiter + env.LD_LIBRARY_PATH : '')
   else if (process.platform === 'darwin') env.DYLD_LIBRARY_PATH = libDir + (env.DYLD_LIBRARY_PATH ? path.delimiter + env.DYLD_LIBRARY_PATH : '')
+  // Le CLI ne rapporte AUCUNE progression (traitement en un bloc) : on estime une
+  // progression temporelle qui monte vers ~97 % (asymptote) puis saute à 100 % à la fin.
+  const durSec = (() => { try { return Math.max(1, (fs.statSync(wav).size - 44) / 176400) } catch { return 60 } })()
+  const tau = Math.max(3, durSec * 0.6)
+  const t0 = Date.now()
   emit({ phase: 'separate', pct: 0 })
   return await new Promise((resolve) => {
     let tail = ''
-    const clean = () => { try { fs.unlinkSync(wav) } catch {}; try { fs.unlinkSync(voc) } catch {}; try { fs.unlinkSync(acc) } catch {} }
+    const timer = setInterval(() => emit({ phase: 'separate', pct: Math.round(97 * (1 - Math.exp(-((Date.now() - t0) / 1000) / tau))) }), 500)
+    const clean = () => { clearInterval(timer); try { fs.unlinkSync(wav) } catch {}; try { fs.unlinkSync(voc) } catch {}; try { fs.unlinkSync(acc) } catch {} }
     try { sepProc = spawn(cli, args, { cwd: libDir, env, stdio: ['ignore', 'pipe', 'pipe'] }) }
     catch { clean(); return resolve({ error: 'engine-spawn-failed' }) }
-    const on = (d) => { const s = String(d); tail = (tail + s).slice(-4000); const m = s.match(/(\d+)%/); if (m) emit({ phase: 'separate', pct: Number(m[1]) }) }
+    const on = (d) => { tail = (tail + String(d)).slice(-4000) } // capture pour le message d'erreur
     sepProc.stdout.on('data', on); sepProc.stderr.on('data', on)
     sepProc.on('close', (code) => {
       sepProc = null
-      if (code === 0 && fs.existsSync(acc)) {
+      // sherpa écrit la SORTIE BRUTE du modèle dans le fichier "vocals" et calcule
+      // accompaniment = mixture - sortie. Pour un modèle UVR « Inst »/« Kara », la sortie
+      // brute EST l'instrumental (sans voix) → le stem sans-voix est donc `voc`, pas `acc`.
+      if (code === 0 && fs.existsSync(voc)) {
         const destName = (opts.destBase || 'sans-voix') + '-' + Date.now() + '.wav'
         let destBaseDir = opts.destDir && String(opts.destDir).trim() ? opts.destDir : sepDir(opts.projectPath)
         try { fs.mkdirSync(destBaseDir, { recursive: true }) } catch { destBaseDir = sepDir(opts.projectPath) }
         const dest = path.join(destBaseDir, destName)
-        try { fs.copyFileSync(acc, dest) } catch { clean(); return resolve({ error: 'copy-failed' }) }
+        try { fs.copyFileSync(voc, dest) } catch { clean(); return resolve({ error: 'copy-failed' }) }
         clean()
         resolve({ ok: true, path: dest, name: destName })
       } else { clean(); resolve({ error: tail.slice(-300) || 'sep-failed' }) }
