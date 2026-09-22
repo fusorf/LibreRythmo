@@ -157,7 +157,7 @@ function recomputePps() {
 // Hauteur de piste FIXE : une piste a toujours la même hauteur. Moins de pistes =
 // bande plus courte en bas (la vidéo récupère la place).
 const LANE_H = 76
-const NEW_LINE_DUR = 0.25 // durée (s) par défaut d'une nouvelle réplique (1/4 de 1 s)
+const NEW_LINE_DUR = 1.0 // durée (s) par défaut d'une nouvelle réplique (boîte de longueur utilisable, le texte s'y compacte)
 const bandHeightFor = (n) => Math.round(RULER_H + n * LANE_H)
 
 // Panneau du bas redimensionnable. Une poignée unique en haut du dock (#panelResizer,
@@ -4559,7 +4559,7 @@ function renderBand(c, now, W, H, pps, opts) {
         // marge autour du mot : le texte ne colle pas aux séparateurs,
         // proportionnelle à la hauteur de piste (bornée pour les mots étroits)
         const pad = Math.max(3, Math.min(th * 0.14, ww * 0.18))
-        const scale = Math.max(0.1, (ww - pad * 2) / Math.max(1, natural)) // plancher bas : le texte serré rétrécit au lieu de déborder
+        const scale = Math.max(1, ww - pad * 2) / Math.max(1, natural) // le texte se compacte dans la largeur de la boîte (jamais de débordement)
         c.save()
         c.translate(wx + pad, y + th * 0.82)
         c.scale(scale, 1)
@@ -5044,7 +5044,7 @@ function bandWordGeom(c, line, wi, th, xOf) {
   c.font = `bold ${Math.round(th * 0.52)}px ${bandFontFamily(line)}`
   const natural = c.measureText(txt).width
   const pad = Math.max(3, Math.min(th * 0.14, ww * 0.18))
-  const scale = txt ? Math.max(0.1, (ww - pad * 2) / Math.max(1, natural)) : 1
+  const scale = txt ? Math.max(1, ww - pad * 2) / Math.max(1, natural) : 1
   return { w, wx, ww, txt, pad, scale }
 }
 function bandCharX(c, line, wi, ci, th, xOf) {
@@ -5215,24 +5215,6 @@ function beDeleteSelection(line) {
   bandEdit.sel = null
   return pos
 }
-// grow-to-fit : pendant la saisie, on élargit le mot courant pour que son texte
-// s'affiche à taille lisible (échelle ~1) plutôt que compressé/débordant. On ne
-// fait que GRANDIR (jamais rétrécir) et on décale les mots suivants d'autant, ce
-// qui préserve leur durée. Le calage fin du timing se fait ensuite (poignées / touche 4).
-function beFitWord(line, wi) {
-  const w = line.words[wi]
-  if (!w) return
-  const th = trackH()
-  ctx.font = `bold ${Math.round(th * 0.52)}px ${bandFontFamily(line)}`
-  const txt = w.text === '_' ? '' : w.text
-  const needPx = ctx.measureText(txt).width + Math.max(6, 0.30 * th) // marges ~= 2*pad
-  const needDur = needPx / pxPerSec
-  const delta = needDur - (w.end - w.start)
-  if (delta > 1e-4) {
-    w.end += delta
-    for (let i = wi + 1; i < line.words.length; i++) { line.words[i].start += delta; line.words[i].end += delta }
-  }
-}
 
 // index de caractère le plus proche de l'abscisse x dans le mot wi (géométrie du rendu).
 function nearestCharInWord(c, line, wi, th, xOf, x) {
@@ -5323,7 +5305,6 @@ function handleBandEditKey(e) {
     e.preventDefault(); beMutate()
     const sp = beDeleteSelection(line); if (sp) apply(sp)
     apply(beInsertChar(line, k))
-    beFitWord(line, bandEdit.wi) // la boîte grandit pour que le texte reste lisible (pas de débordement)
     markDirty(); return true
   }
   return false // Ctrl+Z/Y, F1, etc. : laisser passer

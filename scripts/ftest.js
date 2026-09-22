@@ -685,20 +685,17 @@ const TESTS = [
     return mono && drew === true
   })()`],
   // --- v3.4 saisie sur la bande : étape B (édition au caractère) ---
-  ['bandEdit B: insertion grandit la boîte (grow-to-fit)', `(() => {
+  ['bandEdit B: insertion préserve la boîte (texte compacté, timing figé)', `(() => {
     if (typeof beInsertChar !== 'function') return true
     beSetup()
     const ev = (k) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
-    const w1dur0 = 2.0 - 1.6
     enterBandEdit('be1', 0, 3) // "Bon|jour"
     handleBandEditKey(ev('X'))
     const l = project.lines.find((x) => x.id === 'be1')
-    const ok = l.words[0].text === 'BonXjour'
-      && Math.abs(l.words[0].start - 1.0) < 1e-9            // début figé
-      && l.words[0].end >= 1.6 - 1e-9                       // ne fait que grandir
-      && Math.abs(l.words[1].start - l.words[0].end) < 1e-6 // contiguïté conservée
-      && Math.abs((l.words[1].end - l.words[1].start) - w1dur0) < 1e-6 // durée du mot suivant préservée
-      && l.words[1].text === 'toi' && bandEdit.wi === 0 && bandEdit.ci === 4
+    // le texte se compacte DANS la boîte : les bornes de timing ne bougent pas
+    const ok = l.words[0].text === 'BonXjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
+      && l.words[1].text === 'toi' && l.words[1].start === 1.6 && l.words[1].end === 2.0
+      && bandEdit.wi === 0 && bandEdit.ci === 4
     exitBandEdit()
     return ok
   })()`],
@@ -861,16 +858,15 @@ const TESTS = [
     setBandMode('select'); const b = bandMode === 'select' && document.getElementById('modeSelect').classList.contains('active')
     return a && b
   })()`],
-  ['bandEdit G: beFitWord agrandit un mot trop étroit', `(() => {
-    if (typeof beFitWord !== 'function') return true
+  ['bandEdit G: texte compacté, la boîte ne déborde pas (scale <= 1 si texte long)', `(() => {
+    if (typeof bandWordGeom !== 'function') return true
     beSetup()
     const l = project.lines.find((x) => x.id === 'be1')
-    l.words[0].end = 1.02; l.words[1].start = 1.02; l.words[1].end = 1.42 // mot 0 rendu minuscule, mot 1 = 0.4 s
-    const before = l.words[0].end - l.words[0].start
-    beFitWord(l, 0)
-    const after = l.words[0].end - l.words[0].start
-    const w1dur = l.words[1].end - l.words[1].start
-    return after > before && Math.abs(w1dur - 0.4) < 1e-6 && Math.abs(l.words[1].start - l.words[0].end) < 1e-6
+    l.words = [{ text: 'anticonstitutionnellement', start: 1.0, end: 1.2 }] // texte long dans une boîte courte
+    const g = bandWordGeom(ctx, l, 0, trackH(), (tt) => xAtTime(tt, effectiveTime()))
+    const rendered = ctx.measureText(g.txt).width * g.scale // largeur réelle du texte dessiné
+    const slot = g.ww - g.pad * 2 // largeur utile de la boîte
+    return rendered <= slot + 0.5 // le texte tient dans la boîte (pas de débordement)
   })()`],
 ]
 
