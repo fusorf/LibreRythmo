@@ -717,8 +717,8 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
 }
 .vol svg { width: 15px; height: 15px; fill: var(--dim); flex: 0 0 auto; }
 
-/* vitesse de lecture : bouton compact (molette = change, clic = ×1) */
-#btnSpeed { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+/* vitesse de lecture : bouton compact à largeur FIXE (ne bouge pas selon la valeur) */
+#btnSpeed { width: 42px; padding: 0; box-sizing: border-box; text-align: center; font-variant-numeric: tabular-nums; }
 
 /* boutons volume / zoom : popover avec slider vertical (molette = réglage direct) */
 .slider-pop {
