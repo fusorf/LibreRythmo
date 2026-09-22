@@ -5194,25 +5194,30 @@ function beDeleteForward(line) {
 }
 // Espace = split du mot au caret : coupe texte + temps (proportionnel), bornes
 // extérieures préservées exactement ; l'utilisateur cale ensuite la limite (touche 4).
-// répartit également les mots [from..fin] dans l'espace restant [words[from].start, fin
-// de boîte], SANS changer la longueur de la boîte ni les mots à gauche de `from`.
-function redistributeFrom(line, from) {
-  const seg = line.words.slice(from)
-  if (!seg.length) return
-  const start = seg[0].start, end = lineEnd(line)
-  const step = Math.max(0.02, (end - start) / seg.length)
+// répartit tous les mots dans la boîte (longueur figée), pondéré par la longueur du
+// texte — exactement comme splitWords sur main : le texte se répand/compacte en temps
+// réel pendant qu'on écrit une phrase. Appelé à chaque frappe.
+function redistributeLine(line) {
+  if (!line.words.length) return
+  const start = lineStart(line), end = lineEnd(line)
+  const dur = Math.max(0.1, end - start)
+  const weights = line.words.map((w) => w.text.length + 1)
+  const total = weights.reduce((a, b) => a + b, 0)
   let t = start
-  for (let i = 0; i < seg.length; i++) { seg[i].start = t; t = i === seg.length - 1 ? end : t + step; seg[i].end = t }
+  for (let i = 0; i < line.words.length; i++) {
+    const w = line.words[i]
+    w.start = t
+    w.end = i === line.words.length - 1 ? end : t + (weights[i] / total) * dur
+    t = w.end
+  }
 }
-// Espace = ajoute un mot : la boîte garde sa longueur ; les mots À GAUCHE du mot édité
-// sont conservés ; le mot édité et tout ce qui suit sont répartis également à droite.
+// Espace = ajoute un mot (les temps sont recalculés par redistributeLine).
 function beSplitAtCaret(line) {
   const { wi, ci } = bandEdit, w = line.words[wi], t = wtext(w)
-  const right = { text: t.slice(ci) || '_', start: w.end, end: w.end } // temps recalculés ci-dessous
+  const right = { text: t.slice(ci) || '_', start: w.start, end: w.end }
   w.text = t.slice(0, ci) || '_'
   line.words.splice(wi + 1, 0, right)
   reindexSymbolsInsert(line, wi + 1)
-  redistributeFrom(line, wi) // répartit [wi..fin] dans la boîte figée, gauche intacte
   return { wi: wi + 1, ci: 0 }
 }
 // suppression d'une plage sélectionnée (mono- ou multi-mots -> fusion des extrêmes)
@@ -5319,10 +5324,9 @@ function handleBandEditKey(e) {
   }
   // --- édition au caractère (préserve le timing des mots non touchés) ---
   const apply = (pos) => { bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.sel = null; bandEdit.blinkT0 = performance.now() }
-  // valide une mutation : place le caret et marque modifié. Le timing des mots n'est
-  // PAS retouché sur une simple frappe (le texte se compacte dans le créneau du mot) ;
-  // seul l'ajout/retrait de mot change le découpage (voir beSplitAtCaret / fusions).
-  const commit = (pos) => { apply(pos); markDirty() }
+  // valide une mutation : place le caret, répartit les mots dans la boîte figée (comme
+  // splitWords sur main : le texte se répand en écrivant), puis marque modifié.
+  const commit = (pos) => { apply(pos); redistributeLine(line); markDirty() }
   if (k === 'Enter') { e.preventDefault(); exitBandEdit(); selectedIds.clear(); refreshInspector(); return true } // Entrée = valider et désélectionner la boîte
   if (k === 'Backspace') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beBackspace(line)); return true }
   if (k === 'Delete') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beDeleteForward(line)); return true }

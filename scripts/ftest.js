@@ -685,33 +685,35 @@ const TESTS = [
     return mono && drew === true
   })()`],
   // --- v3.4 saisie sur la bande : étape B (édition au caractère) ---
-  ['bandEdit B: insertion ne retouche pas le timing (compaction dans le créneau)', `(() => {
+  ['bandEdit B: insertion répartit les mots (comme splitWords, boîte figée)', `(() => {
     if (typeof beInsertChar !== 'function') return true
     beSetup()
     const ev = (k) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     enterBandEdit('be1', 0, 3) // "Bon|jour"
     handleBandEditKey(ev('X'))
     const l = project.lines.find((x) => x.id === 'be1')
-    // le nombre de mots ne change pas -> aucun mot n'est retimé, le texte se compacte
-    const ok = l.words[0].text === 'BonXjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
-      && l.words[1].text === 'toi' && l.words[1].start === 1.6 && l.words[1].end === 2.0
+    const w0 = l.words[0].text.length + 1, w1 = l.words[1].text.length + 1
+    const expEnd0 = 1.0 + (w0 / (w0 + w1)) * 1.0 // pondéré par longueur, comme splitWords
+    const ok = l.words[0].text === 'BonXjour' && l.words[1].text === 'toi'
+      && l.words[0].start === 1.0 && l.words[1].end === 2.0                 // bornes de la boîte figées
+      && Math.abs(l.words[0].end - l.words[1].start) < 1e-9                 // contiguïté
+      && Math.abs(l.words[0].end - expEnd0) < 1e-6                          // répartition pondérée
       && bandEdit.wi === 0 && bandEdit.ci === 4
     exitBandEdit()
     return ok
   })()`],
-  ['bandEdit B: espace = ajoute un mot, gauche conservée + réparti à droite (boîte figée)', `(() => {
+  ['bandEdit B: espace répartit tous les mots dans la boîte figée', `(() => {
     if (typeof beSplitAtCaret !== 'function') return true
     beSetup()
-    enterBandEdit('be1', 1, 1) // caret dans "toi" après "t" (mot 0 "Bonjour" est à gauche)
+    enterBandEdit('be1', 0, 3)
     handleBandEditKey({ key: ' ', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     const l = project.lines.find((x) => x.id === 'be1')
-    const ok = l.words.length === 3
-      && l.words[0].text === 'Bonjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6 // GAUCHE conservée
-      && l.words[1].text === 't' && l.words[2].text === 'oi'
-      && Math.abs(l.words[1].start - 1.6) < 1e-9 && Math.abs(l.words[2].end - 2.0) < 1e-9   // boîte figée
-      && Math.abs((l.words[1].end - l.words[1].start) - 0.2) < 1e-9                          // réparti également à droite
-      && Math.abs((l.words[2].end - l.words[2].start) - 0.2) < 1e-9
-      && bandEdit.wi === 2 && bandEdit.ci === 0
+    const texts = l.words.map((w) => w.text).join('|')
+    const ok = l.words.length === 3 && texts === 'Bon|jour|toi'
+      && l.words[0].start === 1.0 && l.words[2].end === 2.0                 // bornes de la boîte figées
+      && Math.abs(l.words[0].end - l.words[1].start) < 1e-9
+      && Math.abs(l.words[1].end - l.words[2].start) < 1e-9                 // contiguïté (réparti)
+      && bandEdit.wi === 1 && bandEdit.ci === 0
     exitBandEdit()
     return ok
   })()`],
