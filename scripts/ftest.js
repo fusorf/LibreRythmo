@@ -685,30 +685,34 @@ const TESTS = [
     return mono && drew === true
   })()`],
   // --- v3.4 saisie sur la bande : étape B (édition au caractère) ---
-  ['bandEdit B: insertion préserve la boîte (texte compacté, timing figé)', `(() => {
+  ['bandEdit B: insertion répartit les mots dans la boîte (bornes figées)', `(() => {
     if (typeof beInsertChar !== 'function') return true
     beSetup()
     const ev = (k) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     enterBandEdit('be1', 0, 3) // "Bon|jour"
     handleBandEditKey(ev('X'))
     const l = project.lines.find((x) => x.id === 'be1')
-    // le texte se compacte DANS la boîte : les bornes de timing ne bougent pas
-    const ok = l.words[0].text === 'BonXjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
-      && l.words[1].text === 'toi' && l.words[1].start === 1.6 && l.words[1].end === 2.0
+    const w0 = l.words[0].text.length + 1, w1 = l.words[1].text.length + 1
+    const expEnd0 = 1.0 + (w0 / (w0 + w1)) * 1.0 // réparti par longueur, comme splitWords
+    const ok = l.words[0].text === 'BonXjour' && l.words[1].text === 'toi'
+      && l.words[0].start === 1.0 && l.words[1].end === 2.0            // bornes de la boîte figées
+      && Math.abs(l.words[0].end - l.words[1].start) < 1e-9            // contiguïté
+      && Math.abs(l.words[0].end - expEnd0) < 1e-6                     // répartition even
       && bandEdit.wi === 0 && bandEdit.ci === 4
     exitBandEdit()
     return ok
   })()`],
-  ['bandEdit B: espace = split (bornes extérieures intactes)', `(() => {
+  ['bandEdit B: espace = split, réparti dans la boîte (bornes figées)', `(() => {
     if (typeof beSplitAtCaret !== 'function') return true
     beSetup()
     enterBandEdit('be1', 0, 3)
     handleBandEditKey({ key: ' ', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     const l = project.lines.find((x) => x.id === 'be1')
-    const cut = 1.0 + 0.6 * (3 / 7)
-    const ok = l.words.length === 3 && l.words[0].text === 'Bon' && l.words[1].text === 'jour'
-      && l.words[0].start === 1.0 && Math.abs(l.words[1].end - 1.6) < 1e-9 && Math.abs(l.words[0].end - cut) < 1e-9
-      && l.words[2].text === 'toi' && l.words[2].start === 1.6 && l.words[2].end === 2.0
+    const texts = l.words.map((w) => w.text).join('|')
+    const ok = l.words.length === 3 && texts === 'Bon|jour|toi'
+      && l.words[0].start === 1.0 && l.words[2].end === 2.0            // bornes de la boîte figées
+      && Math.abs(l.words[0].end - l.words[1].start) < 1e-9
+      && Math.abs(l.words[1].end - l.words[2].start) < 1e-9           // contiguïté (réparti even)
       && bandEdit.wi === 1 && bandEdit.ci === 0
     exitBandEdit()
     return ok
@@ -744,7 +748,9 @@ const TESTS = [
     handleBandEditKey(ev('ArrowRight', { shiftKey: true })) // sélection "Bon"
     handleBandEditKey(ev('Backspace'))
     const l = project.lines.find((x) => x.id === 'be1')
-    const ok = l.words.length === 2 && l.words[0].text === 'jour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
+    const ok = l.words.length === 2 && l.words[0].text === 'jour' && l.words[1].text === 'toi'
+      && l.words[0].start === 1.0 && l.words[1].end === 2.0            // bornes figées
+      && Math.abs(l.words[0].end - l.words[1].start) < 1e-9           // contiguïté (réparti)
       && bandEdit.wi === 0 && bandEdit.ci === 0 && !bandEdit.sel
     exitBandEdit()
     return ok

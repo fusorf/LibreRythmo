@@ -5271,6 +5271,25 @@ function tapTiming() {
   if (tapCursor.wi >= line.words.length) { tapCursor = null; toast(t('tapDone')) }
 }
 
+// répartit les mots uniformément (poids = longueur du texte, comme splitWords) dans
+// la boîte, dont les bornes [start, end] restent FIXES (longueur figée à la création).
+// Appelé après chaque frappe : le texte multi-mots se répartit et se compacte comme
+// l'ancien champ texte du pied de page.
+function redistributeLine(line) {
+  if (!line.words.length) return
+  const start = lineStart(line), end = lineEnd(line)
+  const dur = Math.max(0.1, end - start)
+  const weights = line.words.map((w) => w.text.length + 1)
+  const total = weights.reduce((a, b) => a + b, 0)
+  let t = start
+  for (let i = 0; i < line.words.length; i++) {
+    const w = line.words[i]
+    w.start = t
+    w.end = i === line.words.length - 1 ? end : t + (weights[i] / total) * dur
+    t = w.end
+  }
+}
+
 // clavier en mode saisie. Renvoie true si la touche est consommée (l'appelant
 // arrête alors le traitement global : réacs, détection, espace=lecture, etc.).
 function handleBandEditKey(e) {
@@ -5297,15 +5316,17 @@ function handleBandEditKey(e) {
   }
   // --- édition au caractère (préserve le timing des mots non touchés) ---
   const apply = (pos) => { bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.sel = null; bandEdit.blinkT0 = performance.now() }
+  // valide une mutation : place le caret, répartit les mots dans la boîte (bornes figées), marque modifié
+  const commit = (pos) => { apply(pos); redistributeLine(line); markDirty() }
   if (k === 'Enter') { e.preventDefault(); exitBandEdit(); return true } // Entrée = valider et sortir (ne crée plus de boîte)
-  if (k === 'Backspace') { e.preventDefault(); beMutate(); apply(beDeleteSelection(line) || beBackspace(line)); markDirty(); return true }
-  if (k === 'Delete') { e.preventDefault(); beMutate(); apply(beDeleteSelection(line) || beDeleteForward(line)); markDirty(); return true }
-  if (k === ' ') { e.preventDefault(); beMutate(); const sp = beDeleteSelection(line); if (sp) apply(sp); apply(beSplitAtCaret(line)); markDirty(); return true }
+  if (k === 'Backspace') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beBackspace(line)); return true }
+  if (k === 'Delete') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beDeleteForward(line)); return true }
+  if (k === ' ') { e.preventDefault(); beMutate(); const sp = beDeleteSelection(line); if (sp) apply(sp); commit(beSplitAtCaret(line)); return true }
   if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault(); beMutate()
     const sp = beDeleteSelection(line); if (sp) apply(sp)
-    apply(beInsertChar(line, k))
-    markDirty(); return true
+    commit(beInsertChar(line, k))
+    return true
   }
   return false // Ctrl+Z/Y, F1, etc. : laisser passer
 }
