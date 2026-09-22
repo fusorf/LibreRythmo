@@ -365,8 +365,8 @@ button.active {
 /* bascule Sélection / Texte de la bande */
 .mode-btn { width: 40px; }
 .mode-btn svg { width: 20px; height: 20px; fill: var(--icon); }
-#modeSelect svg { width: 17px; height: 17px; } /* main un peu plus petite */
-#modeText svg { width: 23px; height: 23px; } /* I-beam texte un peu plus grand */
+#modeSelect svg { width: 15px; height: 15px; } /* main un peu plus petite */
+#modeText svg { width: 25px; height: 25px; } /* I-beam texte un peu plus grand */
 .mode-btn:hover svg { fill: var(--icon-h); }
 .mode-btn.active svg { fill: var(--toggle-text); }
 /* bouton supprimer la réplique : icône poubelle, rouge au survol (action destructive) */
