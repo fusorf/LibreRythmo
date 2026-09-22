@@ -155,6 +155,8 @@ const I18N = {
     sepDone: 'Piste sans voix ajoutée',
     sepTrackName: 'sans-voix',
     magnetTitle: 'Mode aimant',
+    modeSelectTitle: 'Mode Sélection : sélectionner, déplacer, caler le timing',
+    modeTextTitle: 'Mode Texte : cliquer (ou glisser) sur la bande pour écrire une réplique',
     trackCountTitle: 'Nombre de pistes',
     trackCountOpt: (n) => `${n} piste${n > 1 ? 's' : ''}`,
     panelTitle: 'Personnages',
@@ -446,8 +448,9 @@ const I18N = {
       {
         icon: '✍️', title: 'Répliques',
         items: [
+          ['Modes (barre d\'outils)', 'Sélection : cliquer/glisser pour déplacer et caler le timing. Texte : cliquer (ou glisser pour la longueur) sur une piste pour écrire une réplique'],
           ['double-clic (bande)', "Placer le curseur d'écriture dans une réplique, ou en créer une sur une piste vide"],
-          ['Entrée', 'Créer une réplique au point de lecture et écrire dessus'],
+          ['Entrée', 'En saisie : valider et sortir. Sinon : créer une réplique au point de lecture'],
           ['saisie sur la bande', "Le texte s'écrit directement sur la rythmo : flèches pour déplacer le curseur, Retour arrière / Suppr pour corriger, Échap pour sortir"],
           ['Espace (en saisie)', 'Couper en deux le mot au curseur'],
           ['4 (en pause)', 'Couper en deux, texte et timing, le mot sous la barre rouge'],
@@ -699,6 +702,8 @@ const I18N = {
     sepDone: 'Voiceless track added',
     sepTrackName: 'no-vocals',
     magnetTitle: 'Magnet mode',
+    modeSelectTitle: 'Select mode: select, move, set timing',
+    modeTextTitle: 'Text mode: click (or drag) on the band to write a line',
     trackCountTitle: 'Tracks',
     trackCountOpt: (n) => `${n} track${n > 1 ? 's' : ''}`,
     panelTitle: 'Characters',
@@ -990,8 +995,9 @@ const I18N = {
       {
         icon: '✍️', title: 'Lines',
         items: [
+          ['Modes (toolbar)', 'Select: click/drag to move and set timing. Text: click (or drag for length) on a track to write a line'],
           ['double-click (band)', 'Place the writing caret in a line, or create one on an empty track'],
-          ['Enter', 'Create a line at the reading point and type on it'],
+          ['Enter', 'While typing: commit and leave. Otherwise: create a line at the reading point'],
           ['typing on the band', 'Text is written directly on the band: arrows to move the caret, Backspace / Delete to fix, Esc to leave'],
           ['Space (while typing)', 'Split the word at the caret in two'],
           ['4 (paused)', 'Split the word under the red bar in two (text and timing)'],
@@ -1243,6 +1249,8 @@ const I18N = {
     sepDone: 'Pista sin voces añadida',
     sepTrackName: 'sin-voces',
     magnetTitle: 'Modo imán',
+    modeSelectTitle: 'Modo Selección: seleccionar, mover, ajustar la sincronía',
+    modeTextTitle: 'Modo Texto: clic (o arrastrar) en la banda para escribir una línea',
     trackCountTitle: 'Número de pistas',
     trackCountOpt: (n) => `${n} pista${n > 1 ? 's' : ''}`,
     panelTitle: 'Personajes',
@@ -1534,8 +1542,9 @@ const I18N = {
       {
         icon: '✍️', title: 'Líneas',
         items: [
+          ['Modos (barra)', 'Selección: clic/arrastrar para mover y ajustar la sincronía. Texto: clic (o arrastrar para la longitud) en una pista para escribir'],
           ['doble clic (banda)', 'Colocar el cursor de escritura en una línea, o crear una en una pista vacía'],
-          ['Intro', 'Crear una línea en el punto de lectura y escribir en ella'],
+          ['Intro', 'Escribiendo: confirmar y salir. Si no: crear una línea en el punto de lectura'],
           ['escritura en la banda', 'El texto se escribe directamente en la banda: flechas para mover el cursor, Retroceso / Supr para corregir, Esc para salir'],
           ['Espacio (escribiendo)', 'Cortar en dos la palabra en el cursor'],
           ['4 (en pausa)', 'Cortar en dos, texto y sincronía, la palabra bajo la barra roja'],

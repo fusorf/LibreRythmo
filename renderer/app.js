@@ -373,7 +373,6 @@ let autofocusText = true // focus du champ texte à la création d'une réplique
 
 // focus + sélection du champ texte de l'inspecteur après création d'une réplique
 function focusNewLineText() {
-  if (!autofocusText) return
   const l = singleSelected() // addLineAt vient de sélectionner la nouvelle réplique
   if (l) enterBandEdit(l.id, 0, caretLen(l, 0), { select: true }) // caret sur la bande, texte présélectionné
 }
@@ -532,6 +531,8 @@ function applyLang() {
   $('btnOnoma').textContent = t('onomaBtn')
   $('btnOnoma').title = t('onomaTitle')
   $('btnMagnet').title = t('magnetTitle')
+  $('modeSelect').title = t('modeSelectTitle')
+  $('modeText').title = t('modeTextTitle')
   buildOnomaPop()
   $('btnSymbols').textContent = t('symbolsBtn')
   $('btnSymbols').title = t('symbolsTitle')
@@ -4558,7 +4559,7 @@ function renderBand(c, now, W, H, pps, opts) {
         // marge autour du mot : le texte ne colle pas aux séparateurs,
         // proportionnelle à la hauteur de piste (bornée pour les mots étroits)
         const pad = Math.max(3, Math.min(th * 0.14, ww * 0.18))
-        const scale = Math.max(0.2, (ww - pad * 2) / Math.max(1, natural))
+        const scale = Math.max(0.1, (ww - pad * 2) / Math.max(1, natural)) // plancher bas : le texte serré rétrécit au lieu de déborder
         c.save()
         c.translate(wx + pad, y + th * 0.82)
         c.scale(scale, 1)
@@ -4705,7 +4706,23 @@ function draw() {
   drawCuesTimeline()
   drawHoverCursor()
   drawDragGuide()
+  drawCreatePreview()
   updateSubOverlay()
+}
+
+// aperçu de la boîte en cours de création (mode texte, glisser sur une piste vide)
+function drawCreatePreview() {
+  if (!drag || drag.kind !== 'create' || !drag.moved) return
+  const th = trackH()
+  const y = trackY(drag.tr)
+  const x0 = Math.min(drag.x0, drag.x1), x1 = Math.max(drag.x0, drag.x1)
+  ctx.save()
+  ctx.fillStyle = 'rgba(122,162,255,.18)'
+  ctx.strokeStyle = 'rgba(122,162,255,.8)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath(); ctx.roundRect(x0, y + 3, Math.max(2, x1 - x0), th - 6, 5)
+  ctx.fill(); ctx.stroke()
+  ctx.restore()
 }
 
 // sous-titre « classique » superposé à l'aperçu vidéo (éditeur uniquement) :
@@ -4896,6 +4913,20 @@ $('btnMagnet').addEventListener('click', () => {
   $('btnMagnet').classList.toggle('active', magnetOn)
 })
 
+// ---------- mode d'interaction de la bande : « select » (sélection / déplacement /
+// timing) ou « text » (cliquer pour écrire une réplique). Bascule via la barre d'outils.
+// N'affecte QUE les clics/glissers sur la bande ; le caret peut s'ouvrir dans les deux modes.
+let bandMode = 'select'
+function setBandMode(m) {
+  bandMode = m === 'text' ? 'text' : 'select'
+  $('modeSelect').classList.toggle('active', bandMode === 'select')
+  $('modeText').classList.toggle('active', bandMode === 'text')
+  canvas.style.cursor = bandMode === 'text' ? 'text' : 'grab'
+  if (bandMode !== 'text' && beActive()) exitBandEdit()
+}
+$('modeSelect').addEventListener('click', () => setBandMode('select'))
+$('modeText').addEventListener('click', () => setBandMode('text'))
+
 function magnetAdjust(d, group) {
   const thresh = 8 / pxPerSec
   const dragIds = new Set(group.map((g) => g.line.id))
@@ -5013,7 +5044,7 @@ function bandWordGeom(c, line, wi, th, xOf) {
   c.font = `bold ${Math.round(th * 0.52)}px ${bandFontFamily(line)}`
   const natural = c.measureText(txt).width
   const pad = Math.max(3, Math.min(th * 0.14, ww * 0.18))
-  const scale = txt ? Math.max(0.2, (ww - pad * 2) / Math.max(1, natural)) : 1
+  const scale = txt ? Math.max(0.1, (ww - pad * 2) / Math.max(1, natural)) : 1
   return { w, wx, ww, txt, pad, scale }
 }
 function bandCharX(c, line, wi, ci, th, xOf) {
@@ -5184,11 +5215,23 @@ function beDeleteSelection(line) {
   bandEdit.sel = null
   return pos
 }
-// Entrée en cours de saisie : valide la réplique et en ouvre une nouvelle à la barre rouge.
-function beCommitNewLine() {
-  exitBandEdit()
-  const nl = addLineAt(effectiveTime(), null, '…', NEW_LINE_DUR)
-  if (nl) enterBandEdit(nl.id, 0, caretLen(nl, 0), { select: true })
+// grow-to-fit : pendant la saisie, on élargit le mot courant pour que son texte
+// s'affiche à taille lisible (échelle ~1) plutôt que compressé/débordant. On ne
+// fait que GRANDIR (jamais rétrécir) et on décale les mots suivants d'autant, ce
+// qui préserve leur durée. Le calage fin du timing se fait ensuite (poignées / touche 4).
+function beFitWord(line, wi) {
+  const w = line.words[wi]
+  if (!w) return
+  const th = trackH()
+  ctx.font = `bold ${Math.round(th * 0.52)}px ${bandFontFamily(line)}`
+  const txt = w.text === '_' ? '' : w.text
+  const needPx = ctx.measureText(txt).width + Math.max(6, 0.30 * th) // marges ~= 2*pad
+  const needDur = needPx / pxPerSec
+  const delta = needDur - (w.end - w.start)
+  if (delta > 1e-4) {
+    w.end += delta
+    for (let i = wi + 1; i < line.words.length; i++) { line.words[i].start += delta; line.words[i].end += delta }
+  }
 }
 
 // index de caractère le plus proche de l'abscisse x dans le mot wi (géométrie du rendu).
@@ -5272,7 +5315,7 @@ function handleBandEditKey(e) {
   }
   // --- édition au caractère (préserve le timing des mots non touchés) ---
   const apply = (pos) => { bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.sel = null; bandEdit.blinkT0 = performance.now() }
-  if (k === 'Enter') { e.preventDefault(); beCommitNewLine(); return true }
+  if (k === 'Enter') { e.preventDefault(); exitBandEdit(); return true } // Entrée = valider et sortir (ne crée plus de boîte)
   if (k === 'Backspace') { e.preventDefault(); beMutate(); apply(beDeleteSelection(line) || beBackspace(line)); markDirty(); return true }
   if (k === 'Delete') { e.preventDefault(); beMutate(); apply(beDeleteSelection(line) || beDeleteForward(line)); markDirty(); return true }
   if (k === ' ') { e.preventDefault(); beMutate(); const sp = beDeleteSelection(line); if (sp) apply(sp); apply(beSplitAtCaret(line)); markDirty(); return true }
@@ -5280,17 +5323,37 @@ function handleBandEditKey(e) {
     e.preventDefault(); beMutate()
     const sp = beDeleteSelection(line); if (sp) apply(sp)
     apply(beInsertChar(line, k))
+    beFitWord(line, bandEdit.wi) // la boîte grandit pour que le texte reste lisible (pas de débordement)
     markDirty(); return true
   }
   return false // Ctrl+Z/Y, F1, etc. : laisser passer
 }
 
 canvas.addEventListener('pointerdown', (e) => {
-  if (beActive()) exitBandEdit() // un clic ailleurs sort de la saisie (le double-clic ré-entre)
   const r = canvas.getBoundingClientRect()
   const x = e.clientX - r.left
   const y = e.clientY - r.top
   const hit = hitTest(x, y)
+
+  // MODE TEXTE (hors règle temporelle) : clic pour écrire. Sur une réplique -> place
+  // le caret ; sur une piste vide -> crée une boîte (clic = longueur défaut, glisser =
+  // longueur choisie). Le scrub par glisser n'existe pas ici (molette / règle / flèches).
+  if (bandMode === 'text' && activeTab === 'rythmo' && y > RULER_H) {
+    hoverEdge = null; selectedCueId = null
+    canvas.setPointerCapture(e.pointerId)
+    if (hit.kind === 'line' || hit.kind === 'edge') {
+      const pos = caretHitTest(x, y) || { lineId: hit.line.id, wi: 0, ci: 0 }
+      enterBandEdit(pos.lineId, pos.wi, pos.ci)
+    } else {
+      if (beActive()) exitBandEdit()
+      const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
+      drag = { kind: 'create', x0: x, x1: x, tr, moved: false }
+    }
+    return
+  }
+
+  // MODE SÉLECTION (et clic sur la règle en mode texte)
+  if (beActive()) exitBandEdit() // un clic ailleurs sort de la saisie (le double-clic ré-entre)
   hoverEdge = null // pas de surbrillance de poignée pendant un drag
   selectedCueId = null // toute sélection de réplique/scrub désélectionne un repère ADR
   canvas.setPointerCapture(e.pointerId)
@@ -5374,6 +5437,11 @@ canvas.addEventListener('pointermove', (e) => {
     // feedback curseur au survol : poignées de mots, corps de réplique, règle, bande
     const r = canvas.getBoundingClientRect()
     hover = { x: e.clientX - r.left, y: e.clientY - r.top }
+    if (bandMode === 'text' && activeTab === 'rythmo') { // mode texte : curseur d'écriture (règle = lecture)
+      canvas.style.cursor = hover.y <= RULER_H ? 'pointer' : 'text'
+      hoverEdge = null
+      return
+    }
     const hit = hitTest(hover.x, hover.y)
     hoverEdge = hit.kind === 'edge'
       ? { lineId: hit.line.id, wi: hit.wi, type: hit.type, ctrl: e.ctrlKey || e.metaKey }
@@ -5394,7 +5462,10 @@ canvas.addEventListener('pointermove', (e) => {
   const dx = x - drag.x0
   const dt = dx / pxPerSec
 
-  if (drag.kind === 'scrub') {
+  if (drag.kind === 'create') {
+    drag.x1 = x // aperçu de la nouvelle boîte (dessiné dans draw())
+    if (Math.abs(dx) > 3) drag.moved = true
+  } else if (drag.kind === 'scrub') {
     if (Math.abs(dx) > 3) drag.moved = true
     if (drag.moved) {
       scrubTo(drag.t0 - dt)
@@ -5508,15 +5579,26 @@ function endDrag() {
   if (drag && drag.kind === 'scrub' && drag.fromRuler && !drag.moved && video.src) {
     scrubTo(drag.tClick)
   }
+  if (drag && drag.kind === 'create') {
+    // création en mode texte : clic = longueur par défaut, glisser = longueur choisie
+    const tA = timeAtX(drag.x0, effectiveTime())
+    const tB = timeAtX(drag.x1, effectiveTime())
+    let a = Math.min(tA, tB), b = Math.max(tA, tB)
+    if (!drag.moved || b - a < 0.05) { a = tA; b = a + NEW_LINE_DUR }
+    a = Math.max(0, a)
+    const nl = addLineAt(a, drag.tr, '…', b - a)
+    if (nl) enterBandEdit(nl.id, 0, caretLen(nl, 0), { select: true })
+  }
   drag = null
   scrub.active = false
   if (!scrub.busy && scrub.pending == null) scrub.time = null
-  canvas.style.cursor = 'grab'
+  canvas.style.cursor = bandMode === 'text' ? 'text' : 'grab'
 }
 canvas.addEventListener('pointerup', endDrag)
 canvas.addEventListener('pointercancel', endDrag)
 
 canvas.addEventListener('dblclick', (e) => {
+  if (bandMode === 'text' && activeTab === 'rythmo') return // en mode texte, le simple clic gère déjà tout
   const r = canvas.getBoundingClientRect()
   const x = e.clientX - r.left
   const y = e.clientY - r.top

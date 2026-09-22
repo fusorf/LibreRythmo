@@ -671,8 +671,6 @@ function buildMenu() {
         // lui-même (et laisse l'annulation native des champs texte intacte)
         { id: 'menu-undo', label: s.undo, accelerator: 'CmdOrCtrl+Z', registerAccelerator: false, enabled: undoState.undo, click: () => send('undo') },
         { id: 'menu-redo', label: s.redo, accelerator: 'CmdOrCtrl+Y', registerAccelerator: false, enabled: undoState.redo, click: () => send('redo') },
-        { type: 'separator' },
-        { label: s.autofocusText, type: 'checkbox', checked: settings.autofocus, click: (item) => send('toggle-autofocus', item.checked) },
       ],
     },
     {

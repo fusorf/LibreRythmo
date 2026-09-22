@@ -100,6 +100,14 @@
       <input id="volume" type="range" min="0" max="1" step="0.01" value="1">
     </div>
     <div class="sep"></div>
+    <div class="seg-group rythmo-ctl" id="modeToggle" title="Mode d'édition de la bande">
+      <button id="modeSelect" class="mode-btn active" title="Mode Sélection : sélectionner, déplacer, caler le timing">
+        <svg viewBox="0 0 16 16"><path d="M3 1.5l9.5 5.6-4.1.8 2.3 4.6-1.9.9-2.3-4.6-3.5 2.8V1.5z"/></svg>
+      </button>
+      <button id="modeText" class="mode-btn" title="Mode Texte : cliquer (ou glisser) sur la bande pour écrire une réplique">
+        <svg viewBox="0 0 16 16"><path d="M2.5 2h11v2.2h-1.5V3.5H8.9v9h1.6V14H5.5v-1.5h1.6v-9H3.9v.7H2.5V2z"/></svg>
+      </button>
+    </div>
     <div class="seg-group rythmo-ctl">
       <span id="curCharBadge" title="Personnage sélectionné"></span>
       <button id="btnAddLine" title="Nouvelle réplique au point de lecture (Entrée)"><span id="addLineLabel">+ Réplique</span></button>

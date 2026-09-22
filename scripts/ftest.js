@@ -685,16 +685,20 @@ const TESTS = [
     return mono && drew === true
   })()`],
   // --- v3.4 saisie sur la bande : étape B (édition au caractère) ---
-  ['bandEdit B: insertion préserve le timing', `(() => {
+  ['bandEdit B: insertion grandit la boîte (grow-to-fit)', `(() => {
     if (typeof beInsertChar !== 'function') return true
     beSetup()
     const ev = (k) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    const w1dur0 = 2.0 - 1.6
     enterBandEdit('be1', 0, 3) // "Bon|jour"
     handleBandEditKey(ev('X'))
     const l = project.lines.find((x) => x.id === 'be1')
-    const ok = l.words[0].text === 'BonXjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
-      && l.words[1].text === 'toi' && l.words[1].start === 1.6 && l.words[1].end === 2.0
-      && bandEdit.wi === 0 && bandEdit.ci === 4
+    const ok = l.words[0].text === 'BonXjour'
+      && Math.abs(l.words[0].start - 1.0) < 1e-9            // début figé
+      && l.words[0].end >= 1.6 - 1e-9                       // ne fait que grandir
+      && Math.abs(l.words[1].start - l.words[0].end) < 1e-6 // contiguïté conservée
+      && Math.abs((l.words[1].end - l.words[1].start) - w1dur0) < 1e-6 // durée du mot suivant préservée
+      && l.words[1].text === 'toi' && bandEdit.wi === 0 && bandEdit.ci === 4
     exitBandEdit()
     return ok
   })()`],
@@ -841,6 +845,32 @@ const TESTS = [
   ['bandEdit F: aide documente la barre rouge (fr/en/es)', `(() => {
     const dump = (l) => { const p = lang; lang = l; const s = JSON.stringify(t('guideSections')); lang = p; return s }
     return dump('fr').includes('barre rouge') && dump('en').includes('red bar') && dump('es').includes('barra roja')
+  })()`],
+  // --- v3.4 refonte ergonomie : modes, Entrée=sortir, grow-to-fit ---
+  ['bandEdit G: Entrée valide et sort (ne crée pas de boîte)', `(() => {
+    if (typeof enterBandEdit !== 'function') return true
+    beSetup()
+    const before = project.lines.length
+    enterBandEdit('be1', 0, 3)
+    handleBandEditKey({ key: 'Enter', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    return bandEdit === null && project.lines.length === before
+  })()`],
+  ['bandEdit G: bascule de mode sélection / texte', `(() => {
+    if (typeof setBandMode !== 'function') return true
+    setBandMode('text'); const a = bandMode === 'text' && document.getElementById('modeText').classList.contains('active')
+    setBandMode('select'); const b = bandMode === 'select' && document.getElementById('modeSelect').classList.contains('active')
+    return a && b
+  })()`],
+  ['bandEdit G: beFitWord agrandit un mot trop étroit', `(() => {
+    if (typeof beFitWord !== 'function') return true
+    beSetup()
+    const l = project.lines.find((x) => x.id === 'be1')
+    l.words[0].end = 1.02; l.words[1].start = 1.02; l.words[1].end = 1.42 // mot 0 rendu minuscule, mot 1 = 0.4 s
+    const before = l.words[0].end - l.words[0].start
+    beFitWord(l, 0)
+    const after = l.words[0].end - l.words[0].start
+    const w1dur = l.words[1].end - l.words[1].start
+    return after > before && Math.abs(w1dur - 0.4) < 1e-6 && Math.abs(l.words[1].start - l.words[0].end) < 1e-6
   })()`],
 ]
 
