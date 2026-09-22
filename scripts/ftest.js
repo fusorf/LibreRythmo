@@ -699,19 +699,19 @@ const TESTS = [
     exitBandEdit()
     return ok
   })()`],
-  ['bandEdit B: espace = nouveau mot poussé à droite (timings gauche conservés)', `(() => {
+  ['bandEdit B: espace = ajoute un mot, gauche conservée + réparti à droite (boîte figée)', `(() => {
     if (typeof beSplitAtCaret !== 'function') return true
     beSetup()
-    enterBandEdit('be1', 0, 3)
+    enterBandEdit('be1', 1, 1) // caret dans "toi" après "t" (mot 0 "Bonjour" est à gauche)
     handleBandEditKey({ key: ' ', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     const l = project.lines.find((x) => x.id === 'be1')
-    const texts = l.words.map((w) => w.text).join('|')
-    const dur = 0.6 // clamp(1.6-1.0, 0.3, 1.5)
-    const ok = l.words.length === 3 && texts === 'Bon|jour|toi'
-      && l.words[0].start === 1.0 && Math.abs(l.words[0].end - 1.6) < 1e-9        // "Bon" garde le créneau du mot (gauche conservée)
-      && Math.abs(l.words[1].start - 1.6) < 1e-9 && Math.abs(l.words[1].end - (1.6 + dur)) < 1e-9 // nouveau mot à droite
-      && Math.abs(l.words[2].start - (1.6 + dur)) < 1e-9 && Math.abs(l.words[2].end - (2.0 + dur)) < 1e-9 // "toi" poussé à droite
-      && bandEdit.wi === 1 && bandEdit.ci === 0
+    const ok = l.words.length === 3
+      && l.words[0].text === 'Bonjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6 // GAUCHE conservée
+      && l.words[1].text === 't' && l.words[2].text === 'oi'
+      && Math.abs(l.words[1].start - 1.6) < 1e-9 && Math.abs(l.words[2].end - 2.0) < 1e-9   // boîte figée
+      && Math.abs((l.words[1].end - l.words[1].start) - 0.2) < 1e-9                          // réparti également à droite
+      && Math.abs((l.words[2].end - l.words[2].start) - 0.2) < 1e-9
+      && bandEdit.wi === 2 && bandEdit.ci === 0
     exitBandEdit()
     return ok
   })()`],

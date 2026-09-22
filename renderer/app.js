@@ -5194,14 +5194,25 @@ function beDeleteForward(line) {
 }
 // Espace = split du mot au caret : coupe texte + temps (proportionnel), bornes
 // extérieures préservées exactement ; l'utilisateur cale ensuite la limite (touche 4).
+// répartit également les mots [from..fin] dans l'espace restant [words[from].start, fin
+// de boîte], SANS changer la longueur de la boîte ni les mots à gauche de `from`.
+function redistributeFrom(line, from) {
+  const seg = line.words.slice(from)
+  if (!seg.length) return
+  const start = seg[0].start, end = lineEnd(line)
+  const step = Math.max(0.02, (end - start) / seg.length)
+  let t = start
+  for (let i = 0; i < seg.length; i++) { seg[i].start = t; t = i === seg.length - 1 ? end : t + step; seg[i].end = t }
+}
+// Espace = ajoute un mot : la boîte garde sa longueur ; les mots À GAUCHE du mot édité
+// sont conservés ; le mot édité et tout ce qui suit sont répartis également à droite.
 function beSplitAtCaret(line) {
   const { wi, ci } = bandEdit, w = line.words[wi], t = wtext(w)
-  const dur = clamp(w.end - w.start, 0.3, 1.5) // le nouveau mot prend un créneau lisible à droite
-  w.text = t.slice(0, ci) || '_'               // partie gauche : garde le créneau du mot (timings conservés)
-  const right = { text: t.slice(ci) || '_', start: w.end, end: w.end + dur }
-  for (let j = wi + 1; j < line.words.length; j++) { line.words[j].start += dur; line.words[j].end += dur } // pousse la suite à droite
+  const right = { text: t.slice(ci) || '_', start: w.end, end: w.end } // temps recalculés ci-dessous
+  w.text = t.slice(0, ci) || '_'
   line.words.splice(wi + 1, 0, right)
   reindexSymbolsInsert(line, wi + 1)
+  redistributeFrom(line, wi) // répartit [wi..fin] dans la boîte figée, gauche intacte
   return { wi: wi + 1, ci: 0 }
 }
 // suppression d'une plage sélectionnée (mono- ou multi-mots -> fusion des extrêmes)
