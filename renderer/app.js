@@ -374,7 +374,7 @@ let autofocusText = true // focus du champ texte à la création d'une réplique
 // focus + sélection du champ texte de l'inspecteur après création d'une réplique
 function focusNewLineText() {
   const l = singleSelected() // addLineAt vient de sélectionner la nouvelle réplique
-  if (l) enterBandEdit(l.id, 0, caretLen(l, 0), { select: true }) // caret sur la bande, texte présélectionné
+  if (l) enterBandEdit(l.id, 0, 0) // caret au début de la boîte vide, prêt à écrire
 }
 
 // pousse tous les réglages au process principal : persistance settings.ini + menu
@@ -2774,7 +2774,7 @@ function addLineAt(start, track, text, dur) {
     id: uid(),
     characterId,
     track: track == null ? findFreeTrack(start, end, characterId) : track,
-    words: splitWords(text || '…', start, end),
+    words: splitWords(text || '_', start, end),
   }
   project.lines.push(line)
   selectedIds = new Set([line.id])
@@ -5318,7 +5318,7 @@ function handleBandEditKey(e) {
   const apply = (pos) => { bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.sel = null; bandEdit.blinkT0 = performance.now() }
   // valide une mutation : place le caret, répartit les mots dans la boîte (bornes figées), marque modifié
   const commit = (pos) => { apply(pos); redistributeLine(line); markDirty() }
-  if (k === 'Enter') { e.preventDefault(); exitBandEdit(); return true } // Entrée = valider et sortir (ne crée plus de boîte)
+  if (k === 'Enter') { e.preventDefault(); exitBandEdit(); selectedIds.clear(); refreshInspector(); return true } // Entrée = valider et désélectionner la boîte
   if (k === 'Backspace') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beBackspace(line)); return true }
   if (k === 'Delete') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beDeleteForward(line)); return true }
   if (k === ' ') { e.preventDefault(); beMutate(); const sp = beDeleteSelection(line); if (sp) apply(sp); commit(beSplitAtCaret(line)); return true }
@@ -5588,8 +5588,8 @@ function endDrag() {
     let a = Math.min(tA, tB), b = Math.max(tA, tB)
     if (!drag.moved || b - a < 0.05) { a = tA; b = a + NEW_LINE_DUR }
     a = Math.max(0, a)
-    const nl = addLineAt(a, drag.tr, '…', b - a)
-    if (nl) enterBandEdit(nl.id, 0, caretLen(nl, 0), { select: true })
+    const nl = addLineAt(a, drag.tr, '_', b - a)
+    if (nl) enterBandEdit(nl.id, 0, 0)
   }
   drag = null
   scrub.active = false
@@ -5611,7 +5611,7 @@ canvas.addEventListener('dblclick', (e) => {
   } else if (y > RULER_H) {
     const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
     const t = timeAtX(x, effectiveTime())
-    addLineAt(t, tr, '…', NEW_LINE_DUR)
+    addLineAt(t, tr, '_', NEW_LINE_DUR)
     focusNewLineText()
   }
 })
@@ -5790,7 +5790,7 @@ function applySeekBarVisibility() {
 }
 
 $('btnAddLine').addEventListener('click', () => {
-  addLineAt(video.currentTime, null, '…', NEW_LINE_DUR)
+  addLineAt(video.currentTime, null, '_', NEW_LINE_DUR)
   focusNewLineText()
 })
 
@@ -6259,7 +6259,7 @@ document.addEventListener('keydown', (e) => {
     case 'Enter':
       if (activeTab !== 'rythmo') break
       e.preventDefault()
-      addLineAt(video.currentTime, null, '…', NEW_LINE_DUR)
+      addLineAt(video.currentTime, null, '_', NEW_LINE_DUR)
       focusNewLineText()
       break
     case 'PageUp':

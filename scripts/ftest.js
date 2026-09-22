@@ -874,6 +874,21 @@ const TESTS = [
     const slot = g.ww - g.pad * 2 // largeur utile de la boîte
     return rendered <= slot + 0.5 // le texte tient dans la boîte (pas de débordement)
   })()`],
+  ['bandEdit H: nouvelle boîte vide (aucun … par défaut)', `(() => {
+    if (typeof addLineAt !== 'function') return true
+    beSetup()
+    const a = addLineAt(3.0, 0, '_', 1.0)       // création explicite
+    const b = addLineAt(5.0, 0, undefined, 1.0) // création sans texte -> vide aussi
+    return a.words.length === 1 && a.words[0].text === '_' && b.words[0].text === '_'
+  })()`],
+  ['bandEdit H: Entrée valide et désélectionne la boîte', `(() => {
+    if (typeof enterBandEdit !== 'function') return true
+    beSetup()
+    selectedIds = new Set(['be1'])
+    enterBandEdit('be1', 0, 0)
+    handleBandEditKey({ key: 'Enter', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
+    return bandEdit === null && selectedIds.size === 0
+  })()`],
 ]
 
 function getJson() {
