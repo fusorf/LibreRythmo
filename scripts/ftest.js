@@ -685,19 +685,16 @@ const TESTS = [
     return mono && drew === true
   })()`],
   // --- v3.4 saisie sur la bande : étape B (édition au caractère) ---
-  ['bandEdit B: insertion répartit les mots (comme splitWords, boîte figée)', `(() => {
+  ['bandEdit B: insertion ne retime pas (nb de mots inchangé)', `(() => {
     if (typeof beInsertChar !== 'function') return true
     beSetup()
     const ev = (k) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     enterBandEdit('be1', 0, 3) // "Bon|jour"
     handleBandEditKey(ev('X'))
     const l = project.lines.find((x) => x.id === 'be1')
-    const w0 = l.words[0].text.length + 1, w1 = l.words[1].text.length + 1
-    const expEnd0 = 1.0 + (w0 / (w0 + w1)) * 1.0 // pondéré par longueur, comme splitWords
-    const ok = l.words[0].text === 'BonXjour' && l.words[1].text === 'toi'
-      && l.words[0].start === 1.0 && l.words[1].end === 2.0                 // bornes de la boîte figées
-      && Math.abs(l.words[0].end - l.words[1].start) < 1e-9                 // contiguïté
-      && Math.abs(l.words[0].end - expEnd0) < 1e-6                          // répartition pondérée
+    // même nombre de mots -> créneaux inchangés (le texte se compacte dans son créneau)
+    const ok = l.words[0].text === 'BonXjour' && l.words[0].start === 1.0 && l.words[0].end === 1.6
+      && l.words[1].text === 'toi' && l.words[1].start === 1.6 && l.words[1].end === 2.0
       && bandEdit.wi === 0 && bandEdit.ci === 4
     exitBandEdit()
     return ok

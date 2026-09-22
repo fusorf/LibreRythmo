@@ -5324,9 +5324,11 @@ function handleBandEditKey(e) {
   }
   // --- édition au caractère (préserve le timing des mots non touchés) ---
   const apply = (pos) => { bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.sel = null; bandEdit.blinkT0 = performance.now() }
-  // valide une mutation : place le caret, répartit les mots dans la boîte figée (comme
-  // splitWords sur main : le texte se répand en écrivant), puis marque modifié.
-  const commit = (pos) => { apply(pos); redistributeLine(line); markDirty() }
+  // valide une mutation : place le caret, marque modifié, et NE redistribue les mots
+  // dans la boîte que si leur NOMBRE a changé (ajout/fusion). Taper des lettres dans un
+  // mot ne retime rien (le texte se compacte dans son créneau).
+  const n0 = line.words.length
+  const commit = (pos) => { apply(pos); if (line.words.length !== n0) redistributeLine(line); markDirty() }
   if (k === 'Enter') { e.preventDefault(); exitBandEdit(); selectedIds.clear(); refreshInspector(); return true } // Entrée = valider et désélectionner la boîte
   if (k === 'Backspace') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beBackspace(line)); return true }
   if (k === 'Delete') { e.preventDefault(); beMutate(); commit(beDeleteSelection(line) || beDeleteForward(line)); return true }
