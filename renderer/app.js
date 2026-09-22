@@ -525,7 +525,7 @@ function applyLang() {
   $('tFrameF').title = t('tFrameF')
   $('timecode').title = t('timecode')
   $('speed').title = t('speed')
-  document.querySelector('.vol').title = t('volume')
+  $('btnVol').title = t('volume')
   $('addLineLabel').textContent = t('addLine')
   $('btnAddLine').title = t('addLineTitle')
   $('btnOnoma').textContent = t('onomaBtn')
@@ -621,7 +621,7 @@ function applyLang() {
   $('pcLoop').title = t('pcLoopTitle')
   $('pcMute').title = t('pcMuteTitle')
   $('pcZoomWrap').title = t('pcZoomTitle')
-  $('zoomWrap').title = t('zoomTitle')
+  $('btnZoom').title = t('zoomTitle')
   $('trackCount').title = t('trackCountTitle')
   refreshTrackCountUI()
   $('lineFilter').title = t('filterTitle')
@@ -5646,6 +5646,51 @@ zoomSlider.addEventListener('input', () => {
 })
 syncZoomSlider()
 
+// ---------- boutons volume / zoom : popover slider vertical + molette directe ----------
+// L'icône du volume reflète le niveau : muet, faible (1 onde), moyen (2), fort (3).
+function updateVolIcon() {
+  const v = video.muted ? 0 : Number($('volume').value)
+  const body = '<path d="M2 6v4h3l4 3.5v-11L5 6H2z"/>'
+  let waves
+  if (v <= 0.001) waves = '<path class="w" d="M11.2 6l3.6 4M14.8 6l-3.6 4"/>' // croix = muet
+  else {
+    waves = '<path class="w" d="M10.8 6.2a2.6 2.6 0 010 3.6"/>'
+    if (v > 0.34) waves += '<path class="w" d="M12.2 4.9a4.2 4.2 0 010 6.2"/>'
+    if (v > 0.67) waves += '<path class="w" d="M13.6 3.6a6 6 0 010 8.8"/>'
+  }
+  $('volIcon').innerHTML = body + waves
+}
+
+function placeSliderPop(pop, btn) {
+  pop.classList.remove('hidden')
+  const r = btn.getBoundingClientRect()
+  const pr = pop.getBoundingClientRect()
+  pop.style.left = Math.round(clamp(r.left + r.width / 2 - pr.width / 2, 4, window.innerWidth - pr.width - 4)) + 'px'
+  pop.style.top = Math.round(Math.max(4, r.top - pr.height - 6)) + 'px' // au-dessus du bouton
+}
+function toggleSliderPop(popId, btn) {
+  const pop = $(popId)
+  const wasHidden = pop.classList.contains('hidden')
+  $('volPop').classList.add('hidden'); $('zoomPop').classList.add('hidden')
+  if (wasHidden) placeSliderPop(pop, btn)
+}
+const nudgeVol = (dy) => { const s = $('volume'); s.value = String(clamp(Number(s.value) + (dy < 0 ? 0.05 : -0.05), 0, 1)); applyVolume(); updateVolIcon() }
+const nudgeZoom = (dy) => { secondsVisible = clamp(secondsVisible * (dy < 0 ? 1 / 1.12 : 1.12), SEC_MIN, SEC_MAX); recomputePps(); syncZoomSlider() }
+
+$('btnVol').addEventListener('click', (e) => { e.stopPropagation(); toggleSliderPop('volPop', $('btnVol')) })
+$('btnZoom').addEventListener('click', (e) => { e.stopPropagation(); toggleSliderPop('zoomPop', $('btnZoom')) })
+$('btnVol').addEventListener('wheel', (e) => { e.preventDefault(); nudgeVol(e.deltaY) }, { passive: false })
+$('volPop').addEventListener('wheel', (e) => { e.preventDefault(); nudgeVol(e.deltaY) }, { passive: false })
+$('btnZoom').addEventListener('wheel', (e) => { e.preventDefault(); nudgeZoom(e.deltaY) }, { passive: false })
+$('zoomPop').addEventListener('wheel', (e) => { e.preventDefault(); nudgeZoom(e.deltaY) }, { passive: false })
+document.addEventListener('click', (e) => { // clic dehors = ferme les popovers
+  for (const [popId, btnId] of [['volPop', 'btnVol'], ['zoomPop', 'btnZoom']]) {
+    const pop = $(popId)
+    if (!pop.classList.contains('hidden') && !pop.contains(e.target) && !$(btnId).contains(e.target)) pop.classList.add('hidden')
+  }
+})
+updateVolIcon()
+
 // ============================================================ transport
 const btnPlay = $('tPlay')
 
@@ -5660,7 +5705,7 @@ $('tStart').addEventListener('click', () => { video.currentTime = 0 })
 $('tFrameB').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime - 1 / project.fps, 0, videoDur()) })
 $('tFrameF').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime + 1 / project.fps, 0, videoDur()) })
 $('speed').addEventListener('change', (e) => { video.playbackRate = Number(e.target.value) })
-$('volume').addEventListener('input', applyVolume) // vidéo ou piste active (playA)
+$('volume').addEventListener('input', () => { applyVolume(); updateVolIcon() }) // vidéo ou piste active (playA)
 
 // ============================================================ barre de progression globale
 // Strip fine au-dessus du transport : clic = saut, glisser = scrub (sans mettre en

@@ -716,7 +716,30 @@ input[type="range"]:hover::-webkit-slider-thumb { background: var(--icon-h); }
   height: var(--ctl-h);
 }
 .vol svg { width: 15px; height: 15px; fill: var(--dim); flex: 0 0 auto; }
-#volume, #zoom { width: 84px; }
+
+/* boutons volume / zoom : popover avec slider vertical (molette = réglage direct) */
+.slider-pop {
+  position: fixed;
+  z-index: 60;
+  width: 40px;
+  height: 150px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+}
+.slider-pop.hidden { display: none; }
+.slider-pop .v-slider {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 120px; /* devient la hauteur une fois pivoté */
+  margin: 0;
+  transform: translate(-50%, -50%) rotate(-90deg); /* haut = max */
+}
+/* ondes du haut-parleur (niveau de volume) : traits, le corps reste plein */
+#btnVol svg .w { fill: none; stroke: var(--icon); stroke-width: 1.5; stroke-linecap: round; }
+#btnVol:hover svg .w { stroke: var(--icon-h); }
 
 /* compteur de temps : afficheur type LCD (puits inset, chiffres à chasse fixe) */
 #timecode {
