@@ -5680,7 +5680,7 @@ function placeSliderPop(pop, btn) {
 function toggleSliderPop(popId, btn) {
   const pop = $(popId)
   const wasHidden = pop.classList.contains('hidden')
-  $('volPop').classList.add('hidden'); $('zoomPop').classList.add('hidden')
+  $('volPop').classList.add('hidden'); $('zoomPop').classList.add('hidden'); $('speedPop').classList.add('hidden')
   if (wasHidden) placeSliderPop(pop, btn)
 }
 const nudgeVol = (dy) => { const s = $('volume'); s.value = String(clamp(Number(s.value) + (dy < 0 ? 0.05 : -0.05), 0, 1)); applyVolume(); updateVolIcon() }
@@ -5693,7 +5693,7 @@ $('volPop').addEventListener('wheel', (e) => { e.preventDefault(); nudgeVol(e.de
 $('btnZoom').addEventListener('wheel', (e) => { e.preventDefault(); nudgeZoom(e.deltaY) }, { passive: false })
 $('zoomPop').addEventListener('wheel', (e) => { e.preventDefault(); nudgeZoom(e.deltaY) }, { passive: false })
 document.addEventListener('click', (e) => { // clic dehors = ferme les popovers
-  for (const [popId, btnId] of [['volPop', 'btnVol'], ['zoomPop', 'btnZoom']]) {
+  for (const [popId, btnId] of [['volPop', 'btnVol'], ['zoomPop', 'btnZoom'], ['speedPop', 'btnSpeed']]) {
     const pop = $(popId)
     if (!pop.classList.contains('hidden') && !pop.contains(e.target) && !$(btnId).contains(e.target)) pop.classList.add('hidden')
   }
@@ -5713,12 +5713,20 @@ btnPlay.addEventListener('click', togglePlay)
 $('tStart').addEventListener('click', () => { video.currentTime = 0 })
 $('tFrameB').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime - 1 / project.fps, 0, videoDur()) })
 $('tFrameF').addEventListener('click', () => { video.pause(); video.currentTime = clamp(video.currentTime + 1 / project.fps, 0, videoDur()) })
-// vitesse de lecture : bouton compact, molette = cran par cran, clic = retour à ×1
+// vitesse de lecture : bouton compact, molette = cran par cran, clic = popover slider vertical
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5]
 let speedIdx = 2
-function applySpeed() { video.playbackRate = SPEEDS[speedIdx]; $('btnSpeed').textContent = '×' + SPEEDS[speedIdx] }
-$('btnSpeed').addEventListener('click', () => { speedIdx = 2; applySpeed() })
-$('btnSpeed').addEventListener('wheel', (e) => { e.preventDefault(); speedIdx = clamp(speedIdx + (e.deltaY < 0 ? 1 : -1), 0, SPEEDS.length - 1); applySpeed() }, { passive: false })
+function applySpeed() {
+  const r = SPEEDS[speedIdx]
+  video.playbackRate = r
+  $('btnSpeed').textContent = '×' + r
+  const s = $('speedSlider'); if (s) s.value = String(r) // garde le slider synchro (molette/chargement)
+}
+const nudgeSpeed = (dy) => { speedIdx = clamp(speedIdx + (dy < 0 ? 1 : -1), 0, SPEEDS.length - 1); applySpeed() }
+$('btnSpeed').addEventListener('click', (e) => { e.stopPropagation(); toggleSliderPop('speedPop', $('btnSpeed')) })
+$('btnSpeed').addEventListener('wheel', (e) => { e.preventDefault(); nudgeSpeed(e.deltaY) }, { passive: false })
+$('speedPop').addEventListener('wheel', (e) => { e.preventDefault(); nudgeSpeed(e.deltaY) }, { passive: false })
+$('speedSlider').addEventListener('input', () => { speedIdx = clamp(Math.round((Number($('speedSlider').value) - 0.5) / 0.25), 0, SPEEDS.length - 1); applySpeed() })
 applySpeed()
 $('volume').addEventListener('input', () => { applyVolume(); updateVolIcon() }) // vidéo ou piste active (playA)
 
