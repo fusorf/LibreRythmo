@@ -2127,7 +2127,9 @@ function setTrBusyUI(on) {
 }
 window.api.onWhisperProgress((p) => {
   if (!p || !trBusy) return // n'affiche que pendant un run de transcription
-  if (p.phase === 'extract') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseExtract') }
+  if (p.phase === 'install') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('sepInstalling') } // téléchargement du moteur CLI
+  else if (p.phase === 'extract') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseExtract') }
+  else if (p.phase === 'diarize') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseDiarize') }
   else if (p.phase === 'transcribe') { $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'; $('trStatus').textContent = t('trTranscribing', p.pct || 0) }
 })
 
