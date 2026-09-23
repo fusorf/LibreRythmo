@@ -530,8 +530,6 @@ function applyLang() {
   $('btnOnoma').textContent = t('onomaBtn')
   $('btnOnoma').title = t('onomaTitle')
   $('btnMagnet').title = t('magnetTitle')
-  $('modeSelect').title = t('modeSelectTitle')
-  $('modeText').title = t('modeTextTitle')
   buildOnomaPop()
   $('btnSymbols').textContent = t('symbolsBtn')
   $('btnSymbols').title = t('symbolsTitle')
@@ -4942,19 +4940,6 @@ $('btnMagnet').addEventListener('click', () => {
   $('btnMagnet').classList.toggle('active', magnetOn)
 })
 
-// ---------- mode d'interaction de la bande : « select » (sélection / déplacement /
-// timing) ou « text » (cliquer pour écrire une réplique). Bascule via la barre d'outils.
-// N'affecte QUE les clics/glissers sur la bande ; le caret peut s'ouvrir dans les deux modes.
-let bandMode = 'select'
-function setBandMode(m) {
-  bandMode = m === 'text' ? 'text' : 'select'
-  $('modeSelect').classList.toggle('active', bandMode === 'select')
-  $('modeText').classList.toggle('active', bandMode === 'text')
-  canvas.style.cursor = bandMode === 'text' ? 'text' : 'grab'
-  if (bandMode !== 'text' && beActive()) exitBandEdit()
-}
-$('modeSelect').addEventListener('click', () => setBandMode('select'))
-$('modeText').addEventListener('click', () => setBandMode('text'))
 
 function magnetAdjust(d, group) {
   const thresh = 8 / pxPerSec
@@ -5367,26 +5352,22 @@ canvas.addEventListener('pointerdown', (e) => {
   const y = e.clientY - r.top
   const hit = hitTest(x, y)
 
-  // MODE TEXTE (hors règle temporelle) : clic pour écrire. Sur une réplique -> place
-  // le caret ; sur une piste vide -> crée une boîte (clic = longueur défaut, glisser =
-  // longueur choisie). Le scrub par glisser n'existe pas ici (molette / règle / flèches).
-  if (bandMode === 'text' && activeTab === 'rythmo' && y > RULER_H) {
-    hoverEdge = null; selectedCueId = null
-    canvas.setPointerCapture(e.pointerId)
-    if (hit.kind === 'line' || hit.kind === 'edge') {
-      const pos = caretHitTest(x, y) || { lineId: hit.line.id, wi: 0, ci: 0 }
-      enterBandEdit(pos.lineId, pos.wi, pos.ci)
-      drag = { kind: 'textsel', anchor: { wi: pos.wi, ci: pos.ci } } // glisser = sélection de texte
-    } else {
+  // CLIC DROIT sur une piste vide = crée une réplique (clic = longueur par défaut,
+  // glisser = longueur choisie) puis saisie. Le menu contextuel est supprimé (plus bas).
+  if (e.button === 2) {
+    if (activeTab === 'rythmo' && y > RULER_H && hit.kind === 'band' && !hitCueX(x)) {
       if (beActive()) exitBandEdit()
+      hoverEdge = null; selectedCueId = null
+      canvas.setPointerCapture(e.pointerId)
       const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
       drag = { kind: 'create', x0: x, x1: x, tr, moved: false }
     }
     return
   }
+  if (e.button !== 0) return // seuls le clic gauche (sélection/scrub/caret) et droit (création) agissent
 
-  // MODE SÉLECTION (et clic sur la règle en mode texte)
-  if (beActive()) exitBandEdit() // un clic ailleurs sort de la saisie (le double-clic ré-entre)
+  // CLIC GAUCHE : bord=resize, réplique=sélection+caret (glisser=déplacer), vide=scrub
+  if (beActive()) exitBandEdit() // un clic ailleurs sort de la saisie ; un clic sur une réplique y ré-entre (endDrag)
   hoverEdge = null // pas de surbrillance de poignée pendant un drag
   selectedCueId = null // toute sélection de réplique/scrub désélectionne un repère ADR
   canvas.setPointerCapture(e.pointerId)
@@ -5438,7 +5419,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const group = project.lines.filter((l) => selectedIds.has(l.id))
     drag = {
       kind: 'line',
-      x0: x,
+      x0: x, downX: x, downY: y, // downX/Y : pour poser le caret si clic sans déplacement
       group: group.map((l) => ({ line: l, words: l.words.map((w) => ({ ...w })) })),
       moved: false,
     }
@@ -5470,17 +5451,11 @@ canvas.addEventListener('pointermove', (e) => {
     // feedback curseur au survol : poignées de mots, corps de réplique, règle, bande
     const r = canvas.getBoundingClientRect()
     hover = { x: e.clientX - r.left, y: e.clientY - r.top }
-    if (bandMode === 'text' && activeTab === 'rythmo') { // mode texte : + sur le vide (création), I-beam sur une réplique
-      hoverEdge = null
-      if (hover.y <= RULER_H) canvas.style.cursor = 'pointer'
-      else { const h = hitTest(hover.x, hover.y); canvas.style.cursor = h.kind === 'line' || h.kind === 'edge' ? 'text' : 'copy' }
-      return
-    }
     const hit = hitTest(hover.x, hover.y)
     hoverEdge = hit.kind === 'edge'
       ? { lineId: hit.line.id, wi: hit.wi, type: hit.type, ctrl: e.ctrlKey || e.metaKey }
       : null
-    let cur = hit.kind === 'edge' ? 'ew-resize' : hit.kind === 'line' ? 'move' : 'grab'
+    let cur = hit.kind === 'edge' ? 'ew-resize' : hit.kind === 'line' ? 'text' : 'grab' // réplique = curseur d'écriture (clic = caret)
     if (hover.y <= RULER_H) cur = 'pointer' // règle : clic = aller à cet endroit
     if (hit.kind !== 'edge' && hit.kind !== 'line' && hitCueX(hover.x)) cur = 'ew-resize' // repère ADR déplaçable
     if (hit.kind === 'edge' && !(e.ctrlKey || e.metaKey)) {
@@ -5496,13 +5471,7 @@ canvas.addEventListener('pointermove', (e) => {
   const dx = x - drag.x0
   const dt = dx / pxPerSec
 
-  if (drag.kind === 'textsel') {
-    const pos = caretHitTest(x, e.clientY - r.top) // sélection de texte au glisser (même réplique)
-    if (pos && beActive() && pos.lineId === bandEdit.lineId) {
-      if (!bandEdit.sel) bandEdit.sel = { wi: drag.anchor.wi, ci: drag.anchor.ci }
-      bandEdit.wi = pos.wi; bandEdit.ci = pos.ci; bandEdit.blinkT0 = performance.now()
-    }
-  } else if (drag.kind === 'create') {
+  if (drag.kind === 'create') {
     drag.x1 = x // aperçu de la nouvelle boîte (dessiné dans draw())
     if (Math.abs(dx) > 3) drag.moved = true
   } else if (drag.kind === 'scrub') {
@@ -5619,6 +5588,11 @@ function endDrag() {
   if (drag && drag.kind === 'scrub' && drag.fromRuler && !drag.moved && video.src) {
     scrubTo(drag.tClick)
   }
+  if (drag && drag.kind === 'line' && !drag.moved) {
+    // clic (sans déplacer) sur une réplique = pose le curseur d'écriture au point cliqué
+    const pos = caretHitTest(drag.downX, drag.downY)
+    if (pos) enterBandEdit(pos.lineId, pos.wi, pos.ci)
+  }
   if (drag && drag.kind === 'create') {
     // création en mode texte : clic = longueur par défaut, glisser = longueur choisie
     const tA = timeAtX(drag.x0, effectiveTime())
@@ -5632,42 +5606,31 @@ function endDrag() {
   drag = null
   scrub.active = false
   if (!scrub.busy && scrub.pending == null) scrub.time = null
-  canvas.style.cursor = bandMode === 'text' ? 'text' : 'grab'
+  canvas.style.cursor = 'grab'
 }
 canvas.addEventListener('pointerup', endDrag)
 canvas.addEventListener('pointercancel', endDrag)
 
+// double-clic sur une réplique = sélectionne le mot
 canvas.addEventListener('dblclick', (e) => {
+  if (activeTab !== 'rythmo') return
   const r = canvas.getBoundingClientRect()
-  const x = e.clientX - r.left
-  const y = e.clientY - r.top
-  if (bandMode === 'text' && activeTab === 'rythmo') { // double-clic = sélectionne le mot
-    const pos = caretHitTest(x, y)
-    if (pos) {
-      enterBandEdit(pos.lineId, pos.wi, pos.ci)
-      const l = beLine()
-      if (l) { bandEdit.sel = { wi: pos.wi, ci: 0 }; bandEdit.wi = pos.wi; bandEdit.ci = caretLen(l, pos.wi); bandEdit.blinkT0 = performance.now() }
-    }
-    return
-  }
-  const hit = hitTest(x, y)
-  if (hit.kind === 'line') {
-    const pos = caretHitTest(x, y) || { lineId: hit.line.id, wi: 0, ci: 0 }
-    enterBandEdit(pos.lineId, pos.wi, pos.ci)
-  } else if (y > RULER_H) {
-    const tr = clamp(Math.floor((y - RULER_H) / trackH()), 0, laneCount() - 1)
-    const t = timeAtX(x, effectiveTime())
-    addLineAt(t, tr, '_', NEW_LINE_DUR)
-    focusNewLineText()
-  }
+  const pos = caretHitTest(e.clientX - r.left, e.clientY - r.top)
+  if (!pos) return
+  enterBandEdit(pos.lineId, pos.wi, pos.ci)
+  const l = beLine()
+  if (l) { bandEdit.sel = { wi: pos.wi, ci: 0 }; bandEdit.wi = pos.wi; bandEdit.ci = caretLen(l, pos.wi); bandEdit.blinkT0 = performance.now() }
 })
 
-// triple-clic (mode texte) = sélectionne toute la réplique en cours d'édition
+// triple-clic = sélectionne toute la réplique en cours d'édition
 canvas.addEventListener('click', (e) => {
-  if (bandMode !== 'text' || activeTab !== 'rythmo' || e.detail < 3 || !beActive()) return
+  if (activeTab !== 'rythmo' || e.detail < 3 || !beActive()) return
   const l = beLine(), lw = l.words.length - 1
   bandEdit.sel = { wi: 0, ci: 0 }; bandEdit.wi = lw; bandEdit.ci = caretLen(l, lw); bandEdit.blinkT0 = performance.now()
 })
+
+// clic droit : pas de menu contextuel sur la bande (le clic droit crée une réplique)
+canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
 // wheel = horizontal scrub · ctrl+wheel = zoom (en secondes visibles)
 canvas.addEventListener('wheel', (e) => {

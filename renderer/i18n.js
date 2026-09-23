@@ -450,8 +450,10 @@ const I18N = {
       {
         icon: '✍️', title: 'Répliques',
         items: [
-          ['Modes (barre d\'outils)', 'Sélection : cliquer/glisser pour déplacer et caler le timing. Texte : cliquer (ou glisser pour la longueur) sur une piste pour écrire une réplique'],
-          ['double-clic (bande)', "Placer le curseur d'écriture dans une réplique, ou en créer une sur une piste vide"],
+          ['clic sur une réplique', "La sélectionne et place le curseur d'écriture à l'endroit cliqué (glisser le corps = déplacer, glisser un bord = redimensionner)"],
+          ['clic droit (piste vide)', 'Crée une réplique (clic = longueur par défaut, glisser = longueur choisie) puis saisie'],
+          ['clic/glisser (vide)', 'Fait défiler la timeline (scrub)'],
+          ['double / triple-clic', 'Sélectionne le mot / toute la réplique'],
           ['Entrée', 'En saisie : valider et sortir. Sinon : créer une réplique au point de lecture'],
           ['saisie sur la bande', "Le texte s'écrit directement sur la rythmo : flèches pour déplacer le curseur, Retour arrière / Suppr pour corriger, Échap pour sortir"],
           ['Espace (en saisie)', 'Couper en deux le mot au curseur'],
@@ -999,8 +1001,10 @@ const I18N = {
       {
         icon: '✍️', title: 'Lines',
         items: [
-          ['Modes (toolbar)', 'Select: click/drag to move and set timing. Text: click (or drag for length) on a track to write a line'],
-          ['double-click (band)', 'Place the writing caret in a line, or create one on an empty track'],
+          ['click a line', 'Selects it and places the writing caret where you clicked (drag body = move, drag an edge = resize)'],
+          ['right-click (empty track)', 'Creates a line (click = default length, drag = chosen length) then edit'],
+          ['click/drag (empty)', 'Scrubs the timeline'],
+          ['double / triple-click', 'Selects the word / the whole line'],
           ['Enter', 'While typing: commit and leave. Otherwise: create a line at the reading point'],
           ['typing on the band', 'Text is written directly on the band: arrows to move the caret, Backspace / Delete to fix, Esc to leave'],
           ['Space (while typing)', 'Split the word at the caret in two'],
@@ -1548,8 +1552,10 @@ const I18N = {
       {
         icon: '✍️', title: 'Líneas',
         items: [
-          ['Modos (barra)', 'Selección: clic/arrastrar para mover y ajustar la sincronía. Texto: clic (o arrastrar para la longitud) en una pista para escribir'],
-          ['doble clic (banda)', 'Colocar el cursor de escritura en una línea, o crear una en una pista vacía'],
+          ['clic en una línea', 'La selecciona y coloca el cursor de escritura donde se hizo clic (arrastrar el cuerpo = mover, arrastrar un borde = redimensionar)'],
+          ['clic derecho (pista vacía)', 'Crea una línea (clic = longitud por defecto, arrastrar = longitud elegida) y edita'],
+          ['clic/arrastrar (vacío)', 'Desplaza la línea de tiempo (scrub)'],
+          ['doble / triple clic', 'Selecciona la palabra / toda la línea'],
           ['Intro', 'Escribiendo: confirmar y salir. Si no: crear una línea en el punto de lectura'],
           ['escritura en la banda', 'El texto se escribe directamente en la banda: flechas para mover el cursor, Retroceso / Supr para corregir, Esc para salir'],
           ['Espacio (escribiendo)', 'Cortar en dos la palabra en el cursor'],

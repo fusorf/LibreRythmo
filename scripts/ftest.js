@@ -855,12 +855,6 @@ const TESTS = [
     handleBandEditKey({ key: 'Enter', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} })
     return bandEdit === null && project.lines.length === before
   })()`],
-  ['bandEdit G: bascule de mode sélection / texte', `(() => {
-    if (typeof setBandMode !== 'function') return true
-    setBandMode('text'); const a = bandMode === 'text' && document.getElementById('modeText').classList.contains('active')
-    setBandMode('select'); const b = bandMode === 'select' && document.getElementById('modeSelect').classList.contains('active')
-    return a && b
-  })()`],
   ['bandEdit G: texte compacté, la boîte ne déborde pas (scale <= 1 si texte long)', `(() => {
     if (typeof bandWordGeom !== 'function') return true
     beSetup()
