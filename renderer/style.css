@@ -1401,6 +1401,7 @@ button.primary:disabled { opacity: .45; cursor: default; }
 .ai-form { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: center; margin: 2px 0 4px; }
 .ai-form > label { color: var(--dim); font-size: 12px; white-space: nowrap; }
 .ai-form select, .ai-form input[type="text"] { width: 100%; min-width: 0; }
+.ai-form.locked { pointer-events: none; opacity: .55; } /* pendant le traitement : options grisées + non cliquables */
 .sep-dir { display: flex; gap: 6px; min-width: 0; }
 .sep-dir input { flex: 1 1 auto; }
 .sep-dir button { flex: 0 0 auto; }

@@ -2122,6 +2122,7 @@ $('trGo').addEventListener('click', runTranscribe)
 // verrouille les contrôles (menus déroulants, boutons) pendant la transcription
 function setTrBusyUI(on) {
   ['trInTrack', 'trModel', 'trSpeakers', 'trLang', 'trOpenSettings'].forEach((id) => { const el = $(id); if (el) el.disabled = on })
+  $('trReady').classList.toggle('locked', on) // verrou visuel (grise + bloque les clics)
   $('trGo').disabled = on
   $('trClose').textContent = on ? t('cancel') : t('close')
 }
@@ -2129,7 +2130,7 @@ window.api.onWhisperProgress((p) => {
   if (!p || !trBusy) return // n'affiche que pendant un run de transcription
   if (p.phase === 'install') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('sepInstalling') } // téléchargement du moteur CLI
   else if (p.phase === 'extract') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseExtract') }
-  else if (p.phase === 'diarize') { $('trBar').style.width = '0%'; $('trStatus').textContent = t('trPhaseDiarize') }
+  else if (p.phase === 'diarize') { $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'; $('trStatus').textContent = t('trPhaseDiarize') }
   else if (p.phase === 'transcribe') { $('trBar').style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%'; $('trStatus').textContent = t('trTranscribing', p.pct || 0) }
 })
 
@@ -2146,6 +2147,7 @@ async function runTranscribe() {
     $('trStatus').textContent = t('trTranscribing', 0)
     const r = await window.api.whisperTranscribe({ source: tr.source, aIndex: tr.aIndex, model, language: lang, numSpeakers })
     if (!r || r.error) {
+      if (r && r.error === 'cancelled') return // annulation : le statut « annulé » est déjà affiché
       const map = { 'no-engine': 'trNeedEngine', 'no-model': 'trNeedModel', 'no-source': 'trNeedVideo' }
       toast(t(map[r && r.error] || 'trFailed'))
       $('trStatus').textContent = t('trFailed')
@@ -2691,6 +2693,7 @@ $('sepGo').addEventListener('click', doSeparate)
 // verrouille les contrôles (menus déroulants, champs, boutons) pendant la séparation
 function setSepBusyUI(on) {
   ['sepInTrack', 'sepRunModel', 'sepOutName', 'sepOutBrowse', 'sepOpenSettings'].forEach((id) => { const el = $(id); if (el) el.disabled = on })
+  $('sepReadyBody').classList.toggle('locked', on) // verrou visuel (grise + bloque les clics)
   $('sepGo').disabled = on
   $('sepCloseBtn').textContent = on ? t('cancel') : t('close')
 }

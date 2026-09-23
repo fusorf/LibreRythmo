@@ -1119,6 +1119,7 @@ ipcMain.handle('delete-take', (e, projectPath, name) => {
 // dans whisper-worker.js (worker_thread) pour ne pas figer l'UI. Résultat = segments
 // [{start,end,text,speaker}] importés par le circuit sous-titres existant.
 let whisperProc = null // processus CLI de transcription (VAD+Whisper / diarisation)
+let whisperCancelled = false
 let whisperAbort = null
 function whisperDir() { const d = path.join(app.getPath('userData'), 'whisper-models'); try { fs.mkdirSync(d, { recursive: true }) } catch {}; return d }
 // estMB = taille du téléchargement (.tar.bz2) d'après les releases sherpa-onnx.
@@ -1197,7 +1198,7 @@ ipcMain.handle('whisper-install-model', async (e, name) => {
     return { ok: true }
   } catch (err) { whisperAbort = null; return { error: String((err && err.message) || err) } }
 })
-ipcMain.handle('whisper-cancel', () => { try { if (whisperAbort) whisperAbort.abort() } catch {} try { if (whisperProc) whisperProc.kill('SIGKILL') } catch {} whisperAbort = null; whisperProc = null; return true })
+ipcMain.handle('whisper-cancel', () => { whisperCancelled = true; try { if (whisperAbort) whisperAbort.abort() } catch {} try { if (whisperProc) whisperProc.kill('SIGKILL') } catch {} whisperAbort = null; whisperProc = null; return true })
 
 // ---------- diarisation (locuteurs) : modèles ONNX auto-téléchargés (best-effort) ----------
 const DIAR_SEG_ASSET = 'sherpa-onnx-pyannote-segmentation-3-0.tar.bz2'
@@ -1254,6 +1255,7 @@ function runSherpaCli(exe, args, onLine) {
 ipcMain.handle('whisper-transcribe', async (e, opts) => {
   if (!ffmpegPath) return { error: 'no-ffmpeg' }
   if (whisperProc) return { error: 'busy' }
+  whisperCancelled = false
   const f = whisperModelFiles(opts.model || 'turbo')
   if (!f.enc || !f.dec || !f.tok || !fs.existsSync(vadModelPath())) return { error: 'no-model' }
   const src = opts.source; if (!src || !fs.existsSync(src)) return { error: 'no-source' }
@@ -1273,36 +1275,44 @@ ipcMain.handle('whisper-transcribe', async (e, opts) => {
   const clean = () => { try { fs.unlinkSync(wav) } catch {} }
   const durSec = (() => { try { return Math.max(1, (fs.statSync(wav).size - 44) / 32000) } catch { return 60 } })() // 16000 Hz × 2 o mono
   const threads = Math.max(1, Math.min(8, (require('os').cpus() || []).length - 1))
-  // 2) diarisation (best-effort) via le CLI : associe un locuteur à chaque segment
+  // 2) diarisation (best-effort) + 3) transcription. Les CLI ne rapportent pas de % :
+  //    on estime une progression temporelle qui monte vers ~97 % (relevée par les
+  //    segments réels si le CLI les streame), puis 100 % à la fin.
   const numSpeakers = Math.max(0, Math.min(10, Number(opts.numSpeakers) || 0))
+  const t0 = Date.now(), tau = Math.max(3, durSec * 0.4)
+  let floor = 0, curPhase = 'diarize'
+  const timer = setInterval(() => emit({ phase: curPhase, pct: Math.max(floor, Math.round(97 * (1 - Math.exp(-((Date.now() - t0) / 1000) / tau)))) }), 500)
+  const abort = (err) => { clearInterval(timer); clean(); return { error: err } }
   const turns = []
   try {
     const diar = await ensureDiarModels()
     const diarExe = path.join(sepBinDir(), DIAR_CLI_BIN)
     if (diar.seg && diar.emb && fs.existsSync(diarExe)) {
-      emit({ phase: 'diarize' })
       const dargs = [`--segmentation.pyannote-model=${diar.seg}`, `--embedding.model=${diar.emb}`, `--num-threads=${threads}`]
       dargs.push(numSpeakers > 0 ? `--clustering.num-clusters=${numSpeakers}` : '--clustering.cluster-threshold=0.7')
       dargs.push(wav)
       await runSherpaCli(diarExe, dargs, (ln) => { const m = ln.match(/^(\d+(?:\.\d+)?)\s*--\s*(\d+(?:\.\d+)?)\s+speaker_(\d+)/); if (m) turns.push([+m[1], +m[2], +m[3]]) })
     }
   } catch {}
+  if (whisperCancelled) return abort('cancelled') // annulé pendant la diarisation → ne pas lancer l'ASR
   const speakerOf = (a, b) => { let best = -1, bov = 0; for (const [s, en, sp] of turns) { const ov = Math.min(b, en) - Math.max(a, s); if (ov > bov) { bov = ov; best = sp } } return best >= 0 ? best : 0 }
-  // 3) transcription VAD + Whisper via le CLI (sortie ligne : « début -- fin: texte »)
+  // transcription VAD + Whisper via le CLI (sortie ligne : « début -- fin: texte »)
+  curPhase = 'transcribe'
   const lang = opts.language && opts.language !== 'auto' ? String(opts.language) : ''
   const aargs = [`--silero-vad-model=${vadModelPath()}`, `--whisper-encoder=${f.enc}`, `--whisper-decoder=${f.dec}`, `--tokens=${f.tok}`, `--num-threads=${threads}`]
   if (lang) aargs.push(`--whisper-language=${lang}`)
   aargs.push(wav)
   const segments = []
-  emit({ phase: 'transcribe', pct: 0 })
   const ar = await runSherpaCli(asr, aargs, (ln) => {
     const m = ln.match(/^(\d+(?:\.\d+)?)\s*--\s*(\d+(?:\.\d+)?):\s?(.*)$/)
     if (!m) return
     const start = +m[1], end = +m[2], text = (m[3] || '').trim()
     if (text) segments.push({ start, end, text, speaker: speakerOf(start, end) })
-    emit({ phase: 'transcribe', pct: Math.max(1, Math.min(99, Math.round((end / durSec) * 100))) })
+    floor = Math.max(floor, Math.min(99, Math.round((end / durSec) * 100))) // progrès réel si le CLI streame
   })
+  clearInterval(timer)
   clean()
+  if (whisperCancelled) return { error: 'cancelled' }
   if (!segments.length && ar.code !== 0) return { error: (ar.tail || 'transcribe-failed').slice(-300) }
   return { ok: true, segments }
 })
